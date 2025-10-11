@@ -1,322 +1,294 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { v4 as uuidv4 } from 'uuid';
-// FIX: Removed LiveSession and GeminiContent from @google/genai import as they are not exported.
-import { GoogleGenAI, LiveServerMessage, Modality, Blob } from '@google/genai';
-// FIX: Added GeminiContent to types import. It is a locally defined type.
-import { AiMessage, UseAiLiveProps, ToolCallStatus, GeminiFunctionCall, ToolCall, GeminiContent } from '../types';
-import { decode, createBlob, decodeAudioData } from '../utils/audio';
-import { playNotificationSound } from '../utils/audio';
-import { allTools, systemInstruction as baseSystemInstruction } from '../services/toolOrchestrator';
+import { UseAiLiveProps } from '../../types';
+import { playNotificationSound } from '../../utils/audio';
+import { createLiveSession } from './useAiLive/sessionManager';
+import { connectMicrophoneNodes, stopAudioProcessing } from './useAiLive/audioManager';
+import { processLiveServerMessage } from './useAiLive/messageProcessor';
+import { AudioContextRefs, SessionRefs } from './useAiLive/types';
 
-// Create a voice-specific version of the system instruction.
-const liveSystemInstruction = baseSystemInstruction + `
-
-**Voice Interaction Rules:**
-- Your spoken responses should be very brief, acting as confirmations or quick updates (e.g., "Okay, creating the component now."). Your main output is through tool execution, not conversation.`;
-
-// Constants for audio processing
-const INPUT_SAMPLE_RATE = 16000;
-const OUTPUT_SAMPLE_RATE = 24000;
-const SCRIPT_PROCESSOR_BUFFER_SIZE = 4096;
-
-export const useAiLive = ({
-    aiRef,
-    settings,
-    addMessage,
-    updateMessage,
-    toolImplementations,
-    activeThread,
-    updateHistory, // This is passed but the live API doesn't have a history object like chat.
-    onPermissionError,
-}: UseAiLiveProps) => {
+export const useAiLive = (props: UseAiLiveProps) => {
+    // --- State and Refs ---
     const [isLive, setIsLive] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
-    const [isSpeaking, setIsSpeaking] = useState(false); // When the model is sending audio back
+    const [isSpeaking, setIsSpeaking] = useState(false);
+    const [isAiTurn, setIsAiTurn] = useState(false);
+    const [pendingAction, setPendingAction] = useState<'stop' | 'pause' | null>(null);
+    const [pendingPauseDuration, setPendingPauseDuration] = useState<number>(0);
 
-    // Refs for session and audio management
-    // FIX: Replaced non-exported LiveSession type with `any` for the session object.
-    const sessionRef = useRef<any | null>(null);
-    const sessionPromiseRef = useRef<Promise<any> | null>(null);
+    const propsRef = useRef(props);
+    useEffect(() => { propsRef.current = props; }, [props]);
 
-    // Audio context refs
-    const inputAudioContextRef = useRef<AudioContext | null>(null);
-    const outputAudioContextRef = useRef<AudioContext | null>(null);
-    const micStreamRef = useRef<MediaStream | null>(null);
-    const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
-    const micSourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
+    const stateRef = useRef({ isLive, isMuted, isSpeaking, isAiTurn });
+    useEffect(() => { stateRef.current = { isLive, isMuted, isSpeaking, isAiTurn }; }, [isLive, isMuted, isSpeaking, isAiTurn]);
 
-    // Audio playback queue management
-    const audioQueueRef = useRef<Set<AudioBufferSourceNode>>(new Set());
-    const nextStartTimeRef = useRef(0);
+    const audioContextRefs = useRef<AudioContextRefs>({
+        input: null, output: null, micStream: null,
+        scriptProcessor: null, micSourceNode: null,
+    });
+    
+    const sessionRefs = useRef<SessionRefs>({
+        session: null, sessionPromise: null, audioQueue: new Set(),
+        nextStartTime: 0, liveMessageId: null,
+        currentInputTranscription: '', currentOutputTranscription: '',
+        currentToolCalls: [],
+        isAiTurn: false,
+    });
 
-    // Transcription and tool call state for the current turn
-    const currentInputTranscriptionRef = useRef('');
-    const currentOutputTranscriptionRef = useRef('');
-    const currentToolCallsRef = useRef<ToolCall[]>([]);
-    const liveMessageIdRef = useRef<string | null>(null);
+    const uiUpdateTimerRef = useRef<number | null>(null);
+    const previousVoiceNameRef = useRef(props.settings.voiceName);
 
-    // Function to gracefully stop and clean up everything
-    const stopAndCleanup = useCallback(async () => {
+    // --- One-time Audio Engine Setup ---
+    useEffect(() => {
+        const input = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+        const output = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+        audioContextRefs.current.input = input;
+        audioContextRefs.current.output = output;
+        
+        console.log("AudioContexts created.");
+
+        return () => {
+            if (stateRef.current.isLive) {
+                // The cleanup function cannot be async, so we call without awaiting.
+                // The internal logic will still execute.
+                stopLiveSession({ isUnmount: true, immediate: true });
+            }
+            input.close().catch(console.error);
+            output.close().catch(console.error);
+            console.log("AudioContexts closed.");
+        };
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // --- Core Logic Implementations ---
+    
+    const performStop = useCallback(async (options: { isUnmount?: boolean } = {}) => {
+        if (!stateRef.current.isLive) return;
+        
+        const { isUnmount = false } = options;
+        
+        // Set UI state to not-live immediately for responsiveness.
         setIsLive(false);
+
+        if (!isUnmount) {
+            // Await the sound to ensure it finishes playing before we tear down resources.
+            await playNotificationSound('stop', audioContextRefs.current.output);
+        }
+        
         setIsMuted(false);
         setIsSpeaking(false);
+        setIsAiTurn(false);
         
-        if (micStreamRef.current) {
-            micStreamRef.current.getTracks().forEach(track => track.stop());
-            micStreamRef.current = null;
-        }
+        sessionRefs.current.session?.close();
+        await stopAudioProcessing(audioContextRefs, sessionRefs, { keepMicActive: false });
 
-        if (scriptProcessorRef.current) {
-            scriptProcessorRef.current.disconnect();
-            scriptProcessorRef.current.onaudioprocess = null;
-            scriptProcessorRef.current = null;
-        }
-        if (micSourceNodeRef.current) {
-            micSourceNodeRef.current.disconnect();
-            micSourceNodeRef.current = null;
-        }
-
-        if (inputAudioContextRef.current && inputAudioContextRef.current.state !== 'closed') {
-            await inputAudioContextRef.current.close().catch(console.error);
-            inputAudioContextRef.current = null;
-        }
-        if (outputAudioContextRef.current && outputAudioContextRef.current.state !== 'closed') {
-            for (const source of audioQueueRef.current.values()) {
-                try { source.stop(); } catch(e) {}
-            }
-            audioQueueRef.current.clear();
-            await outputAudioContextRef.current.close().catch(console.error);
-            outputAudioContextRef.current = null;
-        }
-        
-        if (sessionRef.current) {
-            sessionRef.current.close();
-            sessionRef.current = null;
-        }
-        sessionPromiseRef.current = null;
-
-        liveMessageIdRef.current = null;
-        nextStartTimeRef.current = 0;
-        currentInputTranscriptionRef.current = '';
-        currentOutputTranscriptionRef.current = '';
-        currentToolCallsRef.current = [];
+        sessionRefs.current.session = null;
+        sessionRefs.current.sessionPromise = null;
+        sessionRefs.current.liveMessageId = null;
+        sessionRefs.current.currentInputTranscription = '';
+        sessionRefs.current.currentOutputTranscription = '';
+        sessionRefs.current.currentToolCalls = [];
+        sessionRefs.current.isAiTurn = false;
     }, []);
 
+    const performPause = useCallback((durationInSeconds: number) => {
+        if (!stateRef.current.isLive || stateRef.current.isMuted) return;
+        console.log(`Pausing listening for ${durationInSeconds} seconds.`);
+        setIsMuted(true);
+        setTimeout(() => {
+            console.log("Resuming listening.");
+            if (stateRef.current.isLive) {
+                 setIsMuted(false);
+            }
+        }, durationInSeconds * 1000);
+    }, []);
+
+    // Effect to execute pending actions when the AI is completely finished.
+    // This means its turn is over (no more data coming) AND it has finished speaking.
+    useEffect(() => {
+        const canExecuteAction = !isAiTurn && !isSpeaking && pendingAction;
+
+        if (canExecuteAction) {
+            if (pendingAction === 'stop') {
+                console.log("AI turn and speech ended, executing pending stop.");
+                performStop();
+            } else if (pendingAction === 'pause') {
+                console.log(`AI turn and speech ended, executing pending pause for ${pendingPauseDuration}s.`);
+                performPause(pendingPauseDuration);
+            }
+
+            setPendingAction(null);
+            setPendingPauseDuration(0);
+        }
+    }, [isAiTurn, isSpeaking, pendingAction, pendingPauseDuration, performStop, performPause]);
+
+
+    // --- Core Callbacks (Stabilized with refs) ---
+    const requestUiUpdate = useCallback(() => {
+        if (uiUpdateTimerRef.current) return;
+    
+        uiUpdateTimerRef.current = window.setTimeout(() => {
+            const { liveMessageId, currentInputTranscription, currentOutputTranscription, currentToolCalls } = sessionRefs.current;
+            
+            if (liveMessageId) {
+                // Reading latest values from the ref inside the timeout is crucial
+                propsRef.current.updateMessage(liveMessageId, { content: currentInputTranscription });
+                propsRef.current.updateMessage(`${liveMessageId}-model`, { 
+                    content: currentOutputTranscription,
+                    toolCalls: [...currentToolCalls] 
+                });
+            }
+            
+            uiUpdateTimerRef.current = null;
+        }, 100); // Batch UI updates every 100ms
+    }, []);
+
+    const cancelUiUpdate = useCallback(() => {
+        if (uiUpdateTimerRef.current) {
+            clearTimeout(uiUpdateTimerRef.current);
+            uiUpdateTimerRef.current = null;
+        }
+    }, []);
+
+
+    const onMessage = useCallback((message: any) => {
+        processLiveServerMessage({
+            message,
+            audioContextRefs,
+            sessionRefs,
+            setIsSpeaking,
+            setIsAiTurn,
+            requestUiUpdate,
+            cancelUiUpdate,
+            ...propsRef.current,
+        });
+    }, [requestUiUpdate, cancelUiUpdate]); 
+    
+    const onError = useCallback((e: ErrorEvent) => {
+        console.error('Live session error:', e);
+        let userMessage = `An error occurred with the voice session: ${e.message || 'Unknown error'}. The session has been closed.`;
+
+        if (e.message && e.message.toLowerCase().includes('permission')) {
+            userMessage = `The AI voice session failed due to a permission error. Please check the following:\n\n1. Your API key is correct and active.\n2. The "Generative Language API" is enabled in your Google Cloud project.\n3. Your API key restrictions (like HTTP referrers) allow this application's domain.`;
+        } else if (e.message && e.message.toLowerCase().includes('internal error')) {
+            userMessage = `The AI voice session encountered an internal server error. This might be a temporary issue with the service. Please try starting a new session in a few moments.`;
+        }
+        
+        propsRef.current.onPermissionError(userMessage);
+        performStop();
+    }, [performStop]);
+
+    const stopLiveSession = useCallback((options: { immediate?: boolean; isUnmount?: boolean } = {}) => {
+        const { immediate = true, isUnmount = false } = options;
+        if (isUnmount) {
+            performStop({ isUnmount: true });
+            return;
+        }
+
+        if (immediate) {
+            performStop();
+        } else {
+            // AI-initiated actions are never immediate. Queue them to be executed after the turn.
+            setPendingAction('stop');
+        }
+    }, [performStop]);
+
+    const pauseListening = useCallback((durationInSeconds: number, options: { immediate?: boolean } = {}) => {
+        const { immediate = true } = options;
+        if (immediate) {
+            performPause(durationInSeconds);
+        } else {
+             // AI-initiated actions are never immediate. Queue them to be executed after the turn.
+            setPendingPauseDuration(durationInSeconds);
+            setPendingAction('pause');
+        }
+    }, [performPause]);
+
     const startLiveSession = useCallback(async (): Promise<boolean> => {
-        const ai = aiRef.current;
-        if (!ai || isLive) return false;
+        if (stateRef.current.isLive) return false;
+
+        const { onPermissionError, aiRef, settings, activeThread } = propsRef.current;
+        const { input, output } = audioContextRefs.current;
+        
+        if (input?.state === 'suspended') await input.resume();
+        if (output?.state === 'suspended') await output.resume();
 
         try {
-            micStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioContextRefs.current.micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioContextRefs.current.micSourceNode = input.createMediaStreamSource(audioContextRefs.current.micStream);
         } catch (e) {
             console.error("Microphone permission denied:", e);
             onPermissionError("Microphone permission was denied. Please enable it in your browser's site settings and reload the page.");
-            await stopAndCleanup();
             return false;
         }
 
-        playNotificationSound('start');
+        await playNotificationSound('start', audioContextRefs.current.output);
         setIsLive(true);
         
-        inputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: INPUT_SAMPLE_RATE });
-        outputAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: OUTPUT_SAMPLE_RATE });
+        const onOpen = () => {
+            connectMicrophoneNodes(audioContextRefs, sessionRefs, stateRef.current.isMuted);
+        };
 
-        sessionPromiseRef.current = ai.live.connect({
-            model: 'gemini-2.5-flash-native-audio-preview-09-2025',
-            callbacks: {
-                onopen: () => {
-                    if (!micStreamRef.current || !inputAudioContextRef.current) return;
-                    
-                    const source = inputAudioContextRef.current.createMediaStreamSource(micStreamRef.current);
-                    const scriptProcessor = inputAudioContextRef.current.createScriptProcessor(SCRIPT_PROCESSOR_BUFFER_SIZE, 1, 1);
-                    
-                    scriptProcessor.onaudioprocess = (event) => {
-                        const inputData = event.inputBuffer.getChannelData(0);
-                        if (!isMuted) {
-                            const pcmBlob = createBlob(inputData);
-                            sessionPromiseRef.current?.then((session) => {
-                                session.sendRealtimeInput({ media: pcmBlob });
-                            }).catch(console.error);
-                        }
-                    };
-                    
-                    source.connect(scriptProcessor);
-                    scriptProcessor.connect(inputAudioContextRef.current.destination);
-
-                    micSourceNodeRef.current = source;
-                    scriptProcessorRef.current = scriptProcessor;
-                },
-                onmessage: async (message: LiveServerMessage) => {
-                    // Handle model audio output
-                    const base64Audio = message.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
-                    if (base64Audio && outputAudioContextRef.current) {
-                        setIsSpeaking(true);
-                        const ctx = outputAudioContextRef.current;
-                        nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime);
-
-                        const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, OUTPUT_SAMPLE_RATE, 1);
-                        const source = ctx.createBufferSource();
-                        source.buffer = audioBuffer;
-                        source.connect(ctx.destination);
-                        
-                        source.addEventListener('ended', () => {
-                            audioQueueRef.current.delete(source);
-                            if (audioQueueRef.current.size === 0) {
-                                setIsSpeaking(false);
-                            }
-                        });
-                        
-                        source.start(nextStartTimeRef.current);
-                        nextStartTimeRef.current += audioBuffer.duration;
-                        audioQueueRef.current.add(source);
-                    }
-                    
-                    // Handle transcriptions
-                    const inputTranscription = message.serverContent?.inputTranscription?.text;
-                    const outputTranscription = message.serverContent?.outputTranscription?.text;
-
-                    if (inputTranscription || outputTranscription) {
-                        if (!liveMessageIdRef.current) {
-                            liveMessageIdRef.current = uuidv4();
-                            addMessage({ id: liveMessageIdRef.current, role: 'user', content: '', isLive: true });
-                            addMessage({ id: `${liveMessageIdRef.current}-model`, role: 'model', content: '', isLive: true });
-                        }
-                        if (inputTranscription) {
-                            currentInputTranscriptionRef.current += inputTranscription;
-                            updateMessage(liveMessageIdRef.current, { content: currentInputTranscriptionRef.current });
-                        }
-                        if (outputTranscription) {
-                            currentOutputTranscriptionRef.current += outputTranscription;
-                            updateMessage(`${liveMessageIdRef.current}-model`, { content: currentOutputTranscriptionRef.current });
-                        }
-                    }
-
-                    // Handle tool calls
-                    if (message.toolCall) {
-                        if (!liveMessageIdRef.current) {
-                            liveMessageIdRef.current = uuidv4();
-                            addMessage({ id: liveMessageIdRef.current, role: 'user', content: '(voice input)', isLive: false });
-                            addMessage({ id: `${liveMessageIdRef.current}-model`, role: 'model', content: '', isLive: true });
-                        }
-                        const modelMessageId = `${liveMessageIdRef.current}-model`;
-
-                        const newToolCalls: ToolCall[] = message.toolCall.functionCalls.map(fc => ({
-                            id: fc.id,
-                            name: fc.name,
-                            args: fc.args,
-                            status: ToolCallStatus.IN_PROGRESS,
-                        }));
-
-                        currentToolCallsRef.current.push(...newToolCalls);
-                        updateMessage(modelMessageId, { toolCalls: [...currentToolCallsRef.current] });
-
-                        for (const fc of message.toolCall.functionCalls) {
-                            const toolFn = toolImplementations[fc.name!];
-                            let status: ToolCallStatus;
-                            try {
-                                if (!toolFn) throw new Error(`Tool "${fc.name}" not implemented.`);
-                                const result = await toolFn(fc.args);
-                                sessionPromiseRef.current?.then((session) => {
-                                    session.sendToolResponse({ functionResponses: { id: fc.id, name: fc.name, response: { result: result } } });
-                                });
-                                status = ToolCallStatus.SUCCESS;
-                            } catch (e) {
-                                 const error = e instanceof Error ? e.message : String(e);
-                                 sessionPromiseRef.current?.then((session) => {
-                                    session.sendToolResponse({ functionResponses: { id: fc.id, name: fc.name, response: { error: error } } });
-                                });
-                                status = ToolCallStatus.ERROR;
-                            }
-                            currentToolCallsRef.current = currentToolCallsRef.current.map(tc =>
-                                tc.id === fc.id ? { ...tc, status } : tc
-                            );
-                            updateMessage(modelMessageId, { toolCalls: [...currentToolCallsRef.current] });
-                        }
-                    }
-                    
-                    if (message.serverContent?.turnComplete) {
-                        const finalUserInput = currentInputTranscriptionRef.current;
-                        const finalModelOutput = currentOutputTranscriptionRef.current;
-
-                        if (liveMessageIdRef.current) {
-                             updateMessage(liveMessageIdRef.current, { content: finalUserInput, isLive: false });
-                             updateMessage(`${liveMessageIdRef.current}-model`, { 
-                                 content: finalModelOutput, 
-                                 isLive: false,
-                                 toolCalls: [...currentToolCallsRef.current]
-                            });
-                        }
-                        
-                        liveMessageIdRef.current = null;
-                        currentInputTranscriptionRef.current = '';
-                        currentOutputTranscriptionRef.current = '';
-                        currentToolCallsRef.current = [];
-                    }
-
-                    if (message.serverContent?.interrupted) {
-                        for (const source of audioQueueRef.current.values()) {
-                            try { source.stop(); } catch(e) {}
-                        }
-                        audioQueueRef.current.clear();
-                        nextStartTimeRef.current = 0;
-                        setIsSpeaking(false);
-                    }
-                },
-                onerror: (e: ErrorEvent) => {
-                    console.error('Live session error:', e);
-                    onPermissionError(`An error occurred with the voice session: ${e.message || 'Unknown error'}. The session has been closed.`);
-                    stopAndCleanup();
-                },
-                onclose: (e: CloseEvent) => {
-                    // This can be triggered by server or by calling .close().
-                    // The cleanup is handled by stopLiveSession or onerror.
-                },
-            },
-            config: {
-                responseModalities: [Modality.AUDIO],
-                inputAudioTranscription: {},
-                outputAudioTranscription: {},
-                speechConfig: {
-                    voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } },
-                },
-                tools: [{ functionDeclarations: allTools }],
-                systemInstruction: liveSystemInstruction
-            },
+        const sessionPromise = createLiveSession({
+            aiRef, settings, activeThread, callbacks: { onopen: onOpen, onmessage: onMessage, onerror: onError, onclose: () => {} },
         });
 
-        sessionPromiseRef.current.then(session => {
-            sessionRef.current = session;
+        sessionRefs.current.sessionPromise = sessionPromise;
+        sessionPromise.then(session => {
+            sessionRefs.current.session = session;
         }).catch(err => {
             console.error("Failed to establish live session:", err);
-            onPermissionError("Could not connect to the live AI service.");
-            stopAndCleanup();
+            propsRef.current.onPermissionError("Could not connect to the live AI service.");
+            performStop();
         });
 
         return true;
-    }, [aiRef, isLive, isMuted, onPermissionError, stopAndCleanup, addMessage, updateMessage, toolImplementations]);
+    }, [onMessage, onError, performStop]);
 
-    const stopLiveSession = useCallback(async () => {
-        playNotificationSound('stop');
-        await stopAndCleanup();
-    }, [stopAndCleanup]);
-    
     const toggleMute = useCallback(() => {
         setIsMuted(prev => !prev);
     }, []);
 
-    useEffect(() => {
-        return () => {
-            // Ensure cleanup on unmount
-            stopAndCleanup();
-        };
-    }, [stopAndCleanup]);
+    const hotSwapSession = useCallback(async () => {
+        console.log("Performing session hot-swap for voice change...");
+        sessionRefs.current.session?.close();
+        if (audioContextRefs.current.scriptProcessor) {
+            audioContextRefs.current.scriptProcessor.disconnect();
+            audioContextRefs.current.scriptProcessor = null;
+        }
 
-    return {
-        isLive,
-        isMuted,
-        isSpeaking,
-        startLiveSession,
-        stopLiveSession,
-        toggleMute,
-    };
+        const { aiRef, settings, activeThread } = propsRef.current;
+        const onOpen = () => {
+            connectMicrophoneNodes(audioContextRefs, sessionRefs, stateRef.current.isMuted);
+        };
+        const newSessionPromise = createLiveSession({
+            aiRef, settings, activeThread, callbacks: { onopen: onOpen, onmessage: onMessage, onerror: onError, onclose: () => {} },
+        });
+
+        sessionRefs.current.sessionPromise = newSessionPromise;
+        newSessionPromise.then(session => {
+            sessionRefs.current.session = session;
+            console.log("Hot-swap complete. New session is live.");
+        }).catch(err => {
+            console.error("Failed to establish new session during hot-swap:", err);
+            propsRef.current.onPermissionError("Could not update the live AI session.");
+            performStop();
+        });
+    }, [onMessage, onError, performStop]);
+
+    // Effect for Session Restart on Voice Change
+    useEffect(() => {
+        const currentVoice = props.settings.voiceName;
+        const previousVoice = previousVoiceNameRef.current;
+        const shouldRestart = isLive && currentVoice !== previousVoice && !isSpeaking && !isAiTurn && !pendingAction;
+
+        if (shouldRestart) {
+            previousVoiceNameRef.current = currentVoice;
+            hotSwapSession();
+        }
+
+        if (!isLive) {
+            previousVoiceNameRef.current = currentVoice;
+        }
+    }, [isLive, isSpeaking, isAiTurn, props.settings.voiceName, hotSwapSession, pendingAction]);
+
+    return { isLive, isMuted, isSpeaking, startLiveSession, stopLiveSession, toggleMute, pauseListening };
 };

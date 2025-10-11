@@ -46,7 +46,7 @@ export const useThreads = () => {
     // Save thread whenever its messages/history change
     useEffect(() => {
         saveActiveThread();
-    }, [activeThread?.messages, activeThread?.history, saveActiveThread]);
+    }, [activeThread, saveActiveThread]);
 
     const createNewThread = () => {
         const newThread: ChatThread = {
@@ -55,6 +55,7 @@ export const useThreads = () => {
             createdAt: Date.now(),
             messages: [],
             history: [],
+            shortTermMemory: {},
         };
         setThreads(prev => [...prev, newThread]);
         setActiveThreadId(newThread.id);
@@ -105,6 +106,12 @@ export const useThreads = () => {
             thread.id === activeThreadId ? { ...thread, history: newHistory } : thread
         ));
     }, [activeThreadId]);
+    
+    const updateThread = useCallback((threadId: string, updates: Partial<ChatThread>) => {
+        setThreads(prev => prev.map(thread =>
+            thread.id === threadId ? { ...thread, ...updates } : thread
+        ));
+    }, []);
 
     return {
         threads,
@@ -116,5 +123,6 @@ export const useThreads = () => {
         addMessage,
         updateMessage,
         updateHistory,
+        updateThread,
     };
 };

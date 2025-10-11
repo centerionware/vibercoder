@@ -7,6 +7,7 @@ import AiHeader from '../ai/AiHeader';
 import MessageList from '../ai/MessageList';
 import ChatInput from '../ai/ChatInput';
 import ChatHistoryModal from '../modals/ChatHistoryModal';
+import ShortTermMemoryDisplay from '../ai/ShortTermMemoryDisplay';
 
 interface AiViewProps {
   aiRef: React.RefObject<GoogleGenAI | null>;
@@ -57,6 +58,8 @@ const AiView: React.FC<AiViewProps> = (props) => {
     setIsHistoryModalOpen(false);
   };
   
+  const hasMemory = activeThread && activeThread.shortTermMemory && Object.keys(activeThread.shortTermMemory).length > 0;
+
   return (
     <div className="flex flex-col flex-1 h-full bg-vibe-bg-deep rounded-lg overflow-hidden">
       <AiHeader 
@@ -66,9 +69,12 @@ const AiView: React.FC<AiViewProps> = (props) => {
         onHistoryClick={() => setIsHistoryModalOpen(true)}
       />
 
+      {hasMemory && <ShortTermMemoryDisplay memory={activeThread.shortTermMemory} />}
+
       <MessageList 
         activeThread={activeThread}
         isResponding={isResponding}
+        onStartLiveSession={props.startLiveSession}
       />
       
       <ChatInput

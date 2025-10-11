@@ -48,6 +48,8 @@ const availableModels: ModelInfo[] = [
   },
 ];
 
+const availableVoices = ['Zephyr', 'Puck', 'Charon', 'Kore', 'Fenrir'];
+
 
 interface SettingsViewProps {
   settings: AppSettings;
@@ -140,6 +142,24 @@ const SettingsView: React.FC<SettingsViewProps> = ({ settings, onSettingsChange,
                     <p className="mt-1 italic">Note: These are total limits provided by Google, not a live view of remaining quota.</p>
                 </div>
               )}
+          </div>
+
+          <div>
+            <label htmlFor="voiceName" className="block text-sm font-medium text-vibe-text mb-1">
+              AI Voice
+            </label>
+            <select
+              id="voiceName"
+              name="voiceName"
+              value={localSettings.voiceName}
+              onChange={handleChange}
+              className="w-full bg-vibe-bg-deep p-2 rounded-md border border-vibe-comment focus:outline-none focus:ring-2 focus:ring-vibe-accent"
+            >
+              {availableVoices.map(voice => (
+                <option key={voice} value={voice}>{voice}</option>
+              ))}
+            </select>
+            <p className="text-xs text-vibe-comment mt-1">Select the voice for the live AI assistant.</p>
           </div>
           
           {localSettings.aiModel === 'gemini-2.5-flash' && (

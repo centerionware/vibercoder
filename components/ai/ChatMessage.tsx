@@ -40,4 +40,4 @@ const ChatMessage: React.FC<{ message: AiMessage }> = ({ message }) => {
     );
 };
 
-export default ChatMessage;
+export default React.memo(ChatMessage);

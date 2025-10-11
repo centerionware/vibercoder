@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { View, AppSettings, AiProvider, ToolCall, ToolCallStatus } from './types';
+import { View, AppSettings, AiProvider, ToolCall, ToolCallStatus, LiveSessionControls } from './types';
 import { dbInitializationError } from './utils/idb';
 import { useFiles } from './hooks/useFiles';
 import { useThreads } from './hooks/useThreads';
@@ -20,6 +20,7 @@ import MicPermissionModal from './components/modals/MicPermissionModal';
 const defaultSettings: AppSettings = {
   aiProvider: AiProvider.Google,
   aiModel: 'gemini-2.5-flash',
+  voiceName: 'Zephyr',
   aiEndpoint: '',
   gitRemoteUrl: '',
   gitUserName: 'vibecoder',
@@ -29,7 +30,7 @@ const defaultSettings: AppSettings = {
 };
 
 function App() {
-  const [activeView, setActiveView] = useState<View>(View.Code);
+  const [activeView, setActiveView] = useState<View>(View.Ai);
   const [settings, setSettings] = useState<AppSettings>(() => {
     try {
       const savedSettings = localStorage.getItem('vibecode_settings');
@@ -52,6 +53,11 @@ function App() {
   
   const aiRef = useRef<GoogleGenAI | null>(null);
   const errorProcessingRef = useRef(false);
+  
+  const liveSessionControlsRef = useRef<LiveSessionControls>({
+    stopLiveSession: () => console.warn("Attempted to stop live session before it was initialized."),
+    pauseListening: (duration, options) => console.warn("Attempted to pause listening before session was initialized."),
+  });
 
   useEffect(() => {
     if (process.env.API_KEY) {
@@ -69,10 +75,15 @@ function App() {
   const toolImplementations = useMemo(() => createToolImplementations({
     files, onWriteFile, onRemoveFile, aiRef, setActiveView, setActiveFile,
     activeFile, bundleLogs, settings, onSettingsChange: handleSettingsChange,
-    threads: threadsState.threads, sandboxErrors, changedFiles,
+    threads: threadsState.threads,
+    activeThread: threadsState.activeThread,
+    updateThread: threadsState.updateThread,
+    sandboxErrors, changedFiles,
+    liveSessionControls: liveSessionControlsRef.current,
   }), [
     files, onWriteFile, onRemoveFile, activeFile, bundleLogs, settings, 
-    handleSettingsChange, threadsState.threads, sandboxErrors, changedFiles
+    handleSettingsChange, threadsState.threads, threadsState.activeThread, 
+    threadsState.updateThread, sandboxErrors, changedFiles
   ]);
 
   const liveSessionState = useAiLive({ 
@@ -81,6 +92,11 @@ function App() {
     activeThread: threadsState.activeThread, updateHistory: threadsState.updateHistory,
     onPermissionError: setMicPermissionError,
   });
+
+  useEffect(() => {
+    liveSessionControlsRef.current.stopLiveSession = liveSessionState.stopLiveSession;
+    liveSessionControlsRef.current.pauseListening = liveSessionState.pauseListening;
+  }, [liveSessionState.stopLiveSession, liveSessionState.pauseListening]);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {

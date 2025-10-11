@@ -7,16 +7,12 @@ export type GeminiContent = {
   parts: GeminiPart[];
 };
 
-// FIX: Defined GeminiFunctionCall and FunctionResponse locally to fix import error.
+// FIX: Defined GeminiFunctionCall locally to fix import error.
 export interface GeminiFunctionCall {
-    name: string;
-    args: { [key: string]: any };
+    // FIX: `name` and `args` are optional to support streaming function calls where parts may arrive separately.
+    name?: string;
+    args?: { [key: string]: any };
     id?: string;
-}
-
-export interface FunctionResponse {
-    name: string;
-    response: { [key: string]: any };
 }
 
 export enum View {
@@ -36,6 +32,7 @@ export enum AiProvider {
 export interface AppSettings {
   aiProvider: AiProvider;
   aiModel: string;
+  voiceName: string; // Added to support selectable voices
   aiEndpoint: string;
   gitRemoteUrl: string;
   gitUserName: string;
@@ -78,12 +75,27 @@ export interface AiMessage {
   }
 }
 
+export interface ShortTermMemory {
+  [key: string]: {
+    value: any;
+    createdAt: number;
+    lastAccessedAt: number;
+    priority: 'low' | 'medium' | 'high';
+  };
+}
+
 export interface ChatThread {
   id: string;
   title: string;
   createdAt: number;
   messages: AiMessage[];
   history: GeminiContent[];
+  shortTermMemory: ShortTermMemory;
+}
+
+export interface LiveSessionControls {
+    stopLiveSession: (options?: { immediate?: boolean; isUnmount?: boolean }) => void;
+    pauseListening: (durationInSeconds: number, options?: { immediate?: boolean }) => void;
 }
 
 // Dependencies for tool implementations
@@ -99,8 +111,11 @@ export interface ToolImplementationsDependencies {
     settings: AppSettings;
     onSettingsChange: (settings: AppSettings) => void;
     threads: ChatThread[];
+    activeThread: ChatThread | undefined;
+    updateThread: (threadId: string, updates: Partial<ChatThread>) => void;
     sandboxErrors: string[];
     changedFiles: string[];
+    liveSessionControls: LiveSessionControls;
 }
 
 // FIX: Added UseAiChatProps interface for useAiChat hook.

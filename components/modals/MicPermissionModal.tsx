@@ -23,7 +23,7 @@ const MicPermissionModal: React.FC<MicPermissionModalProps> = ({ message, onClos
           <h2 className="text-xl font-bold text-yellow-400">Microphone Access Required</h2>
         </header>
         <div className="p-6 text-vibe-text-secondary">
-          <p>{message}</p>
+          <div className="whitespace-pre-wrap">{message}</div>
           <p className="mt-4 text-sm text-vibe-comment">
             Voice features are a core part of the VibeCode experience. Granting microphone access will enable the hands-free "Hey Vibe" wake word and real-time voice chat with the AI assistant.
           </p>

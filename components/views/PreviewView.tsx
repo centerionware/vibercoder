@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { bundleCode } from '../../utils/bundler';
+import { bundle } from '../../bundler';
 import SpinnerIcon from '../icons/SpinnerIcon';
 import ExpandIcon from '../icons/ExpandIcon';
 import CompressIcon from '../icons/CompressIcon';
@@ -41,65 +41,54 @@ const PreviewView: React.FC<PreviewViewProps> = ({ files, isFullScreen, onToggle
         return;
     }
     
-    const entryPoint = activeHtmlFile.replace(/\.html$/, '.tsx');
-
+    const onLog = (message: string) => {
+        setBundleLogs(prev => [...prev, message]);
+    };
+      
     const timer = setTimeout(async () => {
       setIsBundling(true);
       setShowLogs(true);
       setIframeContent('');
       setBundleLogs([]);
-
-      const onLog = (message: string) => {
-        setBundleLogs(prev => [...prev, message]);
-      };
       
+      // Determine the entry point by convention: [name].html -> [name].tsx
+      const baseName = activeHtmlFile.substring(0, activeHtmlFile.lastIndexOf('.'));
+      const entryPoint = `${baseName}.tsx`;
+
       if (!files[entryPoint]) {
           onLog(`--- BUILD FAILED ---`);
-          onLog(`Entry point not found for ${activeHtmlFile}.`);
-          onLog(`Please create a corresponding "${entryPoint}" file.`);
+          onLog(`Convention Error: The preview file "${activeHtmlFile}" requires a matching entry point named "${entryPoint}", which was not found.`);
           setIsBundling(false);
           return;
       }
 
-      const result = await bundleCode(files, entryPoint, onLog);
+      const result = await bundle(files, entryPoint, onLog);
 
       if (result.error) {
         onLog('\n--- BUILD FAILED ---');
         onLog(result.error);
       } else {
         // A new build has succeeded, so any previous runtime errors are now obsolete.
-        // Clearing them here prevents a race condition where the AI tries to read stale errors
-        // that were cleared at the *start* of the build process.
         setSandboxErrors([]);
 
-        const html = files[activeHtmlFile] || '<body></body>';
-
-        // This script is injected into the preview iframe to catch runtime errors
-        // and forward them to the main application for display and AI debugging.
         const errorHandlingScript = `
           <script>
             try {
               const postError = (message) => {
-                // Use a consistent prefix to make logs easily searchable
                 window.parent.postMessage({ type: 'sandbox-error', message }, '*');
               };
-
-              // 1. Catch synchronous errors and script load errors
               window.onerror = function(message, source, lineno, colno, error) {
                 let fullMessage = \`[Runtime Error] \${message}\`;
                 if (source) {
                   const sourceFile = source.split('/').pop();
                   fullMessage += \` at \${sourceFile}:\${lineno}:\${colno}\`;
                 }
-                // The error object often has a more detailed stack, which is invaluable.
                 if (error && error.stack) {
                   fullMessage += \`\\n--- Stack Trace ---\\n\${error.stack}\`;
                 }
                 postError(fullMessage);
-                return true; // Prevents the default browser error console message
+                return true;
               };
-
-              // 2. Catch unhandled promise rejections (for async errors)
               window.addEventListener('unhandledrejection', function(event) {
                 let reason = event.reason;
                 let message = '[Unhandled Promise Rejection]';
@@ -114,8 +103,6 @@ const PreviewView: React.FC<PreviewViewProps> = ({ files, isFullScreen, onToggle
                 }
                 postError(message);
               });
-
-              // 3. Intercept console.error to catch framework-specific errors (e.g., from React)
               const originalConsoleError = console.error;
               console.error = function(...args) {
                 const messageParts = args.map(arg => {
@@ -123,7 +110,6 @@ const PreviewView: React.FC<PreviewViewProps> = ({ files, isFullScreen, onToggle
                     return \`Error: \${arg.message}\\n--- Stack Trace ---\\n\${arg.stack}\`;
                   }
                   try {
-                    // Pretty-print objects for better readability
                     return typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg);
                   } catch (e) {
                     return 'Unserializable object';
@@ -134,7 +120,6 @@ const PreviewView: React.FC<PreviewViewProps> = ({ files, isFullScreen, onToggle
                 originalConsoleError.apply(console, args);
               };
             } catch(e) {
-              // Failsafe in case the error handler itself has an issue.
               window.parent.postMessage({
                 type: 'sandbox-error',
                 message: 'CRITICAL: Failed to initialize preview error handler. ' + (e ? e.message : 'Unknown error'),
@@ -144,19 +129,20 @@ const PreviewView: React.FC<PreviewViewProps> = ({ files, isFullScreen, onToggle
         `;
 
         const bundledScript = `<script type="module">${result.code}</script>`;
+        let finalHtml = files[activeHtmlFile] || '<body></body>';
         
-        let finalHtml = html;
-        
-        // Inject the error handler into the head to catch errors as early as possible.
         if (finalHtml.includes('</head>')) {
             finalHtml = finalHtml.replace('</head>', `${errorHandlingScript}</head>`);
         } else {
-            // If no head, prepend to the document.
             finalHtml = errorHandlingScript + finalHtml;
         }
         
-        // Inject the main application script at the end of the body.
-        if (finalHtml.includes('</body>')) {
+        // This regex finds and replaces the original <script> tag. This is now optional for the user,
+        // but replacing it ensures there's no confusion or double-execution if they leave it in.
+        const scriptTagRegex = /<script[^>]+src="[^"]+"[^>]*type="module"[^>]*><\/script>/i;
+        if (scriptTagRegex.test(finalHtml)) {
+            finalHtml = finalHtml.replace(scriptTagRegex, bundledScript);
+        } else if (finalHtml.includes('</body>')) {
             finalHtml = finalHtml.replace('</body>', `${bundledScript}</body>`);
         } else {
             finalHtml += bundledScript;

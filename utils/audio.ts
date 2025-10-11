@@ -66,44 +66,54 @@ export function createBlob(data: Float32Array): Blob {
   };
 }
 
-
-let notificationAudioContext: AudioContext | null = null;
-
 /**
  * Plays a simple notification sound for user feedback.
  * @param type 'start' for activation, 'stop' for deactivation.
+ * @param context The AudioContext to use for playback.
+ * @returns A promise that resolves when the sound has finished playing.
  */
-export const playNotificationSound = (type: 'start' | 'stop' = 'start') => {
-  try {
-    // Re-use context if available and not closed, otherwise create a new one.
-    if (!notificationAudioContext || notificationAudioContext.state === 'closed') {
-        notificationAudioContext = new AudioContext();
-    }
-    const context = notificationAudioContext;
-
-    // Create oscillator and gain node
-    const oscillator = context.createOscillator();
-    const gainNode = context.createGain();
-
-    oscillator.connect(gainNode);
-    gainNode.connect(context.destination);
-
-    // Set volume (gain)
-    gainNode.gain.setValueAtTime(0, context.currentTime);
-    gainNode.gain.linearRampToValueAtTime(0.2, context.currentTime + 0.01); // Quick ramp up to avoid clicks
-
-    // Set frequency based on type
-    if (type === 'start') {
-        oscillator.frequency.setValueAtTime(880, context.currentTime); // A5 note for activation
-    } else {
-        oscillator.frequency.setValueAtTime(523.25, context.currentTime); // C5 note for deactivation
+export const playNotificationSound = (type: 'start' | 'stop' = 'start', context: AudioContext | null): Promise<void> => {
+  return new Promise((resolve) => {
+    if (!context || context.state === 'closed') {
+      console.warn("Cannot play notification sound: AudioContext is not available or closed.");
+      resolve();
+      return;
     }
 
-    // Schedule start and stop
-    oscillator.start(context.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.00001, context.currentTime + 0.2); // Fade out over 0.2s
-    oscillator.stop(context.currentTime + 0.2);
-  } catch (e) {
-    console.error("Could not play notification sound:", e);
-  }
+    // Ensure the context is running, especially if it was suspended.
+    if (context.state === 'suspended') {
+      context.resume();
+    }
+    
+    try {
+      // Create oscillator and gain node
+      const oscillator = context.createOscillator();
+      const gainNode = context.createGain();
+
+      oscillator.connect(gainNode);
+      gainNode.connect(context.destination);
+
+      // Resolve the promise when the sound has finished playing.
+      oscillator.onended = () => resolve();
+
+      // Set volume (gain)
+      gainNode.gain.setValueAtTime(0, context.currentTime);
+      gainNode.gain.linearRampToValueAtTime(0.2, context.currentTime + 0.01); // Quick ramp up to avoid clicks
+
+      // Set frequency based on type
+      if (type === 'start') {
+          oscillator.frequency.setValueAtTime(880, context.currentTime); // A5 note for activation
+      } else {
+          oscillator.frequency.setValueAtTime(523.25, context.currentTime); // C5 note for deactivation
+      }
+
+      // Schedule start and stop
+      oscillator.start(context.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.00001, context.currentTime + 0.2); // Fade out over 0.2s
+      oscillator.stop(context.currentTime + 0.2);
+    } catch (e) {
+      console.error("Could not play notification sound:", e);
+      resolve(); // Resolve even on error to not block the calling function.
+    }
+  });
 };

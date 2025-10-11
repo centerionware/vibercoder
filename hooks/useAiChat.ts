@@ -1,162 +1,82 @@
 import { useState, useRef, useCallback } from 'react';
-import { v4 as uuidv4 } from 'uuid';
-// Fix: Imported `FunctionCall` to correctly type the streaming function call chunks.
-import { Chat, Part, GenerationConfig, FunctionCall } from '@google/genai';
-import { AiMessage, ToolCall, ToolCallStatus, GeminiFunctionCall, GeminiContent, UseAiChatProps } from '../types';
-import { allTools, systemInstruction } from '../services/toolOrchestrator';
+// FIX: Add GeminiContent to imports to satisfy the type casting for updateHistory.
+import { GeminiContent, UseAiChatProps } from '../../types';
+import { createChatSession } from './useAiChat/chatSessionManager';
+import { processStream } from './useAiChat/streamProcessor';
+import { executeTools } from './useAiChat/toolExecutor';
+import { startTurn, updateTurn, finalizeTurn } from './useAiChat/turnManager';
+import { TurnState } from './useAiChat/types';
 
-export const useAiChat = ({
-    aiRef,
-    settings,
-    activeThread,
-    toolImplementations,
-    addMessage,
-    updateMessage,
-    updateHistory
-}: UseAiChatProps) => {
+export const useAiChat = (props: UseAiChatProps) => {
+    const { aiRef, activeThread, addMessage, updateHistory } = props;
     const [isResponding, setIsResponding] = useState(false);
 
-    // Refs to manage state across a single, multi-step model turn
-    const toolCallsForTurnRef = useRef<ToolCall[]>([]);
-    const modelMessageIdForTurnRef = useRef<string | null>(null);
-    const contentForTurnRef = useRef<string>('');
+    // This ref now holds all the state for a single, complex model turn.
+    const turnStateRef = useRef<TurnState>({
+        toolCalls: [],
+        modelMessageId: null,
+        textContent: '',
+    });
 
     const handleSendMessage = useCallback(async (message: string) => {
         const ai = aiRef.current;
         if (!ai || isResponding || !activeThread) return;
         
         setIsResponding(true);
-        // Reset turn-specific state
-        toolCallsForTurnRef.current = [];
-        contentForTurnRef.current = '';
         
-        const userMessage: AiMessage = { id: uuidv4(), role: 'user', content: message };
-        addMessage(userMessage);
-
-        // Create a new chat session for each message to ensure no stale state.
-        const config: GenerationConfig & { systemInstruction?: any; tools?: any; } = {
-            systemInstruction: systemInstruction,
-            tools: [{ functionDeclarations: allTools }]
-        };
-
-        if (settings.aiModel === 'gemini-2.5-flash' && typeof settings.thinkingBudget === 'number' && settings.thinkingBudget >= 0) {
-            config.thinkingConfig = { thinkingBudget: settings.thinkingBudget };
-            // As per guidelines, maxOutputTokens must be set if thinkingBudget is used.
-            // We'll set it to a generous value to avoid cutting off responses.
-            config.maxOutputTokens = settings.thinkingBudget + 2048; 
-        }
-
-        const chat: Chat = ai.chats.create({
-            model: settings.aiModel,
-            history: activeThread.history,
-            config: config,
-        });
+        startTurn({ turnStateRef, addMessage, userMessage: message });
         
-        // Create a single message for the entire model turn
-        modelMessageIdForTurnRef.current = uuidv4();
-        addMessage({ id: modelMessageIdForTurnRef.current, role: 'model', content: '', thinking: 'Thinking...' });
+        const chat = createChatSession(props);
+        let stream = await chat.sendMessageStream({ message });
 
         const MAX_TOOL_LOOPS = 10;
         let loopCount = 0;
-        let stream = await chat.sendMessageStream({ message });
 
         while (loopCount < MAX_TOOL_LOOPS) {
             loopCount++;
 
-            // Fix: Use the `FunctionCall` type from the SDK to correctly handle partial/streamed function call objects.
-            let functionCallsFromChunk: FunctionCall[] = [];
-            
-            for await (const chunk of stream) {
-                if (chunk.text) {
-                    contentForTurnRef.current += chunk.text;
+            const { accumulatedText, functionCalls } = await processStream({
+                stream,
+                onChunk: (text, fcs) => {
+                    // Provide real-time UI updates as the stream arrives
+                    updateTurn({ turnStateRef, ...props, textUpdate: text, functionCallUpdate: fcs });
                 }
-                if (chunk.functionCalls) {
-                    functionCallsFromChunk.push(...chunk.functionCalls);
-                }
-                updateMessage(modelMessageIdForTurnRef.current!, {
-                    content: contentForTurnRef.current,
-                    thinking: functionCallsFromChunk.length > 0 ? "Thinking about tools..." : isResponding ? "Thinking..." : null,
-                    toolCalls: toolCallsForTurnRef.current,
-                    usageMetadata: chunk.usageMetadata
-                });
+            });
+
+            // After the stream is done, add the final text to our turn's content
+            turnStateRef.current.textContent += accumulatedText;
+            
+            if (functionCalls.length === 0) {
+                break; // No more tools to call, exit the loop.
             }
             
-            const completeFunctionCalls = functionCallsFromChunk.filter(fc => fc.name && fc.args);
-
-            if (completeFunctionCalls.length === 0) {
-                break; // End of turn, no more tools to call
+            // Append a newline if there was text before the tool call
+            if (turnStateRef.current.textContent.trim().length > 0 && !turnStateRef.current.textContent.endsWith('\n\n')) {
+                turnStateRef.current.textContent += '\n\n';
             }
 
-            const newToolCallsForUi: ToolCall[] = completeFunctionCalls.map(fc => ({
-                id: (fc as any).id || uuidv4(),
-                name: fc.name!,
-                args: fc.args!,
-                status: ToolCallStatus.IN_PROGRESS,
-            }));
+            const toolResponseParts = await executeTools({
+                functionCalls,
+                turnStateRef,
+                ...props
+            });
             
-            toolCallsForTurnRef.current.push(...newToolCallsForUi);
-            updateMessage(modelMessageIdForTurnRef.current!, { toolCalls: toolCallsForTurnRef.current, thinking: "Executing tools..." });
-
-            const toolResponseParts: Part[] = await Promise.all(
-                completeFunctionCalls.map(async (fc, index) => {
-                    const uiToolCall = newToolCallsForUi[index];
-                    try {
-                        const toolFn = (toolImplementations as any)[fc.name!];
-                        if (!toolFn) throw new Error(`Tool "${fc.name}" not found.`);
-                        
-                        const result = await toolFn(fc.args);
-
-                        if (fc.name === 'generateImage' && result.base64Image) {
-                            updateMessage(modelMessageIdForTurnRef.current!, { attachments: [{ type: 'image', data: result.base64Image }] });
-                        }
-                        if (fc.name === 'generateVideo' && result.downloadUrl) {
-                            updateMessage(modelMessageIdForTurnRef.current!, { attachments: [{ type: 'video', data: result.downloadUrl }] });
-                        }
-                        
-                        toolCallsForTurnRef.current = toolCallsForTurnRef.current.map(tc => tc.id === uiToolCall.id ? { ...tc, status: ToolCallStatus.SUCCESS } : tc);
-                        updateMessage(modelMessageIdForTurnRef.current!, { toolCalls: toolCallsForTurnRef.current });
-
-                        return { functionResponse: { name: fc.name!, response: { content: result } } };
-                    } catch (e) {
-                        console.error(`Error executing tool ${fc.name!}:`, e);
-                        const error = e instanceof Error ? e.message : String(e);
-
-                        toolCallsForTurnRef.current = toolCallsForTurnRef.current.map(tc => tc.id === uiToolCall.id ? { ...tc, status: ToolCallStatus.ERROR } : tc);
-                        updateMessage(modelMessageIdForTurnRef.current!, { toolCalls: toolCallsForTurnRef.current });
-                        
-                        return { functionResponse: { name: fc.name!, response: { error } } };
-                    }
-                })
-            );
-            
-            if (contentForTurnRef.current.trim().length > 0 && !contentForTurnRef.current.endsWith('\n\n')) {
-                contentForTurnRef.current += '\n\n';
-            }
-
             stream = await chat.sendMessageStream({ message: toolResponseParts });
         }
-        
+
         if (loopCount >= MAX_TOOL_LOOPS) {
-            console.warn("Max tool loops reached. Breaking.");
-            contentForTurnRef.current += "\n\nIt looks like I'm stuck in a loop. I'll stop for now. Please try rephrasing your request.";
+            turnStateRef.current.textContent += "\n\nI seem to be stuck in a loop. I'll stop for now. Please try rephrasing your request.";
         }
         
-        // Final, robust update to ensure all state is persisted correctly.
-        if (modelMessageIdForTurnRef.current) {
-            updateMessage(modelMessageIdForTurnRef.current, { 
-                thinking: null,
-                content: contentForTurnRef.current,
-                toolCalls: toolCallsForTurnRef.current
-            });
-        }
+        finalizeTurn({ turnStateRef, ...props });
         
-        // Update the history with the complete conversation from the session.
-        // FIX: Cast the result of getHistory() to GeminiContent[] to match the expected type.
-        // The Gemini SDK returns a role of `string`, but in a chat context it will always be 'user' or 'model'.
+        // Persist the full conversation history for the next turn
+        // FIX: Cast the result of getHistory() to GeminiContent[] to match the stricter local type.
         updateHistory((await chat.getHistory()) as GeminiContent[]);
 
         setIsResponding(false);
-    }, [aiRef, isResponding, activeThread, settings, addMessage, updateMessage, updateHistory, toolImplementations]);
+
+    }, [aiRef, isResponding, activeThread, addMessage, updateHistory, props]);
 
     return { isResponding, handleSendMessage };
 };
