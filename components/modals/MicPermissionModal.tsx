@@ -1,0 +1,44 @@
+import React from 'react';
+import MicrophoneIcon from '../icons/MicrophoneIcon';
+
+interface MicPermissionModalProps {
+  message: string;
+  onClose: () => void;
+}
+
+const MicPermissionModal: React.FC<MicPermissionModalProps> = ({ message, onClose }) => {
+  return (
+    <div 
+      className="fixed inset-0 bg-vibe-bg/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div 
+        className="bg-vibe-panel rounded-lg shadow-2xl w-full max-w-md flex flex-col border border-yellow-500/30"
+        onClick={e => e.stopPropagation()}
+      >
+        <header className="flex items-center gap-3 p-4 border-b border-vibe-bg-deep">
+          <div className="w-10 h-10 bg-yellow-500/20 rounded-full flex items-center justify-center text-yellow-400">
+            <MicrophoneIcon className="w-6 h-6" />
+          </div>
+          <h2 className="text-xl font-bold text-yellow-400">Microphone Access Required</h2>
+        </header>
+        <div className="p-6 text-vibe-text-secondary">
+          <p>{message}</p>
+          <p className="mt-4 text-sm text-vibe-comment">
+            Voice features are a core part of the VibeCode experience. Granting microphone access will enable the hands-free "Hey Vibe" wake word and real-time voice chat with the AI assistant.
+          </p>
+        </div>
+        <footer className="p-3 bg-vibe-bg-deep/50 text-right">
+            <button
+              onClick={onClose}
+              className="bg-vibe-accent px-5 py-2 rounded-md text-sm text-white font-semibold hover:bg-vibe-accent-hover transition-colors"
+            >
+              OK, I understand
+            </button>
+        </footer>
+      </div>
+    </div>
+  );
+};
+
+export default MicPermissionModal;
