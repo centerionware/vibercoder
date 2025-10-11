@@ -2,8 +2,8 @@ import React from 'react';
 import { View } from '../types';
 import CodeIcon from './icons/CodeIcon';
 import PreviewIcon from './icons/PreviewIcon';
-import GitIcon from './icons/GitIcon';
 import AiIcon from './icons/AiIcon';
+import GitIcon from './icons/GitIcon';
 import SettingsIcon from './icons/SettingsIcon';
 
 interface BottomNavProps {
@@ -14,8 +14,8 @@ interface BottomNavProps {
 const navItems = [
   { view: View.Code, label: 'Code', icon: CodeIcon },
   { view: View.Preview, label: 'Preview', icon: PreviewIcon },
-  { view: View.Git, label: 'Git', icon: GitIcon },
   { view: View.Ai, label: 'AI', icon: AiIcon },
+  { view: View.Git, label: 'Git', icon: GitIcon },
   { view: View.Settings, label: 'Settings', icon: SettingsIcon },
 ];
 

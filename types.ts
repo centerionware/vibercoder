@@ -1,4 +1,5 @@
-import { Part as GeminiPart, FunctionCall as GeminiFunctionCall, FunctionResponse } from '@google/genai';
+import React from 'react';
+import { Part as GeminiPart } from '@google/genai';
 import { GoogleGenAI } from '@google/genai'; // For aiRef
 
 export type GeminiContent = {
@@ -6,13 +7,23 @@ export type GeminiContent = {
   parts: GeminiPart[];
 };
 
-export { GeminiFunctionCall, FunctionResponse };
+// FIX: Defined GeminiFunctionCall and FunctionResponse locally to fix import error.
+export interface GeminiFunctionCall {
+    name: string;
+    args: { [key: string]: any };
+    id?: string;
+}
+
+export interface FunctionResponse {
+    name: string;
+    response: { [key: string]: any };
+}
 
 export enum View {
   Code = 'code',
   Preview = 'preview',
-  Git = 'git',
   Ai = 'ai',
+  Git = 'git',
   Settings = 'settings',
 }
 
@@ -29,6 +40,7 @@ export interface AppSettings {
   gitRemoteUrl: string;
   gitUserName: string;
   gitUserEmail: string;
+  gitProxyUrl: string; // Added to store the user's CORS proxy URL
   thinkingBudget?: number;
 }
 
@@ -86,9 +98,9 @@ export interface ToolImplementationsDependencies {
     bundleLogs: string[];
     settings: AppSettings;
     onSettingsChange: (settings: AppSettings) => void;
-    changedFiles: string[];
     threads: ChatThread[];
     sandboxErrors: string[];
+    changedFiles: string[];
 }
 
 // FIX: Added UseAiChatProps interface for useAiChat hook.

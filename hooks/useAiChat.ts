@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { Chat, Part, GenerationConfig } from '@google/genai';
+// Fix: Imported `FunctionCall` to correctly type the streaming function call chunks.
+import { Chat, Part, GenerationConfig, FunctionCall } from '@google/genai';
 import { AiMessage, ToolCall, ToolCallStatus, GeminiFunctionCall, GeminiContent, UseAiChatProps } from '../types';
 import { allTools, systemInstruction } from '../services/toolOrchestrator';
 
@@ -62,7 +63,8 @@ export const useAiChat = ({
         while (loopCount < MAX_TOOL_LOOPS) {
             loopCount++;
 
-            let functionCallsFromChunk: GeminiFunctionCall[] = [];
+            // Fix: Use the `FunctionCall` type from the SDK to correctly handle partial/streamed function call objects.
+            let functionCallsFromChunk: FunctionCall[] = [];
             
             for await (const chunk of stream) {
                 if (chunk.text) {
@@ -86,9 +88,9 @@ export const useAiChat = ({
             }
 
             const newToolCallsForUi: ToolCall[] = completeFunctionCalls.map(fc => ({
-                id: fc.id || uuidv4(),
+                id: (fc as any).id || uuidv4(),
                 name: fc.name!,
-                args: fc.args,
+                args: fc.args!,
                 status: ToolCallStatus.IN_PROGRESS,
             }));
             
@@ -116,7 +118,7 @@ export const useAiChat = ({
 
                         return { functionResponse: { name: fc.name!, response: { content: result } } };
                     } catch (e) {
-                        console.error(`Error executing tool ${fc.name}:`, e);
+                        console.error(`Error executing tool ${fc.name!}:`, e);
                         const error = e instanceof Error ? e.message : String(e);
 
                         toolCallsForTurnRef.current = toolCallsForTurnRef.current.map(tc => tc.id === uiToolCall.id ? { ...tc, status: ToolCallStatus.ERROR } : tc);

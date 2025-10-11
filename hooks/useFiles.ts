@@ -1,4 +1,5 @@
-import { useState, useCallback, useEffect } from 'react';
+// Fix: Added Dispatch and SetStateAction to imports to resolve type errors.
+import { useState, useCallback, useEffect, Dispatch, SetStateAction } from 'react';
 
 const initialFiles: Record<string, string> = {
     'index.html': `<!DOCTYPE html>
@@ -50,26 +51,29 @@ h1 {
 `,
 };
 
+// A static snapshot to compare against for changes.
+const initialFilesSnapshot = { ...initialFiles };
 
-export const useFiles = (setChangedFiles: React.Dispatch<React.SetStateAction<string[]>>) => {
+// Fix: Use imported Dispatch and SetStateAction types directly.
+export const useFiles = (setChangedFiles: Dispatch<SetStateAction<string[]>>) => {
     const [files, setFiles] = useState<Record<string, string>>(initialFiles);
     const [activeFile, setActiveFile] = useState<string | null>('index.tsx');
 
-    // Mock tracking changed files for Git view
-    const trackChange = (filename: string) => {
-      setChangedFiles(prev => {
-        if (prev.includes(filename)) return prev;
-        return [...prev, filename];
-      });
-    };
+    useEffect(() => {
+        const changed = Object.keys(files).filter(filename => {
+            // A file is changed if it's new or its content is different.
+            return !initialFilesSnapshot.hasOwnProperty(filename) || initialFilesSnapshot[filename] !== files[filename];
+        });
+        const deleted = Object.keys(initialFilesSnapshot).filter(filename => !files.hasOwnProperty(filename));
+        setChangedFiles([...new Set([...changed, ...deleted])]);
+    }, [files, setChangedFiles]);
 
     const handleWriteFile = useCallback((filename: string, content: string) => {
         setFiles(prevFiles => ({
             ...prevFiles,
             [filename]: content,
         }));
-        trackChange(filename);
-    }, [setChangedFiles]);
+    }, []);
 
     const handleRemoveFile = useCallback((filename: string) => {
       setFiles(prevFiles => {
@@ -80,16 +84,8 @@ export const useFiles = (setChangedFiles: React.Dispatch<React.SetStateAction<st
       if (activeFile === filename) {
         setActiveFile(null);
       }
-      // Note: In a real Git system, deleting would also be a "change".
-      // For this mock, we'll remove it from the changed list if it exists.
-      setChangedFiles(prev => prev.filter(f => f !== filename));
-    }, [activeFile, setChangedFiles]);
+    }, [activeFile]);
     
-    // Initialize changed files on load (for demo)
-    useEffect(() => {
-        setChangedFiles(['index.tsx']);
-    }, [setChangedFiles])
-
     return {
         files,
         activeFile,

@@ -1,3 +1,5 @@
+// Fix: Add missing import for React.
+import React from 'react';
 import { FunctionDeclaration, Type, GoogleGenAI } from '@google/genai';
 
 // Tool Declarations for Gemini

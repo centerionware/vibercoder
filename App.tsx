@@ -11,9 +11,9 @@ import Header from './components/Header';
 import BottomNav from './components/BottomNav';
 import CodeView from './components/views/CodeView';
 import PreviewView from './components/views/PreviewView';
-import GitView from './components/views/GitView';
 import AiView from './components/views/AiView';
 import SettingsView from './components/views/SettingsView';
+import GitView from './components/views/GitView';
 import ErrorFallback from './components/ErrorFallback';
 import MicPermissionModal from './components/modals/MicPermissionModal';
 
@@ -24,6 +24,7 @@ const defaultSettings: AppSettings = {
   gitRemoteUrl: '',
   gitUserName: 'vibecoder',
   gitUserEmail: 'vibecoder@example.com',
+  gitProxyUrl: '',
   thinkingBudget: 100,
 };
 
@@ -41,9 +42,10 @@ function App() {
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [sandboxErrors, setSandboxErrors] = useState<string[]>([]);
   const [bundleLogs, setBundleLogs] = useState<string[]>([]);
-  const [changedFiles, setChangedFiles] = useState<string[]>([]);
   const [isCloning, setIsCloning] = useState(false);
   const [micPermissionError, setMicPermissionError] = useState<string | null>(null);
+  const [changedFiles, setChangedFiles] = useState<string[]>([]);
+  const [isCommitting, setIsCommitting] = useState(false);
   
   const { files, activeFile, setActiveFile, onWriteFile, onRemoveFile } = useFiles(setChangedFiles);
   const threadsState = useThreads();
@@ -67,10 +69,10 @@ function App() {
   const toolImplementations = useMemo(() => createToolImplementations({
     files, onWriteFile, onRemoveFile, aiRef, setActiveView, setActiveFile,
     activeFile, bundleLogs, settings, onSettingsChange: handleSettingsChange,
-    changedFiles, threads: threadsState.threads, sandboxErrors,
+    threads: threadsState.threads, sandboxErrors, changedFiles,
   }), [
     files, onWriteFile, onRemoveFile, activeFile, bundleLogs, settings, 
-    handleSettingsChange, changedFiles, threadsState.threads, sandboxErrors
+    handleSettingsChange, threadsState.threads, sandboxErrors, changedFiles
   ]);
 
   const liveSessionState = useAiLive({ 
@@ -119,6 +121,14 @@ function App() {
     }, 2000);
   };
   
+  const handleCommit = async (message: string) => {
+    setIsCommitting(true);
+    await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate network request
+    alert(`Committed ${changedFiles.length} files with message: "${message}" (mock)`);
+    setChangedFiles([]);
+    setIsCommitting(false);
+  };
+
   if (dbInitializationError) {
       return <ErrorFallback error={dbInitializationError} />;
   }
@@ -132,13 +142,13 @@ function App() {
             files={files} isFullScreen={isFullScreen} onToggleFullScreen={() => setIsFullScreen(p => !p)}
             bundleLogs={bundleLogs} setBundleLogs={setBundleLogs} setSandboxErrors={setSandboxErrors}
         />;
-      case View.Git:
-        return <GitView changedFiles={changedFiles}/>;
       case View.Ai:
         return <AiView
             aiRef={aiRef} settings={settings} toolImplementations={toolImplementations}
             {...threadsState} {...liveSessionState}
         />;
+      case View.Git:
+        return <GitView changedFiles={changedFiles} onCommit={handleCommit} isCommitting={isCommitting} />;
       case View.Settings:
         return <SettingsView settings={settings} onSettingsChange={handleSettingsChange} onGitImport={handleGitImport} isCloning={isCloning} />;
       default:

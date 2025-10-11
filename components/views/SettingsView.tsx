@@ -188,6 +188,32 @@ const SettingsView: React.FC<SettingsViewProps> = ({ settings, onSettingsChange,
         </div>
       </div>
 
+      {/* Git Connection */}
+      <div className="bg-vibe-panel p-6 rounded-lg">
+        <h3 className="text-lg font-semibold mb-4 text-vibe-text-secondary">Git Connection (CORS Proxy)</h3>
+        <p className="text-sm text-vibe-comment mb-4">To securely connect to GitHub from the browser, a CORS proxy is required. You can deploy our open-source, minimal proxy to your own cloud account for free with one click.</p>
+        <div className="flex flex-col sm:flex-row gap-2 mb-4">
+            <button onClick={() => alert('Coming Soon!')} className="flex-1 text-center py-2 px-4 rounded-md bg-[#000000] text-white hover:bg-gray-800 transition-colors">Deploy with Vercel</button>
+            <button onClick={() => alert('Coming Soon!')} className="flex-1 text-center py-2 px-4 rounded-md bg-[#00C7B7] text-white hover:bg-teal-500 transition-colors">Deploy with Netlify</button>
+            <button onClick={() => alert('Coming Soon!')} className="flex-1 text-center py-2 px-4 rounded-md bg-[#F38020] text-white hover:bg-orange-600 transition-colors">Deploy with Cloudflare</button>
+        </div>
+         <div>
+            <label htmlFor="gitProxyUrl" className="block text-sm font-medium text-vibe-text mb-1">
+                Deployed Proxy URL
+            </label>
+            <input
+                type="text"
+                id="gitProxyUrl"
+                name="gitProxyUrl"
+                value={localSettings.gitProxyUrl}
+                onChange={handleChange}
+                placeholder="Paste your deployed proxy URL here"
+                className="w-full bg-vibe-bg-deep p-2 rounded-md border border-vibe-comment focus:outline-none focus:ring-2 focus:ring-vibe-accent"
+            />
+             <p className="text-xs text-vibe-comment mt-1">After deploying, paste the URL here to enable Git operations.</p>
+          </div>
+      </div>
+
       {/* Git Settings */}
       <div className="bg-vibe-panel p-6 rounded-lg">
         <h3 className="text-lg font-semibold mb-4 text-vibe-text-secondary">Git Configuration</h3>

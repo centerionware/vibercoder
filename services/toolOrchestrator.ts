@@ -3,9 +3,9 @@ import { ToolImplementationsDependencies } from '../types';
 
 import * as fileSystem from '../tools/fileSystem';
 import * as creative from '../tools/creative';
-import * as git from '../tools/git';
 import * as appControl from '../tools/appControl';
 import * as memory from '../tools/memory';
+import * as git from '../tools/git';
 
 // The master system prompt that governs the AI's autonomous behavior.
 export const systemInstruction = `You are Vibe, an expert AI pair programmer specializing in React and TypeScript. Your primary goal is to build and modify web applications by directly executing user requests using your available tools.
@@ -46,9 +46,9 @@ export const systemInstruction = `You are Vibe, an expert AI pair programmer spe
 export const allTools: FunctionDeclaration[] = [
   ...fileSystem.declarations,
   ...creative.declarations,
-  ...git.declarations,
   ...appControl.declarations,
   ...memory.declarations,
+  ...git.declarations,
 ];
 
 // Create a factory function that takes dependencies and returns all tool implementations
@@ -56,8 +56,8 @@ export const createToolImplementations = (dependencies: ToolImplementationsDepen
   return {
     ...fileSystem.getImplementations(dependencies),
     ...creative.getImplementations(dependencies),
-    ...git.getImplementations(dependencies),
     ...appControl.getImplementations(dependencies),
     ...memory.getImplementations(dependencies),
+    ...git.getImplementations(dependencies),
   };
 };
