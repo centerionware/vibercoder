@@ -1,12 +1,12 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import html2canvas from 'html2canvas';
 import { v4 as uuidv4 } from 'uuid';
-import { UseAiLiveProps, View, ToolCall, ToolCallStatus } from '../../types';
-import { playNotificationSound } from '../../utils/audio';
+import { UseAiLiveProps, View, ToolCall, ToolCallStatus } from '../types';
+import { playNotificationSound } from '../utils/audio';
 import { createLiveSession } from './useAiLive/sessionManager';
 import { connectMicrophoneNodes, stopAudioProcessing } from './useAiLive/audioManager';
 import { AudioContextRefs, SessionRefs, LiveSession } from './useAiLive/types';
-import { getPreviewState, blobToBase64 } from '../../utils/preview';
+import { getPreviewState, blobToBase64 } from '../utils/preview';
 import { interruptPlayback, playAudioChunk } from './useAiLive/playbackQueue';
 
 

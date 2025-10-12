@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 // FIX: Add GeminiContent to imports to satisfy the type casting for updateHistory.
-import { GeminiContent, UseAiChatProps } from '../../types';
+import { GeminiContent, UseAiChatProps } from '../types';
 import { createChatSession } from './useAiChat/chatSessionManager';
 import { processStream } from './useAiChat/streamProcessor';
 import { executeTools } from './useAiChat/toolExecutor';
