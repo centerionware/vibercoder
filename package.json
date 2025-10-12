@@ -9,10 +9,10 @@
     "open:android": "npx capacitor open android",
     "open:ios": "npx capacitor open ios",
     "start:electron": "npm run build:web && electron .",
-    "build:desktop": "npm run build:web && electron-builder",
-    "build:win": "npm run build:web && electron-builder --win",
-    "build:linux": "npm run build:web && electron-builder --linux",
-    "build:macos": "npm run build:web && electron-builder --mac",
+    "build:desktop": "npm run build:web && electron-builder --publish never",
+    "build:win": "npm run build:web && electron-builder --win --publish never",
+    "build:linux": "npm run build:web && electron-builder --linux --publish never",
+    "build:macos": "npm run build:web && electron-builder --mac --publish never",
     "build:docker": "docker build -t vibecode:latest ."
   },
   "dependencies": {
