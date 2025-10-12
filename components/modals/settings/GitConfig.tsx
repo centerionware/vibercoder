@@ -1,5 +1,5 @@
 import React from 'react';
-import { AppSettings } from '../../types';
+import { AppSettings } from '../../../types';
 
 interface GitConfigProps {
     settings: AppSettings;
