@@ -11,25 +11,50 @@ interface State {
 }
 
 class ErrorBoundary extends React.Component<Props, State> {
-  // FIX: Use a constructor to properly initialize state and ensure `this.props` is available.
-  // This explicitly calls `super(props)`, which can resolve TypeScript errors where `this.props`
-  // is not recognized on the class instance, especially with strict class initialization rules.
+  private handleError: (event: ErrorEvent) => void;
+  private handleRejection: (event: PromiseRejectionEvent) => void;
+
   constructor(props: Props) {
     super(props);
     this.state = {
       hasError: false,
       error: null,
     };
+
+    // Bind event handlers to the component instance
+    this.handleError = (event: ErrorEvent) => {
+      console.error("Global uncaught error:", event.error);
+      this.setState({ hasError: true, error: event.error });
+    };
+
+    this.handleRejection = (event: PromiseRejectionEvent) => {
+      console.error("Global unhandled rejection:", event.reason);
+      // Coerce the reason to an Error object if it's not one already
+      const error = event.reason instanceof Error ? event.reason : new Error(JSON.stringify(event.reason));
+      this.setState({ hasError: true, error });
+    };
   }
 
+  // This is the standard React error boundary method for render-phase errors
   static getDerivedStateFromError(error: Error): State {
-    // Update state so the next render will show the fallback UI.
     return { hasError: true, error };
   }
 
+  // This is for logging errors that were caught by getDerivedStateFromError
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    // Log the error to the console for debugging
-    console.error("Uncaught error:", error, errorInfo);
+    console.error("React ErrorBoundary caught:", error, errorInfo);
+  }
+  
+  // Add global listeners when the component mounts to act as a final safety net
+  componentDidMount() {
+    window.addEventListener('error', this.handleError);
+    window.addEventListener('unhandledrejection', this.handleRejection);
+  }
+
+  // Clean up global listeners when the component unmounts
+  componentWillUnmount() {
+    window.removeEventListener('error', this.handleError);
+    window.removeEventListener('unhandledrejection', this.handleRejection);
   }
 
   render() {

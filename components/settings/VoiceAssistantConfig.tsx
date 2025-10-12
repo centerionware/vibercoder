@@ -33,10 +33,7 @@ const VoiceAssistantConfig: React.FC<VoiceAssistantConfigProps> = ({ settings, o
                             onChange={handleSettingChange}
                             className="w-full bg-vibe-bg p-2 rounded-md text-vibe-text focus:outline-none focus:ring-2 focus:ring-vibe-accent"
                         >
-                            <option value="gemini-2.5-flash-live">Gemini 2.5 Flash Live (Recommended, 3 sessions, 1M tokens/hr, unlimited reqs/day)</option>
-                            <option value="gemini-2.0-flash-live">Gemini 2.0 Flash Live (3 sessions, 1M tokens/hr, unlimited reqs/day)</option>
-                            <option value="gemini-2.5-flash-native-audio-preview-09-2025">Gemini 2.5 Flash Preview Native Audio (1 session, 25k tokens/hr, 5 reqs/day)</option>
-                            <option value="gemini-2.5-flash-native-audio-thinking-experimental">Gemini 2.5 Flash Experimental Native Audio Thinking (1 session, 10k tokens/hr, 5 reqs/day)</option>
+                            <option value="gemini-2.5-flash-native-audio-preview-09-2025">Gemini 2.5 Flash (Native Audio)</option>
                         </select>
                     </div>
                     <div>

@@ -7,13 +7,7 @@ interface AiModelConfigProps {
 }
 
 const availableModels = [
-    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', details: '5/min, 125k/hr, 100/day' },
-    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', details: '10/min, 250k/hr, 250/day' },
-    { id: 'gemini-2.5-flash-preview', name: 'Gemini 2.5 Flash Preview', details: '10/min, 250k/hr, 250/day' },
-    { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash-Lite', details: '15/min, 250k/hr, 1k/day' },
-    { id: 'gemini-2.5-flash-lite-preview', name: 'Gemini 2.5 Flash-Lite Preview', details: '15/min, 250k/hr, 1k/day' },
-    { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', details: '15/min, 1M/hr, 200/day' },
-    { id: 'gemini-2.0-flash-lite', name: 'Gemini 2.0 Flash-Lite', details: '30/min, 1M/hr, 200/day' },
+    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', details: 'The recommended model for general tasks.' },
 ];
 
 const AiModelConfig: React.FC<AiModelConfigProps> = ({ settings, onSettingsChange }) => {
@@ -40,7 +34,7 @@ const AiModelConfig: React.FC<AiModelConfigProps> = ({ settings, onSettingsChang
                         className="w-full bg-vibe-bg p-2 rounded-md text-vibe-text focus:outline-none focus:ring-2 focus:ring-vibe-accent"
                     >
                         {availableModels.map(model => (
-                            <option key={model.id} value={model.id}>{`${model.name} (${model.details})`}</option>
+                            <option key={model.id} value={model.id}>{`${model.name} - ${model.details}`}</option>
                         ))}
                     </select>
                 </div>

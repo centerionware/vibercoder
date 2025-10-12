@@ -2,7 +2,6 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import html2canvas from 'html2canvas';
 import { v4 as uuidv4 } from 'uuid';
 import { Capacitor } from '@capacitor/core';
-import { Camera } from '@capacitor/camera';
 import { UseAiLiveProps, View, ToolCall, ToolCallStatus } from '../types';
 import { playNotificationSound } from '../utils/audio';
 import { createLiveSession } from './useAiLive/sessionManager';
@@ -10,6 +9,7 @@ import { connectMicrophoneNodes, stopAudioProcessing } from './useAiLive/audioMa
 import { AudioContextRefs, SessionRefs, LiveSession } from './useAiLive/types';
 import { getPreviewState, blobToBase64 } from '../utils/preview';
 import { interruptPlayback, playAudioChunk } from './useAiLive/playbackQueue';
+import { ensureMicrophonePermission, ensureCameraPermission } from '../utils/permissions';
 
 
 export const useAiLive = (props: UseAiLiveProps) => {
@@ -455,14 +455,22 @@ export const useAiLive = (props: UseAiLiveProps) => {
         if (output?.state === 'suspended') await output.resume();
 
         try {
+            // Request both microphone and camera permissions for the live session.
+            const hasMicPermission = await ensureMicrophonePermission();
+            const hasCamPermission = await ensureCameraPermission();
+
+            if (!hasMicPermission || !hasCamPermission) {
+                throw new Error('Required permissions were not granted by the user.');
+            }
+
             audioContextRefs.current.micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
             if (!audioContextRefs.current.input) throw new Error("Input AudioContext not initialized.");
             audioContextRefs.current.micSourceNode = audioContextRefs.current.input.createMediaStreamSource(audioContextRefs.current.micStream);
         } catch (e) {
-            console.error("Microphone permission denied:", e);
+            console.error("Permission denied for live session:", e);
             const message = Capacitor.isNativePlatform()
-                ? "Microphone access was denied. Please enable it in your device's app settings."
-                : "Microphone permission was denied. Please enable it in your browser's site settings and reload the page.";
+                ? "Microphone and Camera access are required for live sessions. Please go to your device's app settings to enable these permissions for VibeCode."
+                : "Microphone and Camera permissions were denied. Please enable them in your browser's site settings and reload the page.";
             onPermissionError(message);
             return false;
         }

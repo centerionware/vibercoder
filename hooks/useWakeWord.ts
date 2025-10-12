@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { UseWakeWordProps } from '../types';
 import { Capacitor } from '@capacitor/core';
-import { Camera } from '@capacitor/camera';
+import { ensureMicrophonePermission } from '../utils/permissions';
 
 const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 const isSpeechRecognitionSupported = !!SpeechRecognition;
@@ -38,6 +38,15 @@ export const useWakeWord = ({ wakeWord, onWake, enabled, onPermissionError }: Us
     }
     
     try {
+        const hasPermission = await ensureMicrophonePermission();
+        if (!hasPermission) {
+            const message = Capacitor.isNativePlatform()
+                ? "Microphone permission is required for the wake word feature. Please enable it in the app settings."
+                : "Microphone permission is required for the wake word feature. Please enable it in your browser's site settings.";
+            onPermissionError(message);
+            return; // Exit gracefully, preventing the restart loop.
+        }
+
         const recognition = new SpeechRecognition();
         recognition.continuous = true;
         recognition.interimResults = true;
