@@ -8,10 +8,7 @@ interface VoiceAssistantConfigProps {
 
 const availableVoices = ['Zephyr', 'Puck', 'Charon', 'Kore', 'Fenrir'];
 const availableLiveModels = [
-    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash Live', details: 'Production-ready model with high rate limits (3 sessions, 1M Tokens/Minute).' },
-    { id: 'gemini-2.0-flash-live-preview-04-09', name: 'Gemini 2.0 Flash Live (Preview)', details: 'Legacy preview model with high rate limits (3 sessions, 1M Tokens/Minute).' },
-    { id: 'gemini-2.5-flash-native-audio-preview-09-2025', name: 'Gemini 2.5 Flash (Native Audio Preview)', details: 'Non-production model for native apps. Low rate limits (1 session, 25k TPM, 5 requests/day).' },
-    { id: 'gemini-2.5-flash-experimental-native-audio-thinking', name: 'Gemini 2.5 Flash (Experimental Thinking)', details: 'Experimental non-production model. Very low rate limits (1 session, 10k TPM, 5 requests/day).' },
+    { id: 'gemini-2.5-flash-native-audio-preview-09-2025', name: 'Gemini 2.5 Flash (Native Audio)', details: 'The officially supported model for real-time audio conversations.' },
 ];
 
 
