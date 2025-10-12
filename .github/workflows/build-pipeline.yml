@@ -17,9 +17,34 @@ permissions:
   packages: write
 
 jobs:
+  # Job 0: Run linting and type-checking first. This is a quality gate.
+  lint:
+    name: Lint & Type-Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate package-lock.json
+        run: npm install --package-lock-only
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      # Run the lint script, which performs a TypeScript type check without emitting files.
+      - name: Run linter
+        run: npm run lint
+
   # Job 1: Build the core web assets. This job is the foundation for all subsequent parallel builds.
   build_web:
     name: Build Web Assets
+    needs: lint # This job will only run if the 'lint' job succeeds.
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
