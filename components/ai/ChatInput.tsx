@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import SendIcon from '../icons/SendIcon';
 import SpinnerIcon from '../icons/SpinnerIcon';
 import MicrophoneIcon from '../icons/MicrophoneIcon';
-import StopCircleIcon from '../icons/StopCircleIcon'; // A new icon for stopping
 
 interface ChatInputProps {
   isResponding: boolean;

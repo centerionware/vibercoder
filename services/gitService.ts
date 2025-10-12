@@ -45,14 +45,14 @@ const realGitService: GitService = {
     const oldFiles = await fs.promises.readdir(dir);
     for (const file of oldFiles) {
         if (file === '.git') {
-            await fs.promises.rmdir(`/${file}`, { recursive: true }).catch(() => {});
+            await fs.promises.rmdir(`/${file}`).catch(() => {});
         } else {
             await fs.promises.unlink(`/${file}`).catch(() => {});
         }
     }
 
     await git.clone({
-      fs, http, dir, corsProxy: proxyUrl, url, author,
+      fs, http, dir, corsProxy: proxyUrl, url,
       onAuth: () => ({ username: token }),
     });
     
