@@ -33,20 +33,6 @@ export const useWakeWord = ({ wakeWord, onWake, enabled, onPermissionError }: Us
         return;
     }
 
-    if (Capacitor.isNativePlatform()) {
-        try {
-            const permissions = await Camera.requestPermissions({ permissions: ['microphone'] });
-            if (permissions.microphone !== 'granted') {
-                onPermissionError("Microphone permission is required for the wake word feature. Please grant it in the app settings.");
-                return;
-            }
-        } catch(e) {
-            console.error("Error requesting microphone permission for wake word", e);
-            onPermissionError("Could not request microphone permission. Please check the app settings.");
-            return;
-        }
-    }
-
     if (recognitionRef.current) {
       recognitionRef.current.stop();
     }

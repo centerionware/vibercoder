@@ -455,17 +455,6 @@ export const useAiLive = (props: UseAiLiveProps) => {
         if (output?.state === 'suspended') await output.resume();
 
         try {
-            if (Capacitor.isNativePlatform()) {
-                const permissions = await Camera.requestPermissions({ permissions: ['microphone', 'camera'] });
-                if (permissions.microphone !== 'granted') {
-                    onPermissionError("Microphone permission was denied. Please enable it in your device's app settings to use voice chat.");
-                    return false;
-                }
-                if (permissions.camera !== 'granted') {
-                    console.warn("Camera permission was not granted. Camera-related features will be unavailable in the native app.");
-                }
-            }
-
             audioContextRefs.current.micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
             if (!audioContextRefs.current.input) throw new Error("Input AudioContext not initialized.");
             audioContextRefs.current.micSourceNode = audioContextRefs.current.input.createMediaStreamSource(audioContextRefs.current.micStream);
