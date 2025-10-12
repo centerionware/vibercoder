@@ -1,12 +1,11 @@
 
-
 import { Capacitor } from '@capacitor/core';
 
 type PermissionState = 'prompt' | 'prompt-with-rationale' | 'granted' | 'denied';
 
 /**
  * Ensures that the application has microphone permissions on native platforms.
- * It dynamically imports the `@capacitor/microphone` plugin to query and request permission.
+ * It dynamically imports the `@capacitor-community/voice-recorder` plugin to request permission.
  * @returns {Promise<boolean>} A promise resolving to `true` if permission is granted.
  */
 export async function ensureMicrophonePermission(): Promise<boolean> {
@@ -14,18 +13,12 @@ export async function ensureMicrophonePermission(): Promise<boolean> {
     return true; // Web relies on the browser's own prompt.
   }
   try {
-    const { Microphone } = await import('@capacitor/microphone');
-    let permission: { microphone: PermissionState } = await Microphone.checkPermissions();
-
-    if (permission.microphone === 'granted') {
-      return true;
-    }
-    if (permission.microphone === 'prompt' || permission.microphone === 'prompt-with-rationale') {
-      permission = await Microphone.requestPermissions();
-    }
-    return permission.microphone === 'granted';
+    const { VoiceRecorder } = await import('@capacitor-community/voice-recorder');
+    // This method checks and requests permission in a single call.
+    const result = await VoiceRecorder.requestAudioRecordingPermission();
+    return result.value;
   } catch (e) {
-    console.error("Capacitor Microphone plugin failed. Is it installed?", e);
+    console.error("Capacitor VoiceRecorder plugin failed. Is it installed and synced?", e);
     return false;
   }
 }
