@@ -17,9 +17,9 @@ permissions:
   packages: write
 
 jobs:
-  # Job 1: Build the core web assets and the Docker image. This is the foundation for all other jobs.
-  build_web_and_docker:
-    name: Build Web Assets & Docker Image
+  # Job 1: Build the core web assets. This job is the foundation for all subsequent parallel builds.
+  build_web:
+    name: Build Web Assets
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -52,7 +52,21 @@ jobs:
           name: web-assets
           path: www
 
-      # Docker build and push steps for server deployments.
+  # Job 2: Build the Docker image. This runs in parallel with other platform builds.
+  build_docker:
+    name: Build Docker Image
+    needs: build_web # Depends on the web assets being built first.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download web assets artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-assets
+          path: www
+
       - name: Set repository name to lowercase
         run: echo "repo_lc=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
@@ -71,10 +85,10 @@ jobs:
           push: true
           tags: ghcr.io/${{ env.repo_lc }}:${{ github.sha }}
 
-  # Job 2: Build desktop executables for Windows, macOS, and Linux using a matrix strategy for parallel builds.
+  # Job 3: Build desktop executables for Windows, macOS, and Linux using a matrix strategy for parallel builds.
   build_desktop:
     name: Build Desktop App (${{ matrix.os }})
-    needs: build_web_and_docker # This job can't start until the web assets are ready.
+    needs: build_web # This job can't start until the web assets are ready.
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -128,10 +142,10 @@ jobs:
           name: vibecode-desktop-${{ matrix.os }}
           path: dist/ # The electron-builder output directory.
 
-  # Job 3: Build the native Android APK.
+  # Job 4: Build the native Android APK.
   build_android:
     name: Build Android APK
-    needs: build_web_and_docker
+    needs: build_web
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -176,10 +190,10 @@ jobs:
           name: vibecode-android-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
 
-  # Job 4: Build the native iOS App.
+  # Job 5: Build the native iOS App.
   build_ios:
     name: Build iOS App
-    needs: build_web_and_docker
+    needs: build_web
     runs-on: macos-latest # iOS builds MUST run on a macOS machine.
     steps:
       - name: Checkout repository
