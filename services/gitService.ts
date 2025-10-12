@@ -5,11 +5,19 @@ import { GitService, GitAuthor, GitStatus, GitFileStatus, GitCommit, GitFileChan
 import { Buffer } from 'buffer';
 import { performDiff } from '../utils/diff';
 
-// Initialize a persistent, in-browser filesystem.
-const fs = new FS('vibecode-git-fs');
+// Lazily initialize the persistent, in-browser filesystem to prevent startup crashes.
+let fsInstance: FS | null = null;
+const getFs = (): FS => {
+    if (!fsInstance) {
+        fsInstance = new FS('vibecode-git-fs');
+    }
+    return fsInstance;
+};
+
 const dir = '/';
 
 const readFileFromFS = async (currentDir: string): Promise<Record<string, string>> => {
+    const fs = getFs();
     const files: Record<string, string> = {};
     const entries = await fs.promises.readdir(currentDir);
     for (const entry of entries) {
@@ -32,6 +40,7 @@ const realGitService: GitService = {
   isReal: true,
 
   async clone(url, proxyUrl, author, token) {
+    const fs = getFs();
     // Wipe the filesystem before cloning
     const oldFiles = await fs.promises.readdir(dir);
     for (const file of oldFiles) {
@@ -51,6 +60,7 @@ const realGitService: GitService = {
   },
 
   async status(appFiles) {
+     const fs = getFs();
      for (const filepath in appFiles) {
          await fs.promises.writeFile(`${dir}${filepath}`, appFiles[filepath], 'utf8');
      }
@@ -67,6 +77,7 @@ const realGitService: GitService = {
   },
 
   async commit(message, author, appFiles) {
+    const fs = getFs();
     for (const filepath in appFiles) {
         await fs.promises.writeFile(`${dir}${filepath}`, appFiles[filepath], 'utf8');
     }
@@ -79,6 +90,7 @@ const realGitService: GitService = {
   },
 
   async log(ref = 'HEAD'): Promise<GitCommit[]> {
+    const fs = getFs();
     const commits = await git.log({ fs, dir, ref, depth: 50 });
     return commits.map(c => ({
       oid: c.oid,
@@ -89,15 +101,18 @@ const realGitService: GitService = {
   },
 
   async listBranches(): Promise<string[]> {
+    const fs = getFs();
     return git.listBranches({ fs, dir });
   },
 
   async checkout(branch: string): Promise<{ files: Record<string, string> }> {
+    const fs = getFs();
     await git.checkout({ fs, dir, ref: branch, force: true });
     return { files: await readFileFromFS(dir) };
   },
 
   async readFileAtCommit(oid: string, filepath: string): Promise<string | null> {
+    const fs = getFs();
     try {
         const { blob } = await git.readBlob({ fs, dir, oid, filepath });
         return Buffer.from(blob).toString('utf8');
@@ -108,6 +123,7 @@ const realGitService: GitService = {
   },
 
   async getCommitChanges(oid: string): Promise<GitFileChange[]> {
+    const fs = getFs();
     const commit = await git.readCommit({ fs, dir, oid });
     const parentOid = commit.commit.parent[0];
     if (!parentOid) { // Initial commit
@@ -148,6 +164,7 @@ const realGitService: GitService = {
   },
   
   async getHeadFiles(): Promise<Record<string, string>> {
+    const fs = getFs();
     const files: Record<string, string> = {};
     try {
         await git.walk({
