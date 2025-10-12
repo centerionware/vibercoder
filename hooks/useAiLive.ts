@@ -9,7 +9,7 @@ import { connectMicrophoneNodes, stopAudioProcessing } from './useAiLive/audioMa
 import { AudioContextRefs, SessionRefs, LiveSession } from './useAiLive/types';
 import { getPreviewState, blobToBase64 } from '../utils/preview';
 import { interruptPlayback, playAudioChunk } from './useAiLive/playbackQueue';
-import { ensureMicrophonePermission, ensureCameraPermission } from '../utils/permissions';
+import { requestMediaPermissions } from '../utils/permissions';
 
 
 export const useAiLive = (props: UseAiLiveProps) => {
@@ -455,11 +455,8 @@ export const useAiLive = (props: UseAiLiveProps) => {
         if (output?.state === 'suspended') await output.resume();
 
         try {
-            // Request both microphone and camera permissions for the live session.
-            const hasMicPermission = await ensureMicrophonePermission();
-            const hasCamPermission = await ensureCameraPermission();
-
-            if (!hasMicPermission || !hasCamPermission) {
+            const hasPermissions = await requestMediaPermissions();
+            if (!hasPermissions) {
                 throw new Error('Required permissions were not granted by the user.');
             }
 
