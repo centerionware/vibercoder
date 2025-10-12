@@ -47,12 +47,12 @@ async function capacitorRequest(request: GitHttpRequest): Promise<GitHttpRespons
   }
   const requestBody = Buffer.concat(bodyParts);
 
-  // Set standard git-like headers to ensure the server responds with the correct protocol.
-  const headers = {
-    ...request.headers,
-    'User-Agent': 'git/isomorphic-git (capacitor)',
-    'Accept': '*/*', // Add a generic Accept header
-  };
+  // Use the headers from isomorphic-git. Only add a User-Agent if one isn't already present.
+  // This is the critical fix: Do NOT override the 'Accept' header that isomorphic-git provides.
+  const headers = { ...request.headers };
+  if (!headers['user-agent']) {
+    headers['user-agent'] = 'git/isomorphic-git (capacitor)';
+  }
 
   try {
     const response: HttpResponse = await CapacitorHttp.request({
