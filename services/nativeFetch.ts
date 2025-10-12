@@ -21,7 +21,23 @@ async function readBodyToBuffer(body: BodyInit | null | undefined): Promise<Buff
 
 // A `fetch` implementation using Capacitor's native HTTP plugin
 async function capacitorFetch(url: string | URL, options?: RequestInit): Promise<Response> {
-    const requestBody = await readBodyToBuffer(options?.body);
+    console.log('[VibeCode Debug] capacitorFetch called for URL:', url.toString());
+
+    if (!CapacitorHttp || typeof CapacitorHttp.request !== 'function') {
+        const errorMessage = "FATAL: CapacitorHttp.request is not available! The @capacitor/http plugin may not be installed or synced correctly in your native project.";
+        console.error(`[VibeCode Debug] ${errorMessage}`);
+        // Throw a TypeError to mimic fetch behavior on a critical failure
+        throw new TypeError(errorMessage);
+    }
+    
+    let requestBody: Buffer | undefined;
+    try {
+        requestBody = await readBodyToBuffer(options?.body);
+        console.log('[VibeCode Debug] Body read successfully.');
+    } catch (e) {
+        console.error('[VibeCode Debug] Error in readBodyToBuffer:', e);
+        throw e; // Rethrow the error
+    }
 
     const headers: { [key: string]: string } = {};
     if (options?.headers) {
@@ -33,8 +49,10 @@ async function capacitorFetch(url: string | URL, options?: RequestInit): Promise
             Object.assign(headers, options.headers as Record<string, string>);
         }
     }
+    console.log('[VibeCode Debug] Headers processed:', headers);
 
     try {
+        console.log('[VibeCode Debug] Calling CapacitorHttp.request...');
         const response: HttpResponse = await CapacitorHttp.request({
             method: options?.method || 'GET',
             url: url.toString(),
@@ -43,6 +61,7 @@ async function capacitorFetch(url: string | URL, options?: RequestInit): Promise
             data: requestBody ? requestBody.buffer.slice(requestBody.byteOffset, requestBody.byteOffset + requestBody.byteLength) : undefined,
             responseType: 'arraybuffer'
         });
+        console.log('[VibeCode Debug] CapacitorHttp.request succeeded with status:', response.status);
 
         const responseBody = response.data ? new Uint8Array(response.data as ArrayBuffer) : null;
         
@@ -53,11 +72,13 @@ async function capacitorFetch(url: string | URL, options?: RequestInit): Promise
         });
 
     } catch (e: any) {
-        console.error("Capacitor native fetch failed:", e);
-        // Return a fetch-compatible network error response
-        return new Response(e.message || 'Native network request failed', { status: 503, statusText: 'Service Unavailable' });
+        // This is the critical fix. On network error, `fetch` should reject, not resolve.
+        console.error("[VibeCode Debug] CapacitorHttp.request threw an error:", e);
+        // Throw a new TypeError to mimic the behavior of the browser's fetch API on network failure.
+        throw new TypeError(`Native network request failed: ${e.message || 'Unknown error'}`);
     }
 }
+
 
 // A `fetch` implementation using Electron's IPC to the main process
 async function electronFetch(url: string | URL, options?: RequestInit): Promise<Response> {
