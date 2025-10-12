@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Part as GeminiPart } from '@google/genai';
 import { GoogleGenAI } from '@google/genai'; // For aiRef
@@ -98,6 +99,13 @@ export interface LiveSessionControls {
     pauseListening: (durationInSeconds: number, options?: { immediate?: boolean }) => void;
 }
 
+// Data structure for the state captured from the preview iframe
+export interface PreviewState {
+    videoFrameDataUrl: string | null;
+    videoFrameRect: DOMRect | null;
+    htmlContent: string | null;
+}
+
 // Dependencies for tool implementations
 export interface ToolImplementationsDependencies {
     files: Record<string, string>;
@@ -116,6 +124,10 @@ export interface ToolImplementationsDependencies {
     sandboxErrors: string[];
     changedFiles: string[];
     liveSessionControls: LiveSessionControls;
+    activeView: View;
+    setScreenshotPreview: React.Dispatch<React.SetStateAction<string | null>>;
+    isScreenshotPreviewDisabled: boolean;
+    setIsScreenshotPreviewDisabled: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 // FIX: Added UseAiChatProps interface for useAiChat hook.
@@ -127,6 +139,7 @@ export interface UseAiChatProps {
     addMessage: (message: AiMessage) => void;
     updateMessage: (id: string, updates: Partial<AiMessage>) => void;
     updateHistory: (newHistory: GeminiContent[]) => void;
+    updateThread: (threadId: string, updates: Partial<ChatThread>) => void;
 }
 
 export interface UseAiLiveProps {
@@ -138,6 +151,8 @@ export interface UseAiLiveProps {
     activeThread: ChatThread | undefined;
     updateHistory: (newHistory: GeminiContent[]) => void;
     onPermissionError: (message: string) => void;
+    // FIX: Add activeView to the props for the useAiLive hook.
+    activeView: View;
 }
 
 // FIX: Added UseWakeWordProps to define props for the useWakeWord hook.

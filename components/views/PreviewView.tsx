@@ -70,9 +70,12 @@ const PreviewView: React.FC<PreviewViewProps> = ({ files, isFullScreen, onToggle
       } else {
         // A new build has succeeded, so any previous runtime errors are now obsolete.
         setSandboxErrors([]);
-
-        const errorHandlingScript = `
+        
+        // This script is injected to give the parent window tools to interact with the sandbox.
+        // It now captures the preview's full state (HTML + video frame) for the screenshot tool.
+        const sandboxScripts = `
           <script>
+            // --- VibeCode Error Catcher ---
             try {
               const postError = (message) => {
                 window.parent.postMessage({ type: 'sandbox-error', message }, '*');
@@ -125,6 +128,91 @@ const PreviewView: React.FC<PreviewViewProps> = ({ files, isFullScreen, onToggle
                 message: 'CRITICAL: Failed to initialize preview error handler. ' + (e ? e.message : 'Unknown error'),
               }, '*');
             }
+
+            // --- VibeCode Tooling Listener ---
+            try {
+              window.addEventListener('message', async (event) => {
+                const { type, requestId } = event.data;
+
+                if (type === 'capture-preview-state') {
+                    try {
+                        const video = document.querySelector('video');
+                        let videoFrameDataUrl = null;
+                        let videoFrameRect = null;
+                        
+                        if (video && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+                            const bitmap = await createImageBitmap(video);
+                            const canvas = document.createElement('canvas');
+                            canvas.width = video.videoWidth;
+                            canvas.height = video.videoHeight;
+                            const ctx = canvas.getContext('2d');
+                            if (!ctx) throw new Error('Could not get canvas context');
+                            ctx.drawImage(bitmap, 0, 0);
+                            videoFrameDataUrl = canvas.toDataURL('image/png');
+                            const rect = video.getBoundingClientRect();
+                            videoFrameRect = { x: rect.x, y: rect.y, width: rect.width, height: rect.height, top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left };
+                        }
+
+                        const htmlContent = document.documentElement.innerHTML;
+
+                        window.parent.postMessage({ 
+                            type: 'preview-state-captured', 
+                            requestId,
+                            payload: { videoFrameDataUrl, videoFrameRect, htmlContent }
+                        }, '*');
+
+                    } catch (e) {
+                        const message = e instanceof Error ? e.message : String(e);
+                        window.parent.postMessage({ type: 'preview-state-error', requestId, message }, '*');
+                    }
+
+                } else if (type === 'interact-with-element') {
+                    const { selector, action, value } = event.data.payload;
+                    try {
+                        const element = document.querySelector(selector);
+                        if (!element) {
+                            throw new Error(\`Element not found with selector: "\${selector}"\`);
+                        }
+
+                        switch (action) {
+                            case 'click':
+                                if (typeof element.click === 'function') element.click();
+                                else throw new Error('Element is not clickable.');
+                                break;
+                            case 'type':
+                                if (typeof value === 'undefined') throw new Error('A "value" must be provided for the "type" action.');
+                                if ('value' in element) {
+                                    element.value = value;
+                                    element.dispatchEvent(new Event('input', { bubbles: true }));
+                                    element.dispatchEvent(new Event('change', { bubbles: true }));
+                                } else throw new Error('Element does not have a "value" property to type into.');
+                                break;
+                            case 'focus':
+                                if (typeof element.focus === 'function') element.focus();
+                                else throw new Error('Element is not focusable.');
+                                break;
+                            case 'blur':
+                                if (typeof element.blur === 'function') element.blur();
+                                else throw new Error('Element cannot be blurred.');
+                                break;
+                            default:
+                                throw new Error(\`Unsupported action: "\${action}"\`);
+                        }
+                        
+                        window.parent.postMessage({ type: 'interaction-success', requestId, message: \`Action "\${action}" performed on "\${selector}" successfully.\` }, '*');
+
+                    } catch (e) {
+                        const message = e instanceof Error ? e.message : String(e);
+                        window.parent.postMessage({ type: 'interaction-error', requestId, message }, '*');
+                    }
+                }
+              });
+            } catch (e) {
+              window.parent.postMessage({
+                type: 'sandbox-error',
+                message: 'CRITICAL: Failed to initialize VibeCode tooling listener. ' + (e ? e.message : 'Unknown error'),
+              }, '*');
+            }
           </script>
         `;
 
@@ -132,13 +220,11 @@ const PreviewView: React.FC<PreviewViewProps> = ({ files, isFullScreen, onToggle
         let finalHtml = files[activeHtmlFile] || '<body></body>';
         
         if (finalHtml.includes('</head>')) {
-            finalHtml = finalHtml.replace('</head>', `${errorHandlingScript}</head>`);
+            finalHtml = finalHtml.replace('</head>', `${sandboxScripts}</head>`);
         } else {
-            finalHtml = errorHandlingScript + finalHtml;
+            finalHtml = sandboxScripts + finalHtml;
         }
         
-        // This regex finds and replaces the original <script> tag. This is now optional for the user,
-        // but replacing it ensures there's no confusion or double-execution if they leave it in.
         const scriptTagRegex = /<script[^>]+src="[^"]+"[^>]*type="module"[^>]*><\/script>/i;
         if (scriptTagRegex.test(finalHtml)) {
             finalHtml = finalHtml.replace(scriptTagRegex, bundledScript);
@@ -221,10 +307,12 @@ const PreviewView: React.FC<PreviewViewProps> = ({ files, isFullScreen, onToggle
                 </div>
             )}
              <iframe
+              id="preview-iframe"
               srcDoc={iframeContent}
               title="Live Preview"
               className={`w-full h-full flex-1 border-0 transition-opacity duration-300 ${isBundling || buildHasFailed ? 'opacity-0' : 'opacity-100'}`}
-              sandbox="allow-scripts"
+              sandbox="allow-scripts allow-forms allow-modals allow-popups allow-presentation allow-same-origin"
+              allow="camera; microphone; geolocation; encrypted-media; display-capture"
             />
         </div>
 

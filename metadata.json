@@ -2,6 +2,7 @@
   "name": "VibeCode",
   "description": "A mobile-first, web-based coding platform with seamless Git integration, AI-enhanced productivity, and a live preview experience, all running in the browser.",
   "requestFramePermissions": [
-    "microphone"
+    "microphone",
+    "camera"
   ]
 }

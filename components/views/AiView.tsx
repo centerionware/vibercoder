@@ -19,6 +19,7 @@ interface AiViewProps {
   addMessage: (message: AiMessage) => void;
   updateMessage: (id: string, updates: Partial<AiMessage>) => void;
   updateHistory: (newHistory: any[]) => void;
+  updateThread: (threadId: string, updates: Partial<ChatThread>) => void;
   createNewThread: () => string;
   switchThread: (threadId: string) => void;
   deleteThread: (threadId: string) => void;
@@ -34,7 +35,7 @@ interface AiViewProps {
 const AiView: React.FC<AiViewProps> = (props) => {
   const { 
     aiRef, settings, activeThread, addMessage, updateMessage, 
-    updateHistory, toolImplementations 
+    updateHistory, toolImplementations, updateThread
   } = props;
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   
@@ -46,6 +47,7 @@ const AiView: React.FC<AiViewProps> = (props) => {
     addMessage,
     updateMessage,
     updateHistory,
+    updateThread,
   });
 
   const handleSwitchThread = (threadId: string) => {

@@ -1,3 +1,5 @@
+
+import React from 'react';
 import { createBlob } from '../../utils/audio';
 import { AudioContextRefs, SessionRefs } from './types';
 
@@ -10,7 +12,8 @@ const SCRIPT_PROCESSOR_BUFFER_SIZE = 4096;
 export const connectMicrophoneNodes = (
     audioRefs: React.MutableRefObject<AudioContextRefs>,
     sessionRefs: React.MutableRefObject<SessionRefs>,
-    isMuted: boolean
+    // The stateRef is used to access the LATEST isMuted state inside the onaudioprocess closure.
+    stateRef: React.RefObject<{ isMuted: boolean }>
 ) => {
     const { micSourceNode, input } = audioRefs.current;
     if (!micSourceNode || !input) {
@@ -22,7 +25,7 @@ export const connectMicrophoneNodes = (
     
     scriptProcessor.onaudioprocess = (event) => {
         const inputData = event.inputBuffer.getChannelData(0);
-        if (!isMuted) {
+        if (!stateRef.current?.isMuted) {
             const pcmBlob = createBlob(inputData);
             sessionRefs.current.sessionPromise?.then((session) => {
                 session.sendRealtimeInput({ media: pcmBlob });

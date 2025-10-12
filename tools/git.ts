@@ -7,7 +7,6 @@ import { ToolImplementationsDependencies, View } from '../types';
 export const gitStatusFunction: FunctionDeclaration = {
   name: 'gitStatus',
   description: 'Check the status of the Git repository, showing changed files.',
-  parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const gitCommitFunction: FunctionDeclaration = {

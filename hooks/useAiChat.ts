@@ -26,7 +26,7 @@ export const useAiChat = (props: UseAiChatProps) => {
         
         startTurn({ turnStateRef, addMessage, userMessage: message });
         
-        const chat = createChatSession(props);
+        const chat = await createChatSession(props);
         let stream = await chat.sendMessageStream({ message });
 
         const MAX_TOOL_LOOPS = 10;

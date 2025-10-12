@@ -66,31 +66,50 @@ export const processLiveServerMessage = async (props: MessageProcessorProps) => 
                 if (!toolFn) throw new Error(`Tool "${fc.name}" not implemented.`);
                 
                 const result = await toolFn(fc.args);
-                let toolResponseResult = result;
-
-                // Special handling for the screenshot tool in a live session
+                
+                // Special, more robust handling for visual tools in live sessions
                 if (fc.name === 'captureScreenshot' && result.base64Image) {
-                    // Send the image as a media input, not in the tool response.
-                    sessionRefs.current.sessionPromise?.then((session) => {
-                        session.sendRealtimeInput({
-                            media: { data: result.base64Image, mimeType: 'image/png' }
-                        });
-                    });
-                    // The tool response should be a simple success message.
-                    toolResponseResult = { success: true, message: 'Screenshot captured and sent as visual context.' };
-                }
+                    const session = await sessionRefs.current.sessionPromise;
+                    if (!session) throw new Error("Live session is not available to send image.");
 
-                sessionRefs.current.sessionPromise?.then((session) => {
+                    // 1. Send the image data via the dedicated media channel. This is a fire-and-forget operation.
+                    session.sendRealtimeInput({
+                        media: { data: result.base64Image, mimeType: 'image/png' }
+                    });
+                    
+                    // 2. Introduce a necessary delay. This is a pragmatic workaround for a race condition
+                    //    inherent in the Live API's design. Since media and tool responses are sent on
+                    //    separate asynchronous channels, this delay gives the (larger) image data a
+                    //    head start to be processed by the backend before the (smaller) tool response arrives,
+                    //    which prevents the AI from responding before it has "seen" the new image.
+                    await new Promise(resolve => setTimeout(resolve, 750));
+
+                    // 3. Send a structured tool response that forcefully instructs the AI to use the new image.
+                    const toolResponseResult = {
+                        status: "Success",
+                        confirmation: "A screenshot has been captured and provided as new visual context.",
+                        instruction: "Analyze the new screenshot provided in this turn and describe what you see. Your analysis MUST be based exclusively on this new image."
+                    };
+
                     session.sendToolResponse({ functionResponses: { id: fc.id, name: fc.name, response: { result: toolResponseResult } } });
-                });
+
+                } else {
+                    // Standard path for all other non-visual tools.
+                    const session = await sessionRefs.current.sessionPromise;
+                    if (!session) throw new Error("Live session is not available to send tool response.");
+                    session.sendToolResponse({ functionResponses: { id: fc.id, name: fc.name, response: { result } } });
+                }
+                
                 status = ToolCallStatus.SUCCESS;
+
             } catch (e) {
                 const error = e instanceof Error ? e.message : String(e);
-                sessionRefs.current.sessionPromise?.then((session) => {
-                    session.sendToolResponse({ functionResponses: { id: fc.id, name: fc.name, response: { error } } });
-                });
+                const session = await sessionRefs.current.sessionPromise;
+                session?.sendToolResponse({ functionResponses: { id: fc.id, name: fc.name, response: { error } } });
                 status = ToolCallStatus.ERROR;
             }
+            
+            // Update UI status for the tool call
             sessionRefs.current.currentToolCalls = sessionRefs.current.currentToolCalls.map(tc =>
                 tc.id === fc.id ? { ...tc, status } : tc
             );

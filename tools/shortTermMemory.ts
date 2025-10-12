@@ -6,7 +6,6 @@ import { ToolImplementationsDependencies, ShortTermMemory } from '../types';
 export const viewShortTermMemoryFunction: FunctionDeclaration = {
   name: 'viewShortTermMemory',
   description: 'View the contents of your short-term memory. This is your working context for the current task.',
-  parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const updateShortTermMemoryFunction: FunctionDeclaration = {

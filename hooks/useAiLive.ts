@@ -1,10 +1,13 @@
+
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { UseAiLiveProps } from '../../types';
+import html2canvas from 'html2canvas';
+import { UseAiLiveProps, View } from '../../types';
 import { playNotificationSound } from '../../utils/audio';
 import { createLiveSession } from './useAiLive/sessionManager';
 import { connectMicrophoneNodes, stopAudioProcessing } from './useAiLive/audioManager';
 import { processLiveServerMessage } from './useAiLive/messageProcessor';
-import { AudioContextRefs, SessionRefs } from './useAiLive/types';
+import { AudioContextRefs, SessionRefs, LiveSession } from './useAiLive/types';
+import { getPreviewState, blobToBase64 } from '../../utils/preview';
 
 export const useAiLive = (props: UseAiLiveProps) => {
     // --- State and Refs ---
@@ -36,40 +39,96 @@ export const useAiLive = (props: UseAiLiveProps) => {
 
     const uiUpdateTimerRef = useRef<number | null>(null);
     const previousVoiceNameRef = useRef(props.settings.voiceName);
+    const streamIntervalRef = useRef<number | null>(null);
 
-    // --- One-time Audio Engine Setup ---
-    useEffect(() => {
-        const input = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
-        const output = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-        audioContextRefs.current.input = input;
-        audioContextRefs.current.output = output;
-        
-        console.log("AudioContexts created.");
-
-        return () => {
-            if (stateRef.current.isLive) {
-                // The cleanup function cannot be async, so we call without awaiting.
-                // The internal logic will still execute.
-                stopLiveSession({ isUnmount: true, immediate: true });
-            }
-            input.close().catch(console.error);
-            output.close().catch(console.error);
-            console.log("AudioContexts closed.");
-        };
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     // --- Core Logic Implementations ---
-    
+
+    const captureAndStreamFrame = useCallback(async (sessionPromise: Promise<LiveSession>) => {
+        try {
+            const captureTarget = document.getElementById('app-container');
+            if (!captureTarget) return;
+
+            const { activeView } = propsRef.current;
+            const previewState = activeView === View.Preview ? await getPreviewState() : null;
+
+            const sourceCanvas = await html2canvas(captureTarget, {
+                useCORS: true, logging: false, allowTaint: true,
+                onclone: (clonedDoc) => {
+                    if (clonedDoc && previewState?.htmlContent) {
+                         const clonedIframe = clonedDoc.querySelector('#preview-iframe') as HTMLIFrameElement | null;
+                         if(clonedIframe) {
+                            const rect = clonedIframe.getBoundingClientRect();
+                            const replacementDiv = clonedDoc.createElement('div');
+                            replacementDiv.style.width = `${rect.width}px`;
+                            replacementDiv.style.height = `${rect.height}px`;
+                            const shadow = replacementDiv.attachShadow({ mode: 'open' });
+                            shadow.innerHTML = previewState.htmlContent;
+                             if (previewState.videoFrameDataUrl && previewState.videoFrameRect) {
+                                const videoEl = shadow.querySelector('video');
+                                if (videoEl) {
+                                    const img = clonedDoc.createElement('img');
+                                    img.src = previewState.videoFrameDataUrl;
+                                    const wrapper = clonedDoc.createElement('div');
+                                    wrapper.style.position = 'relative';
+                                    videoEl.parentNode?.insertBefore(wrapper, videoEl);
+                                    img.style.position = 'absolute';
+                                    img.style.left = `${previewState.videoFrameRect.left}px`;
+                                    img.style.top = `${previewState.videoFrameRect.top}px`;
+                                    img.style.width = `${previewState.videoFrameRect.width}px`;
+                                    img.style.height = `${previewState.videoFrameRect.height}px`;
+                                    wrapper.appendChild(img);
+                                    videoEl.style.visibility = 'hidden';
+                                }
+                            }
+                            clonedIframe.parentNode?.replaceChild(replacementDiv, clonedIframe);
+                         }
+                    }
+                }
+            });
+            
+            // Resize to the required 768x768 for the API
+            const targetCanvas = document.createElement('canvas');
+            targetCanvas.width = 768;
+            targetCanvas.height = 768;
+            const ctx = targetCanvas.getContext('2d');
+            if (!ctx) return;
+            
+            ctx.fillStyle = '#1a1b26'; // vibe-bg color for letterboxing
+            ctx.fillRect(0, 0, 768, 768);
+
+            const ratio = Math.min(768 / sourceCanvas.width, 768 / sourceCanvas.height);
+            const width = sourceCanvas.width * ratio;
+            const height = sourceCanvas.height * ratio;
+            const x = (768 - width) / 2;
+            const y = (768 - height) / 2;
+            ctx.drawImage(sourceCanvas, x, y, width, height);
+            
+            targetCanvas.toBlob(async (blob) => {
+                if (blob) {
+                    const base64Data = await blobToBase64(blob);
+                    const session = await sessionPromise;
+                    session.sendRealtimeInput({ media: { data: base64Data, mimeType: 'image/jpeg' } });
+                }
+            }, 'image/jpeg', 0.8);
+
+        } catch (error) {
+            console.warn("Failed to capture and stream frame:", error);
+        }
+    }, []);
+
     const performStop = useCallback(async (options: { isUnmount?: boolean } = {}) => {
         if (!stateRef.current.isLive) return;
         
         const { isUnmount = false } = options;
         
-        // Set UI state to not-live immediately for responsiveness.
         setIsLive(false);
+        if (streamIntervalRef.current) {
+            clearInterval(streamIntervalRef.current);
+            streamIntervalRef.current = null;
+        }
 
         if (!isUnmount) {
-            // Await the sound to ensure it finishes playing before we tear down resources.
             await playNotificationSound('stop', audioContextRefs.current.output);
         }
         
@@ -89,6 +148,8 @@ export const useAiLive = (props: UseAiLiveProps) => {
         sessionRefs.current.isAiTurn = false;
     }, []);
 
+    // ... (rest of the hook is the same until startLiveSession)
+    
     const performPause = useCallback((durationInSeconds: number) => {
         if (!stateRef.current.isLive || stateRef.current.isMuted) return;
         console.log(`Pausing listening for ${durationInSeconds} seconds.`);
@@ -101,8 +162,6 @@ export const useAiLive = (props: UseAiLiveProps) => {
         }, durationInSeconds * 1000);
     }, []);
 
-    // Effect to execute pending actions when the AI is completely finished.
-    // This means its turn is over (no more data coming) AND it has finished speaking.
     useEffect(() => {
         const canExecuteAction = !isAiTurn && !isSpeaking && pendingAction;
 
@@ -120,8 +179,6 @@ export const useAiLive = (props: UseAiLiveProps) => {
         }
     }, [isAiTurn, isSpeaking, pendingAction, pendingPauseDuration, performStop, performPause]);
 
-
-    // --- Core Callbacks (Stabilized with refs) ---
     const requestUiUpdate = useCallback(() => {
         if (uiUpdateTimerRef.current) return;
     
@@ -129,7 +186,6 @@ export const useAiLive = (props: UseAiLiveProps) => {
             const { liveMessageId, currentInputTranscription, currentOutputTranscription, currentToolCalls } = sessionRefs.current;
             
             if (liveMessageId) {
-                // Reading latest values from the ref inside the timeout is crucial
                 propsRef.current.updateMessage(liveMessageId, { content: currentInputTranscription });
                 propsRef.current.updateMessage(`${liveMessageId}-model`, { 
                     content: currentOutputTranscription,
@@ -138,7 +194,7 @@ export const useAiLive = (props: UseAiLiveProps) => {
             }
             
             uiUpdateTimerRef.current = null;
-        }, 100); // Batch UI updates every 100ms
+        }, 100);
     }, []);
 
     const cancelUiUpdate = useCallback(() => {
@@ -147,7 +203,6 @@ export const useAiLive = (props: UseAiLiveProps) => {
             uiUpdateTimerRef.current = null;
         }
     }, []);
-
 
     const onMessage = useCallback((message: any) => {
         processLiveServerMessage({
@@ -166,10 +221,12 @@ export const useAiLive = (props: UseAiLiveProps) => {
         console.error('Live session error:', e);
         let userMessage = `An error occurred with the voice session: ${e.message || 'Unknown error'}. The session has been closed.`;
 
-        if (e.message && e.message.toLowerCase().includes('permission')) {
+        if (e.message?.toLowerCase().includes('permission')) {
             userMessage = `The AI voice session failed due to a permission error. Please check the following:\n\n1. Your API key is correct and active.\n2. The "Generative Language API" is enabled in your Google Cloud project.\n3. Your API key restrictions (like HTTP referrers) allow this application's domain.`;
-        } else if (e.message && e.message.toLowerCase().includes('internal error')) {
+        } else if (e.message?.toLowerCase().includes('internal error')) {
             userMessage = `The AI voice session encountered an internal server error. This might be a temporary issue with the service. Please try starting a new session in a few moments.`;
+        } else if (e.message?.toLowerCase().includes('deadline expired')) {
+            userMessage = `The connection to the AI voice session timed out. This can happen with an unstable network connection or if the browser suspends the audio process. Please try again.`;
         }
         
         propsRef.current.onPermissionError(userMessage);
@@ -186,7 +243,6 @@ export const useAiLive = (props: UseAiLiveProps) => {
         if (immediate) {
             performStop();
         } else {
-            // AI-initiated actions are never immediate. Queue them to be executed after the turn.
             setPendingAction('stop');
         }
     }, [performStop]);
@@ -196,7 +252,6 @@ export const useAiLive = (props: UseAiLiveProps) => {
         if (immediate) {
             performPause(durationInSeconds);
         } else {
-             // AI-initiated actions are never immediate. Queue them to be executed after the turn.
             setPendingPauseDuration(durationInSeconds);
             setPendingAction('pause');
         }
@@ -213,7 +268,8 @@ export const useAiLive = (props: UseAiLiveProps) => {
 
         try {
             audioContextRefs.current.micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            audioContextRefs.current.micSourceNode = input.createMediaStreamSource(audioContextRefs.current.micStream);
+            if (!audioContextRefs.current.input) throw new Error("Input AudioContext not initialized.");
+            audioContextRefs.current.micSourceNode = audioContextRefs.current.input.createMediaStreamSource(audioContextRefs.current.micStream);
         } catch (e) {
             console.error("Microphone permission denied:", e);
             onPermissionError("Microphone permission was denied. Please enable it in your browser's site settings and reload the page.");
@@ -224,7 +280,7 @@ export const useAiLive = (props: UseAiLiveProps) => {
         setIsLive(true);
         
         const onOpen = () => {
-            connectMicrophoneNodes(audioContextRefs, sessionRefs, stateRef.current.isMuted);
+            connectMicrophoneNodes(audioContextRefs, sessionRefs, stateRef);
         };
 
         const sessionPromise = createLiveSession({
@@ -232,6 +288,12 @@ export const useAiLive = (props: UseAiLiveProps) => {
         });
 
         sessionRefs.current.sessionPromise = sessionPromise;
+
+        // Start the visual stream
+        streamIntervalRef.current = window.setInterval(() => {
+            captureAndStreamFrame(sessionPromise);
+        }, 1000);
+
         sessionPromise.then(session => {
             sessionRefs.current.session = session;
         }).catch(err => {
@@ -241,7 +303,7 @@ export const useAiLive = (props: UseAiLiveProps) => {
         });
 
         return true;
-    }, [onMessage, onError, performStop]);
+    }, [onMessage, onError, performStop, captureAndStreamFrame]);
 
     const toggleMute = useCallback(() => {
         setIsMuted(prev => !prev);
@@ -257,7 +319,7 @@ export const useAiLive = (props: UseAiLiveProps) => {
 
         const { aiRef, settings, activeThread } = propsRef.current;
         const onOpen = () => {
-            connectMicrophoneNodes(audioContextRefs, sessionRefs, stateRef.current.isMuted);
+            connectMicrophoneNodes(audioContextRefs, sessionRefs, stateRef);
         };
         const newSessionPromise = createLiveSession({
             aiRef, settings, activeThread, callbacks: { onopen: onOpen, onmessage: onMessage, onerror: onError, onclose: () => {} },
@@ -273,6 +335,41 @@ export const useAiLive = (props: UseAiLiveProps) => {
             performStop();
         });
     }, [onMessage, onError, performStop]);
+
+    // --- One-time Audio Engine Setup ---
+     useEffect(() => {
+        const input = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+        const output = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+        audioContextRefs.current.input = input;
+        audioContextRefs.current.output = output;
+        
+        console.log("AudioContexts created.");
+
+        return () => {
+            if (stateRef.current.isLive) {
+                stopLiveSession({ isUnmount: true, immediate: true });
+            }
+            input.close().catch(console.error);
+            output.close().catch(console.error);
+            console.log("AudioContexts closed.");
+        };
+    }, []); // eslint-disable-line react-hooks-exhaustive-deps
+
+    // Sanity check to prevent audio context suspension by the browser
+    useEffect(() => {
+        if (!isLive) return;
+
+        const sanityCheckInterval = setInterval(() => {
+            const { input } = audioContextRefs.current;
+            if (input?.state === 'suspended') {
+                console.warn("Input AudioContext was suspended by the browser. Attempting to resume...");
+                input.resume().catch(e => console.error("Failed to resume input AudioContext:", e));
+            }
+        }, 3000); // Check every 3 seconds
+
+        return () => clearInterval(sanityCheckInterval);
+    }, [isLive]);
+
 
     // Effect for Session Restart on Voice Change
     useEffect(() => {

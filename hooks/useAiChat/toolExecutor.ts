@@ -45,7 +45,7 @@ export const executeTools = async ({
             updateMessage(modelMessageId, { attachments: [{ type: 'video', data: result.downloadUrl }] });
         }
 
-        // Handle screenshot tool, which injects an image into the next prompt
+        // Handle image-based tools, which inject an image into the next prompt
         if (fc.name === 'captureScreenshot' && result.base64Image) {
             parts.push({
                 inlineData: {
@@ -53,13 +53,24 @@ export const executeTools = async ({
                     data: result.base64Image,
                 }
             });
-            // Also add a simple success response for the tool call itself
+
+            // This structured response gives the model a very strong hint to use the new image.
+            const screenshotResponse = {
+                status: "Success",
+                confirmation: "A screenshot of the user's application has been captured and is included in this turn's context.",
+                instruction: "Your next response must be an analysis based *only* on the visual information in this new screenshot."
+            };
+            
             parts.push({
-                functionResponse: { name: fc.name, response: { success: true, message: 'Screenshot captured and provided as context.' } }
+                functionResponse: {
+                    name: fc.name!,
+                    response: screenshotResponse,
+                }
             });
+
         } else {
             // Standard tool response for all other tools
-            parts.push({ functionResponse: { name: fc.name!, response: { content: result } } });
+            parts.push({ functionResponse: { name: fc.name!, response: result } });
         }
 
         // Update UI to show success

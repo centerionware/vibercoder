@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { View, AppSettings, AiProvider, ToolCall, ToolCallStatus, LiveSessionControls } from './types';
@@ -16,6 +17,7 @@ import SettingsView from './components/views/SettingsView';
 import GitView from './components/views/GitView';
 import ErrorFallback from './components/ErrorFallback';
 import MicPermissionModal from './components/modals/MicPermissionModal';
+import ScreenshotModal from './components/modals/ScreenshotModal';
 
 const defaultSettings: AppSettings = {
   aiProvider: AiProvider.Google,
@@ -47,6 +49,8 @@ function App() {
   const [micPermissionError, setMicPermissionError] = useState<string | null>(null);
   const [changedFiles, setChangedFiles] = useState<string[]>([]);
   const [isCommitting, setIsCommitting] = useState(false);
+  const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null);
+  const [isScreenshotPreviewDisabled, setIsScreenshotPreviewDisabled] = useState(false);
   
   const { files, activeFile, setActiveFile, onWriteFile, onRemoveFile } = useFiles(setChangedFiles);
   const threadsState = useThreads();
@@ -80,10 +84,15 @@ function App() {
     updateThread: threadsState.updateThread,
     sandboxErrors, changedFiles,
     liveSessionControls: liveSessionControlsRef.current,
+    activeView,
+    setScreenshotPreview,
+    isScreenshotPreviewDisabled,
+    setIsScreenshotPreviewDisabled,
   }), [
     files, onWriteFile, onRemoveFile, activeFile, bundleLogs, settings, 
     handleSettingsChange, threadsState.threads, threadsState.activeThread, 
-    threadsState.updateThread, sandboxErrors, changedFiles
+    threadsState.updateThread, sandboxErrors, changedFiles, activeView,
+    isScreenshotPreviewDisabled
   ]);
 
   const liveSessionState = useAiLive({ 
@@ -91,7 +100,19 @@ function App() {
     updateMessage: threadsState.updateMessage, toolImplementations,
     activeThread: threadsState.activeThread, updateHistory: threadsState.updateHistory,
     onPermissionError: setMicPermissionError,
+    // FIX: Pass activeView to the useAiLive hook to be used for context-aware screenshotting.
+    activeView,
   });
+  
+  const handleRetryLiveSession = useCallback(() => {
+    // The modal's onClose will handle clearing the error state.
+    liveSessionState.stopLiveSession({ immediate: true });
+    // A small delay to ensure all cleanup from the previous session is complete before starting a new one.
+    setTimeout(() => {
+        liveSessionState.startLiveSession();
+    }, 150);
+  }, [liveSessionState]);
+
 
   useEffect(() => {
     liveSessionControlsRef.current.stopLiveSession = liveSessionState.stopLiveSession;
@@ -182,17 +203,34 @@ function App() {
          </div>
       )
   }
+  
+  const isErrorRetryable = micPermissionError?.toLowerCase().includes('session') || 
+                          micPermissionError?.toLowerCase().includes('deadline') ||
+                          micPermissionError?.toLowerCase().includes('internal error');
+
 
   return (
-    <div className="h-screen w-screen bg-vibe-bg flex flex-col p-4 gap-4">
+    <div id="app-container" className="h-screen w-screen bg-vibe-bg flex flex-col p-4 gap-4">
       {micPermissionError && (
         <MicPermissionModal 
             message={micPermissionError} 
             onClose={() => setMicPermissionError(null)} 
+            onRetry={handleRetryLiveSession}
+            isRetryable={isErrorRetryable}
+        />
+      )}
+      {screenshotPreview && (
+        <ScreenshotModal 
+          imageDataUrl={screenshotPreview}
+          onClose={() => setScreenshotPreview(null)}
+          onDisable={() => {
+            setIsScreenshotPreviewDisabled(true);
+            setScreenshotPreview(null);
+          }}
         />
       )}
       <Header />
-      <main className="flex-1 flex min-h-0">
+      <main id="main-content" className="flex-1 flex min-h-0">
         {renderView()}
       </main>
       <div className="h-20 flex-shrink-0" />

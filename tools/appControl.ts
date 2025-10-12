@@ -1,7 +1,10 @@
+
 import { FunctionDeclaration, Type } from '@google/genai';
 import html2canvas from 'html2canvas';
 import { ToolImplementationsDependencies, View, AppSettings } from '../types';
 import { normalizePath } from '../utils/path';
+// FIX: Import `postMessageToPreviewAndWait` to make it available for the `interactWithPreview` tool.
+import { getPreviewState, postMessageToPreviewAndWait } from '../utils/preview';
 
 // --- Static Data for Settings ---
 const availableVoices = ['Zephyr', 'Puck', 'Charon', 'Kore', 'Fenrir'];
@@ -42,31 +45,26 @@ export const openFileFunction: FunctionDeclaration = {
 export const viewActiveFileFunction: FunctionDeclaration = {
     name: 'viewActiveFile',
     description: 'Check which file the user is currently viewing in the code editor.',
-    parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const viewBuildOutputFunction: FunctionDeclaration = {
     name: 'viewBuildOutput',
     description: 'View the logs from the last build process to help diagnose bundling errors.',
-    parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const viewRuntimeErrorsFunction: FunctionDeclaration = {
     name: 'viewRuntimeErrors',
     description: 'View the runtime errors captured from the preview pane from the last execution.',
-    parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const viewBuildEnvironmentFunction: FunctionDeclaration = {
     name: 'viewBuildEnvironment',
     description: 'Inspect the configuration of the in-browser bundler (esbuild-wasm) to understand the build environment, such as JSX settings, module resolution logic, and entry point conventions.',
-    parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const viewSettingsFunction: FunctionDeclaration = {
     name: 'viewSettings',
     description: "View the application's current settings and the available options for each setting.",
-    parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const updateSettingsFunction: FunctionDeclaration = {
@@ -107,13 +105,40 @@ export const pauseListeningFunction: FunctionDeclaration = {
 export const stopListeningFunction: FunctionDeclaration = {
     name: 'stopListening',
     description: 'Stops the voice assistant session completely. The microphone will be turned off.',
-    parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const captureScreenshotFunction: FunctionDeclaration = {
   name: 'captureScreenshot',
-  description: 'Captures a screenshot of the current application view and provides it as visual context. Use this when the user asks you to look at the UI, debug a visual issue, or give feedback on the layout.',
-  parameters: { type: Type.OBJECT, properties: {} },
+  description: "Captures a real-time screenshot of the user's entire application window, exactly as they see it. Use this tool as your 'eyes' to analyze the UI, read text, inspect layouts, or see the output of code. Your subsequent analysis MUST be grounded exclusively in the content of the image provided by this tool.",
+};
+
+export const enableScreenshotPreviewFunction: FunctionDeclaration = {
+    name: 'enableScreenshotPreview',
+    description: 'Re-enables the screenshot preview modal if the user has previously disabled it for the session. Use this if the user asks to see the screenshots again.',
+};
+
+export const interactWithPreviewFunction: FunctionDeclaration = {
+  name: 'interactWithPreview',
+  description: 'Interacts with an element inside the live preview iframe, like clicking a button or typing in an input field. Use this to test application behavior or manipulate the UI state.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      selector: {
+        type: Type.STRING,
+        description: 'A CSS selector to identify the target element (e.g., "#my-button", ".form-input", "button[type=submit]").',
+      },
+      action: {
+        type: Type.STRING,
+        description: "The action to perform on the element.",
+        enum: ['click', 'type', 'focus', 'blur'],
+      },
+      value: {
+        type: Type.STRING,
+        description: 'Optional. The text value to type into the element. Required for the "type" action.',
+      },
+    },
+    required: ['selector', 'action'],
+  },
 };
 
 export const declarations = [
@@ -128,6 +153,8 @@ export const declarations = [
     pauseListeningFunction,
     stopListeningFunction,
     captureScreenshotFunction,
+    enableScreenshotPreviewFunction,
+    interactWithPreviewFunction,
 ];
 
 // --- Implementations Factory ---
@@ -141,7 +168,11 @@ export const getImplementations = ({
     files,
     sandboxErrors,
     liveSessionControls,
-}: Pick<ToolImplementationsDependencies, 'setActiveView' | 'setActiveFile' | 'activeFile' | 'bundleLogs' | 'settings' | 'onSettingsChange' | 'files' | 'sandboxErrors' | 'liveSessionControls'>) => ({
+    activeView,
+    setScreenshotPreview,
+    isScreenshotPreviewDisabled,
+    setIsScreenshotPreviewDisabled,
+}: ToolImplementationsDependencies) => ({
     switchView: async (args: { view: View }) => {
         if (Object.values(View).includes(args.view)) {
             setActiveView(args.view);
@@ -184,7 +215,8 @@ export const getImplementations = ({
             supportedLoaders: ['tsx', 'ts', 'css', 'js', 'jsx'],
             globalDefines: {
                 'process.env.NODE_ENV': '"production"',
-                'global': 'window',
+                'process.env.API_KEY': `"${process.env.API_KEY}"`,
+                global: 'window',
             },
         };
     },
@@ -221,32 +253,81 @@ export const getImplementations = ({
         return { success: true };
     },
     captureScreenshot: async () => {
-        const rootElement = document.getElementById('root');
-        if (!rootElement) {
-            throw new Error('Could not find the root application element to screenshot.');
-        }
-        // Temporarily hide the bottom nav to avoid capturing it in screenshots of the main content
-        const navElement = document.querySelector('nav');
-        const originalDisplay = navElement ? navElement.style.display : '';
-        if (navElement) {
-            navElement.style.display = 'none';
-        }
+        const captureTarget = document.getElementById('app-container');
+        if (!captureTarget) throw new Error('Could not find app container to capture.');
 
-        const canvas = await html2canvas(rootElement, {
+        // Get the preview state only if the preview view is active.
+        const previewState = activeView === View.Preview ? await getPreviewState() : null;
+
+        const canvas = await html2canvas(captureTarget, {
             useCORS: true,
             logging: false,
-            // Try to capture the entire scrolled content, not just the visible part
-            windowWidth: rootElement.scrollWidth,
-            windowHeight: rootElement.scrollHeight,
-        });
-        
-        // Restore the nav
-        if (navElement) {
-            navElement.style.display = originalDisplay;
-        }
+            allowTaint: true,
+            onclone: (clonedDoc) => {
+                const clonedIframe = clonedDoc.querySelector('#preview-iframe') as HTMLIFrameElement | null;
+                
+                if (clonedIframe && previewState?.htmlContent) {
+                    const rect = clonedIframe.getBoundingClientRect();
+                    const replacementDiv = clonedDoc.createElement('div');
+                    replacementDiv.style.width = `${rect.width}px`;
+                    replacementDiv.style.height = `${rect.height}px`;
 
-        // Get base64 string, removing the data URL prefix
-        const base64Image = canvas.toDataURL('image/png').split(',')[1];
+                    try {
+                        const shadow = replacementDiv.attachShadow({ mode: 'open' });
+                        shadow.innerHTML = previewState.htmlContent;
+                        
+                        if (previewState.videoFrameDataUrl && previewState.videoFrameRect) {
+                            const videoEl = shadow.querySelector('video');
+                            if (videoEl) {
+                                const img = clonedDoc.createElement('img');
+                                img.src = previewState.videoFrameDataUrl;
+                                const wrapper = clonedDoc.createElement('div');
+                                wrapper.style.position = 'relative';
+                                videoEl.parentNode?.insertBefore(wrapper, videoEl);
+                                
+                                img.style.position = 'absolute';
+                                img.style.left = `${previewState.videoFrameRect.left}px`;
+                                img.style.top = `${previewState.videoFrameRect.top}px`;
+                                img.style.width = `${previewState.videoFrameRect.width}px`;
+                                img.style.height = `${previewState.videoFrameRect.height}px`;
+                                
+                                wrapper.appendChild(img);
+                                videoEl.style.visibility = 'hidden';
+                            }
+                        }
+                    } catch (e) {
+                        console.error("Error reconstructing preview in screenshot clone:", e);
+                    }
+                    
+                    clonedIframe.parentNode?.replaceChild(replacementDiv, clonedIframe);
+                }
+            },
+        });
+
+        const dataURL = canvas.toDataURL('image/png');
+        
+        if (!isScreenshotPreviewDisabled) {
+            setScreenshotPreview(dataURL);
+        }
+        
+        const base64Image = dataURL.split(',')[1];
         return { base64Image };
+    },
+    enableScreenshotPreview: async () => {
+        setIsScreenshotPreviewDisabled(false);
+        return { success: true, message: "Screenshot preview has been re-enabled for this session." };
+    },
+    interactWithPreview: async (args: { selector: string; action: string; value?: string }) => {
+        try {
+            const { message } = await postMessageToPreviewAndWait<{ message: string }>(
+                { type: 'interact-with-element', payload: args },
+                'interaction-success',
+                'interaction-error'
+            );
+            return { success: true, message };
+        } catch(error) {
+            const message = error instanceof Error ? error.message : String(error);
+            throw new Error(`Interaction failed in preview: ${message}`);
+        }
     },
 });
