@@ -33,12 +33,12 @@ export const useProjects = () => {
         }
     }, [activeProjectId]);
 
-    const createNewProject = useCallback(async (name: string, setActive: boolean = true) => {
+    const createNewProject = useCallback(async (name: string, setActive: boolean = true, remoteUrl: string = ''): Promise<Project> => {
         const newProject: Project = {
             id: uuidv4(),
             name,
             entryPoint: 'index.tsx',
-            gitRemoteUrl: '',
+            gitRemoteUrl: remoteUrl,
             createdAt: Date.now(),
             gitSettings: {
                 source: 'global' // Default to using global settings
@@ -49,6 +49,7 @@ export const useProjects = () => {
         if (setActive) {
             setActiveProjectId(newProject.id);
         }
+        return newProject;
     }, []);
 
     const switchProject = (id: string) => {

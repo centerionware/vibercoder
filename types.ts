@@ -188,7 +188,7 @@ export interface ToolImplementationsDependencies {
 // Git Service
 export interface GitService {
     isReal: boolean;
-    clone(url: string, proxyUrl: string, author: GitAuthor, token: string): Promise<{ files: Record<string, string> }>;
+    clone(url: string, proxyUrl: string | undefined, author: GitAuthor, token: string): Promise<{ files: Record<string, string> }>;
     status(appFiles: Record<string, string>, changedFilePaths?: string[]): Promise<GitStatus[]>;
     commit(message: string, author: GitAuthor, appFiles: Record<string, string>): Promise<{ oid: string }>;
     log(ref?: string): Promise<GitCommit[]>;

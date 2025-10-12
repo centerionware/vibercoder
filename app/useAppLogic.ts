@@ -9,6 +9,7 @@ import { useThreads } from '../hooks/useThreads';
 import { useGitCredentials } from '../hooks/useGitCredentials';
 import { useAiLive } from '../hooks/useAiLive';
 import { useWakeWord } from '../hooks/useWakeWord';
+import { isNativeEnvironment } from '../utils/environment';
 
 import { createGitService } from '../services/gitService';
 import { createToolImplementations } from '../services/toolOrchestrator';
@@ -153,7 +154,7 @@ export const useAppLogic = () => {
     let userName = settings.gitUserName;
     let userEmail = settings.gitUserEmail;
     let authToken = settings.gitAuthToken;
-    let corsProxy = settings.gitCorsProxy;
+    let corsProxy: string | undefined = settings.gitCorsProxy;
 
     if (projectSettings?.source === 'default' && defaultCredential) {
         authToken = defaultCredential.token;
@@ -170,30 +171,54 @@ export const useAppLogic = () => {
     
     remoteUrl = activeProject?.gitRemoteUrl || remoteUrl;
 
+    // In native environments (Capacitor/Electron), bypass the CORS proxy for direct connections.
+    if (isNativeEnvironment()) {
+        corsProxy = undefined;
+    }
+
     return { remoteUrl, userName, userEmail, authToken, corsProxy };
   }, [activeProject, settings, gitCredentials]);
   
-  const handleClone = useCallback(async () => {
+  const handleClone = useCallback(async (url: string, name: string) => {
     if (!gitServiceRef.current) return;
-    const { remoteUrl, userName, userEmail, authToken, corsProxy } = resolveGitSettings();
-    if (!remoteUrl) {
-      alert("No remote URL configured for this project. Please set it in the project's settings.");
+    
+    const defaultCredential = gitCredentials.find(c => c.isDefault);
+    const authToken = defaultCredential?.token || settings.gitAuthToken;
+    const userName = settings.gitUserName;
+    const userEmail = settings.gitUserEmail;
+    let corsProxy: string | undefined = settings.gitCorsProxy;
+    
+    // In native environments (Capacitor/Electron), bypass the CORS proxy for direct connections.
+    if (isNativeEnvironment()) {
+        corsProxy = undefined;
+    }
+
+    if (!url || !url.trim()) {
+      alert("Please provide a Git repository URL to clone.");
+      return;
+    }
+    if (!name || !name.trim()) {
+      alert("Please provide a local name for the new project.");
       return;
     }
     
     setIsCloning(true);
     try {
       const { files: clonedFiles } = await gitServiceRef.current.clone(
-        remoteUrl, corsProxy, { name: userName, email: userEmail }, authToken
+        url, corsProxy, { name: userName, email: userEmail }, authToken
       );
+      
+      const newProject = await createNewProject(name, false, url);
       setFiles(clonedFiles);
+      switchProject(newProject.id);
+
     } catch (error: any) {
         alert(`Cloning failed: ${error.message}`);
     } finally {
       setIsCloning(false);
       setIsProjectModalOpen(false);
     }
-  }, [resolveGitSettings, setFiles]);
+  }, [settings, gitCredentials, createNewProject, setFiles, switchProject]);
 
   const handleCommit = useCallback(async (message: string) => {
     if (!gitServiceRef.current) return;

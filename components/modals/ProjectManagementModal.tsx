@@ -3,6 +3,7 @@ import { Project } from '../../types';
 import PlusIcon from '../icons/PlusIcon';
 import TrashIcon from '../icons/TrashIcon';
 import CogIcon from '../icons/CogIcon';
+import SpinnerIcon from '../icons/SpinnerIcon';
 
 interface ProjectManagementModalProps {
   isOpen: boolean;
@@ -14,10 +15,11 @@ interface ProjectManagementModalProps {
   onDeleteProject: (id: string) => void;
   onOpenProjectSettings: (project: Project) => void;
   onCloneProject: (url: string, name: string) => void;
+  isCloning?: boolean;
 }
 
 const ProjectManagementModal: React.FC<ProjectManagementModalProps> = (props) => {
-  const { isOpen, onClose, projects, activeProject, onNewProject, onSwitchProject, onDeleteProject, onOpenProjectSettings, onCloneProject } = props;
+  const { isOpen, onClose, projects, activeProject, onNewProject, onSwitchProject, onDeleteProject, onOpenProjectSettings, onCloneProject, isCloning } = props;
   const [newProjectName, setNewProjectName] = useState('');
   const [cloneUrl, setCloneUrl] = useState('');
   const [cloneProjectName, setCloneProjectName] = useState('');
@@ -89,8 +91,13 @@ const ProjectManagementModal: React.FC<ProjectManagementModalProps> = (props) =>
             <div className="space-y-2">
                 <input type="text" value={cloneUrl} onChange={e => setCloneUrl(e.target.value)} placeholder="Git Repository URL" className="w-full bg-vibe-bg p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-vibe-accent" />
                 <input type="text" value={cloneProjectName} onChange={e => setCloneProjectName(e.target.value)} placeholder="Local project name" className="w-full bg-vibe-bg p-2 rounded-md focus:outline-none focus:ring-2 focus:ring-vibe-accent" />
-                <button onClick={handleClone} className="w-full bg-vibe-bg-deep text-vibe-text-secondary px-4 py-2 rounded-md hover:bg-vibe-comment transition-colors">
-                    Clone Project
+                <button 
+                    onClick={handleClone} 
+                    disabled={isCloning}
+                    className="w-full bg-vibe-bg-deep text-vibe-text-secondary px-4 py-2 rounded-md hover:bg-vibe-comment transition-colors disabled:opacity-50 disabled:cursor-wait flex items-center justify-center"
+                >
+                    {isCloning && <SpinnerIcon className="w-5 h-5 mr-2" />}
+                    {isCloning ? 'Cloning...' : 'Clone Project'}
                 </button>
             </div>
           </div>

@@ -80,6 +80,7 @@ const App = () => {
         onDeleteProject={app.deleteProject}
         onOpenProjectSettings={(p) => { app.setProjectToEdit(p); app.setIsProjectSettingsModalOpen(true); }}
         onCloneProject={app.handleClone}
+        isCloning={app.isCloning}
       />
       <ProjectSettingsModal
         isOpen={app.isProjectSettingsModalOpen}

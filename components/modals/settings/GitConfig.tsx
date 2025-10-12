@@ -18,7 +18,7 @@ const GitConfig: React.FC<GitConfigProps> = ({ settings, onSettingsChange, onMan
             <h3 className="text-lg font-semibold text-vibe-text mb-2">Git Configuration (Global Fallback)</h3>
             <div className="bg-vibe-panel p-4 rounded-lg space-y-4">
                 <p className="text-xs text-vibe-comment">
-                    These are the default global settings. They can be overridden by project-specific settings.
+                    These are the default global settings. The CORS Proxy URL is required for Git operations in the web browser version of VibeCode. It is automatically bypassed in the native mobile and desktop apps. These settings can be overridden by project-specific configurations.
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
