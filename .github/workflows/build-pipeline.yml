@@ -160,8 +160,8 @@ jobs:
           name: web-assets
           path: www
 
-      - name: Add and Sync Capacitor Android platform
-        run: npx capacitor add android && npx capacitor sync android
+      - name: Sync Capacitor Android platform
+        run: npx capacitor sync android
         
       - name: Make gradlew executable
         run: chmod +x android/gradlew
