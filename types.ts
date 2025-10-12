@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Part as GeminiPart } from '@google/genai';
 import { GoogleGenAI } from '@google/genai'; // For aiRef
@@ -97,6 +96,8 @@ export interface ChatThread {
 export interface LiveSessionControls {
     stopLiveSession: (options?: { immediate?: boolean; isUnmount?: boolean }) => void;
     pauseListening: (durationInSeconds: number, options?: { immediate?: boolean }) => void;
+    enableVideoStream: () => void;
+    disableVideoStream: () => void;
 }
 
 // Data structure for the state captured from the preview iframe
@@ -153,6 +154,7 @@ export interface UseAiLiveProps {
     onPermissionError: (message: string) => void;
     // FIX: Add activeView to the props for the useAiLive hook.
     activeView: View;
+    setLiveFrameData: React.Dispatch<React.SetStateAction<string | null>>;
 }
 
 // FIX: Added UseWakeWordProps to define props for the useWakeWord hook.

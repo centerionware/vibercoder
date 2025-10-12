@@ -59,8 +59,6 @@ const AiView: React.FC<AiViewProps> = (props) => {
     props.createNewThread();
     setIsHistoryModalOpen(false);
   };
-  
-  const hasMemory = activeThread && activeThread.shortTermMemory && Object.keys(activeThread.shortTermMemory).length > 0;
 
   return (
     <div className="flex flex-col flex-1 h-full bg-vibe-bg-deep rounded-lg overflow-hidden">
@@ -71,12 +69,13 @@ const AiView: React.FC<AiViewProps> = (props) => {
         onHistoryClick={() => setIsHistoryModalOpen(true)}
       />
 
-      {hasMemory && <ShortTermMemoryDisplay memory={activeThread.shortTermMemory} />}
+      <ShortTermMemoryDisplay memory={activeThread?.shortTermMemory} />
 
       <MessageList 
         activeThread={activeThread}
         isResponding={isResponding}
         onStartLiveSession={props.startLiveSession}
+        isLive={props.isLive} // Pass down the live state
       />
       
       <ChatInput

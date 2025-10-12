@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { View, AppSettings, AiProvider, ToolCall, ToolCallStatus, LiveSessionControls } from './types';
@@ -18,6 +17,7 @@ import GitView from './components/views/GitView';
 import ErrorFallback from './components/ErrorFallback';
 import MicPermissionModal from './components/modals/MicPermissionModal';
 import ScreenshotModal from './components/modals/ScreenshotModal';
+import LiveVideoPreviewModal from './components/modals/LiveVideoPreviewModal';
 
 const defaultSettings: AppSettings = {
   aiProvider: AiProvider.Google,
@@ -51,16 +51,19 @@ function App() {
   const [isCommitting, setIsCommitting] = useState(false);
   const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null);
   const [isScreenshotPreviewDisabled, setIsScreenshotPreviewDisabled] = useState(false);
+  const [liveFrameData, setLiveFrameData] = useState<string | null>(null);
+  const [isLiveVideoModalOpen, setIsLiveVideoModalOpen] = useState(false);
   
   const { files, activeFile, setActiveFile, onWriteFile, onRemoveFile } = useFiles(setChangedFiles);
   const threadsState = useThreads();
   
   const aiRef = useRef<GoogleGenAI | null>(null);
-  const errorProcessingRef = useRef(false);
   
   const liveSessionControlsRef = useRef<LiveSessionControls>({
     stopLiveSession: () => console.warn("Attempted to stop live session before it was initialized."),
     pauseListening: (duration, options) => console.warn("Attempted to pause listening before session was initialized."),
+    enableVideoStream: () => console.warn("Attempted to enable video before session was initialized."),
+    disableVideoStream: () => console.warn("Attempted to disable video before session was initialized."),
   });
 
   useEffect(() => {
@@ -102,8 +105,47 @@ function App() {
     onPermissionError: setMicPermissionError,
     // FIX: Pass activeView to the useAiLive hook to be used for context-aware screenshotting.
     activeView,
+    setLiveFrameData,
   });
   
+  const handleSendErrorToAi = useCallback((errors: string[]) => {
+    if (errors.length === 0) return;
+
+    if (liveSessionState.isLive) {
+      if (threadsState.activeThread) {
+        toolImplementations.updateShortTermMemory({
+          key: 'last_runtime_error',
+          value: errors.join('\n\n'),
+          priority: 'high'
+        });
+        
+        threadsState.addMessage({
+          id: 'error-sent-' + Date.now(),
+          role: 'user',
+          content: '(A runtime error occurred. The details have been added to your memory. Please say "fix the error" to proceed.)',
+        });
+        // Stay in the preview view for a seamless experience
+      }
+    } else {
+      // For text chat, replicate the original behavior but trigger it manually
+      const newToolCall: ToolCall = {
+          id: 'sandbox-error-' + Date.now(),
+          name: 'preview.runtimeError',
+          args: { errors },
+          status: ToolCallStatus.ERROR,
+      };
+
+      threadsState.addMessage({
+          id: 'error-report-' + Date.now(),
+          role: 'model',
+          content: "I've detected a runtime error in the preview. Would you like me to fix it?",
+          toolCalls: [newToolCall]
+      });
+
+      setActiveView(View.Ai);
+    }
+  }, [liveSessionState.isLive, threadsState.activeThread, threadsState.addMessage, toolImplementations, setActiveView]);
+
   const handleRetryLiveSession = useCallback(() => {
     // The modal's onClose will handle clearing the error state.
     liveSessionState.stopLiveSession({ immediate: true });
@@ -117,7 +159,9 @@ function App() {
   useEffect(() => {
     liveSessionControlsRef.current.stopLiveSession = liveSessionState.stopLiveSession;
     liveSessionControlsRef.current.pauseListening = liveSessionState.pauseListening;
-  }, [liveSessionState.stopLiveSession, liveSessionState.pauseListening]);
+    liveSessionControlsRef.current.enableVideoStream = liveSessionState.enableVideoStream;
+    liveSessionControlsRef.current.disableVideoStream = liveSessionState.disableVideoStream;
+  }, [liveSessionState.stopLiveSession, liveSessionState.pauseListening, liveSessionState.enableVideoStream, liveSessionState.disableVideoStream]);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -128,27 +172,6 @@ function App() {
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
   }, []);
-
-  useEffect(() => {
-    if (sandboxErrors.length > 0 && !errorProcessingRef.current) {
-      errorProcessingRef.current = true;
-
-      const newToolCall: ToolCall = {
-        id: 'sandbox-error-' + Date.now(), name: 'preview.runtimeError',
-        args: { errors: sandboxErrors }, status: ToolCallStatus.ERROR,
-      };
-
-      threadsState.addMessage({
-          id: 'error-report-' + Date.now(), role: 'model',
-          content: "I've detected a runtime error in the preview. Would you like me to fix it?",
-          toolCalls: [newToolCall]
-      });
-
-      setActiveView(View.Ai);
-    } else if (sandboxErrors.length === 0) {
-      errorProcessingRef.current = false;
-    }
-  }, [sandboxErrors, threadsState.addMessage, setActiveView]);
 
   const handleGitImport = () => {
     setIsCloning(true);
@@ -177,7 +200,11 @@ function App() {
       case View.Preview:
         return <PreviewView 
             files={files} isFullScreen={isFullScreen} onToggleFullScreen={() => setIsFullScreen(p => !p)}
-            bundleLogs={bundleLogs} setBundleLogs={setBundleLogs} setSandboxErrors={setSandboxErrors}
+            bundleLogs={bundleLogs} setBundleLogs={setBundleLogs} 
+            sandboxErrors={sandboxErrors}
+            setSandboxErrors={setSandboxErrors}
+            isLive={liveSessionState.isLive}
+            onSendErrorToAi={handleSendErrorToAi}
         />;
       case View.Ai:
         return <AiView
@@ -198,7 +225,11 @@ function App() {
          <div className="h-screen w-screen bg-vibe-bg">
             <PreviewView 
                 files={files} isFullScreen={isFullScreen} onToggleFullScreen={() => setIsFullScreen(p => !p)}
-                bundleLogs={bundleLogs} setBundleLogs={setBundleLogs} setSandboxErrors={setSandboxErrors}
+                bundleLogs={bundleLogs} setBundleLogs={setBundleLogs}
+                sandboxErrors={sandboxErrors}
+                setSandboxErrors={setSandboxErrors}
+                isLive={liveSessionState.isLive}
+                onSendErrorToAi={handleSendErrorToAi}
             />
          </div>
       )
@@ -229,7 +260,16 @@ function App() {
           }}
         />
       )}
-      <Header />
+      {isLiveVideoModalOpen && (
+        <LiveVideoPreviewModal
+            frameDataUrl={liveFrameData}
+            onClose={() => setIsLiveVideoModalOpen(false)}
+        />
+      )}
+      <Header
+        isLiveVideoEnabled={liveSessionState.isVideoStreamEnabled}
+        onLiveVideoIconClick={() => setIsLiveVideoModalOpen(true)}
+      />
       <main id="main-content" className="flex-1 flex min-h-0">
         {renderView()}
       </main>

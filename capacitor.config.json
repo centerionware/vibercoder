@@ -1,0 +1,13 @@
+{
+  "appId": "com.vibecode.app",
+  "appName": "VibeCode",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 0
+    }
+  }
+}

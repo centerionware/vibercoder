@@ -1,3 +1,5 @@
+// Fix: Added missing import for React to use React-specific types.
+import React from 'react';
 import { AiMessage, ToolCall, UseAiChatProps } from '../../types';
 import { Part, FunctionCall } from '@google/genai';
 

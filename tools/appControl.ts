@@ -1,4 +1,5 @@
 
+
 import { FunctionDeclaration, Type } from '@google/genai';
 import html2canvas from 'html2canvas';
 import { ToolImplementationsDependencies, View, AppSettings } from '../types';
@@ -141,6 +142,16 @@ export const interactWithPreviewFunction: FunctionDeclaration = {
   },
 };
 
+export const enableLiveVideoFunction: FunctionDeclaration = {
+  name: 'enableLiveVideo',
+  description: 'Enables the live video stream of the user\'s screen. The stream provides a 1 FPS feed and acts as your "eyes", providing visual context for your next turn. It will automatically disable after 30 seconds to save resources. Use this when you need to see the UI to perform a task or answer a visual question.',
+};
+
+export const disableLiveVideoFunction: FunctionDeclaration = {
+  name: 'disableLiveVideo',
+  description: 'Manually disables the live video stream. The stream also disables automatically after a short period, so this is only needed for explicit control.',
+};
+
 export const declarations = [
     switchViewFunction,
     openFileFunction,
@@ -155,6 +166,8 @@ export const declarations = [
     captureScreenshotFunction,
     enableScreenshotPreviewFunction,
     interactWithPreviewFunction,
+    enableLiveVideoFunction,
+    disableLiveVideoFunction,
 ];
 
 // --- Implementations Factory ---
@@ -329,5 +342,17 @@ export const getImplementations = ({
             const message = error instanceof Error ? error.message : String(error);
             throw new Error(`Interaction failed in preview: ${message}`);
         }
+    },
+    enableLiveVideo: async () => {
+        liveSessionControls.enableVideoStream();
+        return { 
+            success: true, 
+            message: 'Live video stream enabled. It will automatically disable after 30 seconds.',
+            instruction: 'The video stream is now active. Your next turn should be to analyze the visual information and respond to the user\'s original request.'
+        };
+    },
+    disableLiveVideo: async () => {
+        liveSessionControls.disableVideoStream();
+        return { success: true, message: 'Live video stream disabled.' };
     },
 });

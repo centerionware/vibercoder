@@ -3,6 +3,9 @@ import { bundle } from '../../bundler';
 import SpinnerIcon from '../icons/SpinnerIcon';
 import ExpandIcon from '../icons/ExpandIcon';
 import CompressIcon from '../icons/CompressIcon';
+import MicrophoneIcon from '../icons/MicrophoneIcon';
+import SendIcon from '../icons/SendIcon';
+
 
 interface PreviewViewProps {
   files: Record<string, string>;
@@ -11,9 +14,22 @@ interface PreviewViewProps {
   bundleLogs: string[];
   setBundleLogs: React.Dispatch<React.SetStateAction<string[]>>;
   setSandboxErrors: React.Dispatch<React.SetStateAction<string[]>>;
+  sandboxErrors: string[];
+  isLive: boolean;
+  onSendErrorToAi: (errors: string[]) => void;
 }
 
-const PreviewView: React.FC<PreviewViewProps> = ({ files, isFullScreen, onToggleFullScreen, bundleLogs, setBundleLogs, setSandboxErrors }) => {
+const PreviewView: React.FC<PreviewViewProps> = ({ 
+  files, 
+  isFullScreen, 
+  onToggleFullScreen, 
+  bundleLogs, 
+  setBundleLogs, 
+  setSandboxErrors,
+  sandboxErrors,
+  isLive,
+  onSendErrorToAi
+}) => {
   const [iframeContent, setIframeContent] = useState('');
   const [isBundling, setIsBundling] = useState(true);
 
@@ -244,6 +260,15 @@ const PreviewView: React.FC<PreviewViewProps> = ({ files, isFullScreen, onToggle
   }, [files, activeHtmlFile, setBundleLogs, setSandboxErrors]);
   
   const buildHasFailed = !isBundling && iframeContent === '';
+  
+  const handleSendToAi = () => {
+    onSendErrorToAi(sandboxErrors);
+    setSandboxErrors([]); // Clear errors after sending
+  };
+
+  const handleDismissError = () => {
+    setSandboxErrors([]);
+  };
 
   return (
     <div className="relative flex flex-col flex-1 bg-vibe-panel rounded-lg overflow-hidden h-full">
@@ -328,6 +353,36 @@ const PreviewView: React.FC<PreviewViewProps> = ({ files, isFullScreen, onToggle
             </div>
         )}
       </div>
+      
+      {sandboxErrors.length > 0 && (
+        <div className="absolute inset-0 bg-vibe-bg/80 backdrop-blur-sm z-20 flex items-center justify-center p-4">
+          <div className="bg-vibe-panel rounded-lg shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col border border-red-500/30">
+            <header className="flex items-center justify-between p-3 border-b border-vibe-bg-deep flex-shrink-0">
+              <h2 className="text-lg font-bold text-red-400">Runtime Error Detected</h2>
+            </header>
+            <div className="overflow-auto p-4 flex-1">
+              <pre className="text-sm text-vibe-text-secondary whitespace-pre-wrap font-mono">
+                {sandboxErrors.join('\n\n')}
+              </pre>
+            </div>
+            <footer className="p-3 border-t border-vibe-bg-deep flex items-center justify-end gap-3 flex-shrink-0">
+              <button
+                onClick={handleDismissError}
+                className="bg-vibe-bg-deep px-4 py-2 rounded-md text-sm text-vibe-text-secondary hover:bg-vibe-comment transition-colors"
+              >
+                Dismiss
+              </button>
+              <button
+                onClick={handleSendToAi}
+                className="bg-vibe-accent px-5 py-2 rounded-md text-sm text-white font-semibold hover:bg-vibe-accent-hover transition-colors flex items-center gap-2"
+              >
+                {isLive ? <MicrophoneIcon className="w-4 h-4" /> : <SendIcon className="w-4 h-4" />}
+                {isLive ? 'Send to Live AI' : 'Ask AI to Fix'}
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

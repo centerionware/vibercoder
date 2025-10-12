@@ -1,13 +1,14 @@
-
 import { useState, useRef, useCallback, useEffect } from 'react';
 import html2canvas from 'html2canvas';
-import { UseAiLiveProps, View } from '../../types';
+import { v4 as uuidv4 } from 'uuid';
+import { UseAiLiveProps, View, ToolCall, ToolCallStatus } from '../../types';
 import { playNotificationSound } from '../../utils/audio';
 import { createLiveSession } from './useAiLive/sessionManager';
 import { connectMicrophoneNodes, stopAudioProcessing } from './useAiLive/audioManager';
-import { processLiveServerMessage } from './useAiLive/messageProcessor';
 import { AudioContextRefs, SessionRefs, LiveSession } from './useAiLive/types';
 import { getPreviewState, blobToBase64 } from '../../utils/preview';
+import { interruptPlayback, playAudioChunk } from './useAiLive/playbackQueue';
+
 
 export const useAiLive = (props: UseAiLiveProps) => {
     // --- State and Refs ---
@@ -17,12 +18,13 @@ export const useAiLive = (props: UseAiLiveProps) => {
     const [isAiTurn, setIsAiTurn] = useState(false);
     const [pendingAction, setPendingAction] = useState<'stop' | 'pause' | null>(null);
     const [pendingPauseDuration, setPendingPauseDuration] = useState<number>(0);
+    const [isVideoStreamEnabled, setIsVideoStreamEnabled] = useState(false);
 
     const propsRef = useRef(props);
     useEffect(() => { propsRef.current = props; }, [props]);
 
-    const stateRef = useRef({ isLive, isMuted, isSpeaking, isAiTurn });
-    useEffect(() => { stateRef.current = { isLive, isMuted, isSpeaking, isAiTurn }; }, [isLive, isMuted, isSpeaking, isAiTurn]);
+    const stateRef = useRef({ isLive, isMuted, isSpeaking, isAiTurn, isVideoStreamEnabled });
+    useEffect(() => { stateRef.current = { isLive, isMuted, isSpeaking, isAiTurn, isVideoStreamEnabled }; }, [isLive, isMuted, isSpeaking, isAiTurn, isVideoStreamEnabled]);
 
     const audioContextRefs = useRef<AudioContextRefs>({
         input: null, output: null, micStream: null,
@@ -35,15 +37,201 @@ export const useAiLive = (props: UseAiLiveProps) => {
         currentInputTranscription: '', currentOutputTranscription: '',
         currentToolCalls: [],
         isAiTurn: false,
+        pendingMessageQueue: [],
+        isTurnFinalizing: false,
     });
 
     const uiUpdateTimerRef = useRef<number | null>(null);
     const previousVoiceNameRef = useRef(props.settings.voiceName);
     const streamIntervalRef = useRef<number | null>(null);
+    const autoDisableVideoTimeoutRef = useRef<number | null>(null);
+    const endOfTurnTimerRef = useRef<number | null>(null);
 
 
     // --- Core Logic Implementations ---
+    const requestUiUpdate = useCallback(() => {
+        if (uiUpdateTimerRef.current) return;
+    
+        uiUpdateTimerRef.current = window.setTimeout(() => {
+            const { liveMessageId, currentInputTranscription, currentOutputTranscription, currentToolCalls } = sessionRefs.current;
+            
+            if (liveMessageId) {
+                propsRef.current.updateMessage(liveMessageId, { content: currentInputTranscription });
+                propsRef.current.updateMessage(`${liveMessageId}-model`, { 
+                    content: currentOutputTranscription,
+                    toolCalls: [...currentToolCalls] 
+                });
+            }
+            
+            uiUpdateTimerRef.current = null;
+        }, 100);
+    }, []);
 
+    const cancelUiUpdate = useCallback(() => {
+        if (uiUpdateTimerRef.current) {
+            clearTimeout(uiUpdateTimerRef.current);
+            uiUpdateTimerRef.current = null;
+        }
+    }, []);
+
+    const processModelOutput = useCallback(async (message: any) => {
+        const { addMessage, updateMessage, toolImplementations } = propsRef.current;
+    
+        if (message.serverContent && !sessionRefs.current.isAiTurn) {
+            sessionRefs.current.isAiTurn = true;
+            setIsAiTurn(true);
+        }
+    
+        const base64Audio = message.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
+        if (base64Audio) {
+            await playAudioChunk(base64Audio, audioContextRefs, sessionRefs, setIsSpeaking);
+        }
+        
+        const outputTranscription = message.serverContent?.outputTranscription?.text;
+        if (outputTranscription) {
+            if (!sessionRefs.current.liveMessageId) {
+                sessionRefs.current.liveMessageId = uuidv4();
+                addMessage({ id: sessionRefs.current.liveMessageId, role: 'user', content: '', isLive: true });
+                addMessage({ id: `${sessionRefs.current.liveMessageId}-model`, role: 'model', content: '', isLive: true });
+            }
+            sessionRefs.current.currentOutputTranscription += outputTranscription;
+            requestUiUpdate();
+        }
+    
+        if (message.toolCall) {
+            if (!sessionRefs.current.liveMessageId) {
+                sessionRefs.current.liveMessageId = uuidv4();
+                addMessage({ id: sessionRefs.current.liveMessageId, role: 'user', content: '(voice input)', isLive: false });
+                addMessage({ id: `${sessionRefs.current.liveMessageId}-model`, role: 'model', content: '', isLive: true });
+            }
+    
+            const newToolCalls: ToolCall[] = message.toolCall.functionCalls.map((fc: any) => ({
+                id: fc.id, name: fc.name, args: fc.args, status: ToolCallStatus.IN_PROGRESS,
+            }));
+    
+            sessionRefs.current.currentToolCalls.push(...newToolCalls);
+            requestUiUpdate();
+    
+            for (const fc of message.toolCall.functionCalls) {
+                let status: ToolCallStatus;
+                try {
+                    const toolFn = toolImplementations[fc.name!];
+                    if (!toolFn) throw new Error(`Tool "${fc.name}" not implemented.`);
+                    
+                    const result = await toolFn(fc.args);
+                    
+                    if (fc.name === 'captureScreenshot' && result.base64Image) {
+                        const session = await sessionRefs.current.sessionPromise;
+                        if (!session) throw new Error("Live session is not available to send image.");
+                        session.sendRealtimeInput({ media: { data: result.base64Image, mimeType: 'image/png' } });
+                        await new Promise(resolve => setTimeout(resolve, 750));
+                        const toolResponseResult = {
+                            status: "Success",
+                            confirmation: "A screenshot has been captured and provided as new visual context.",
+                            instruction: "Analyze the new screenshot provided in this turn and describe what you see. Your analysis MUST be based exclusively on this new image."
+                        };
+                        session.sendToolResponse({ functionResponses: { id: fc.id, name: fc.name, response: { result: toolResponseResult } } });
+                    } else {
+                        const session = await sessionRefs.current.sessionPromise;
+                        if (!session) throw new Error("Live session is not available to send tool response.");
+                        session.sendToolResponse({ functionResponses: { id: fc.id, name: fc.name, response: { result } } });
+                    }
+                    status = ToolCallStatus.SUCCESS;
+                } catch (e) {
+                    const error = e instanceof Error ? e.message : String(e);
+                    const session = await sessionRefs.current.sessionPromise;
+                    session?.sendToolResponse({ functionResponses: { id: fc.id, name: fc.name, response: { error } } });
+                    status = ToolCallStatus.ERROR;
+                }
+                
+                sessionRefs.current.currentToolCalls = sessionRefs.current.currentToolCalls.map(tc =>
+                    tc.id === fc.id ? { ...tc, status } : tc
+                );
+                requestUiUpdate();
+            }
+        }
+    
+        if (message.serverContent?.interrupted) {
+            interruptPlayback(sessionRefs);
+            setIsSpeaking(false);
+        }
+    }, [requestUiUpdate]);
+
+    const processInputTranscription = useCallback((message: any) => {
+        if (!sessionRefs.current.liveMessageId) {
+            sessionRefs.current.liveMessageId = uuidv4();
+            propsRef.current.addMessage({ id: sessionRefs.current.liveMessageId, role: 'user', content: '', isLive: true });
+            propsRef.current.addMessage({ id: `${sessionRefs.current.liveMessageId}-model`, role: 'model', content: '', isLive: true });
+        }
+        sessionRefs.current.currentInputTranscription += message.serverContent.inputTranscription.text;
+        requestUiUpdate();
+    }, [requestUiUpdate]);
+
+    const finalizeTurn = useCallback(() => {
+        console.log("Finalizing turn, processing message queue.");
+        sessionRefs.current.isTurnFinalizing = false;
+        endOfTurnTimerRef.current = null;
+    
+        const queue = [...sessionRefs.current.pendingMessageQueue];
+        sessionRefs.current.pendingMessageQueue = [];
+    
+        queue.forEach(msg => processModelOutput(msg));
+        
+        if (sessionRefs.current.isAiTurn) {
+            sessionRefs.current.isAiTurn = false;
+            setIsAiTurn(false);
+        }
+        
+        cancelUiUpdate();
+        const { liveMessageId, currentInputTranscription, currentOutputTranscription, currentToolCalls } = sessionRefs.current;
+        if (liveMessageId) {
+            propsRef.current.updateMessage(liveMessageId, { content: currentInputTranscription, isLive: false });
+            propsRef.current.updateMessage(`${liveMessageId}-model`, { 
+                content: currentOutputTranscription, 
+                isLive: false,
+                toolCalls: [...currentToolCalls]
+            });
+        }
+        sessionRefs.current.liveMessageId = null;
+        sessionRefs.current.currentInputTranscription = '';
+        sessionRefs.current.currentOutputTranscription = '';
+        sessionRefs.current.currentToolCalls = [];
+    }, [processModelOutput, cancelUiUpdate, setIsAiTurn]);
+
+
+    const onMessage = useCallback((message: any) => {
+        if (message.serverContent?.inputTranscription) {
+            if (endOfTurnTimerRef.current) {
+                clearTimeout(endOfTurnTimerRef.current);
+                endOfTurnTimerRef.current = null;
+            }
+            sessionRefs.current.isTurnFinalizing = false;
+            if (sessionRefs.current.pendingMessageQueue.length > 0) {
+                console.log("User interrupted; discarding premature AI response.");
+                sessionRefs.current.pendingMessageQueue = [];
+                interruptPlayback(sessionRefs);
+                setIsSpeaking(false);
+            }
+            processInputTranscription(message);
+            return;
+        }
+    
+        if (message.serverContent?.turnComplete) {
+            if (!sessionRefs.current.isTurnFinalizing) {
+                console.log("turnComplete received. Starting 1s cooldown timer.");
+                sessionRefs.current.isTurnFinalizing = true;
+                endOfTurnTimerRef.current = window.setTimeout(finalizeTurn, 1000);
+            }
+            return;
+        }
+        
+        if (sessionRefs.current.isTurnFinalizing) {
+            sessionRefs.current.pendingMessageQueue.push(message);
+        } else {
+            processModelOutput(message);
+        }
+    }, [processInputTranscription, processModelOutput, finalizeTurn]);
+    
     const captureAndStreamFrame = useCallback(async (sessionPromise: Promise<LiveSession>) => {
         try {
             const captureTarget = document.getElementById('app-container');
@@ -87,14 +275,13 @@ export const useAiLive = (props: UseAiLiveProps) => {
                 }
             });
             
-            // Resize to the required 768x768 for the API
             const targetCanvas = document.createElement('canvas');
             targetCanvas.width = 768;
             targetCanvas.height = 768;
             const ctx = targetCanvas.getContext('2d');
             if (!ctx) return;
             
-            ctx.fillStyle = '#1a1b26'; // vibe-bg color for letterboxing
+            ctx.fillStyle = '#1a1b26';
             ctx.fillRect(0, 0, 768, 768);
 
             const ratio = Math.min(768 / sourceCanvas.width, 768 / sourceCanvas.height);
@@ -104,6 +291,9 @@ export const useAiLive = (props: UseAiLiveProps) => {
             const y = (768 - height) / 2;
             ctx.drawImage(sourceCanvas, x, y, width, height);
             
+            const dataUrl = targetCanvas.toDataURL('image/jpeg', 0.8);
+            propsRef.current.setLiveFrameData(dataUrl);
+
             targetCanvas.toBlob(async (blob) => {
                 if (blob) {
                     const base64Data = await blobToBase64(blob);
@@ -117,16 +307,27 @@ export const useAiLive = (props: UseAiLiveProps) => {
         }
     }, []);
 
+    const disableVideoStream = useCallback(() => {
+        console.log("Disabling video stream.");
+        propsRef.current.setLiveFrameData(null);
+        setIsVideoStreamEnabled(false);
+        if (streamIntervalRef.current) {
+            clearInterval(streamIntervalRef.current);
+            streamIntervalRef.current = null;
+        }
+        if (autoDisableVideoTimeoutRef.current) {
+            clearTimeout(autoDisableVideoTimeoutRef.current);
+            autoDisableVideoTimeoutRef.current = null;
+        }
+    }, []);
+
     const performStop = useCallback(async (options: { isUnmount?: boolean } = {}) => {
         if (!stateRef.current.isLive) return;
         
         const { isUnmount = false } = options;
         
         setIsLive(false);
-        if (streamIntervalRef.current) {
-            clearInterval(streamIntervalRef.current);
-            streamIntervalRef.current = null;
-        }
+        disableVideoStream();
 
         if (!isUnmount) {
             await playNotificationSound('stop', audioContextRefs.current.output);
@@ -139,16 +340,40 @@ export const useAiLive = (props: UseAiLiveProps) => {
         sessionRefs.current.session?.close();
         await stopAudioProcessing(audioContextRefs, sessionRefs, { keepMicActive: false });
 
-        sessionRefs.current.session = null;
-        sessionRefs.current.sessionPromise = null;
-        sessionRefs.current.liveMessageId = null;
-        sessionRefs.current.currentInputTranscription = '';
-        sessionRefs.current.currentOutputTranscription = '';
-        sessionRefs.current.currentToolCalls = [];
-        sessionRefs.current.isAiTurn = false;
-    }, []);
+        sessionRefs.current = {
+            ...sessionRefs.current,
+            session: null,
+            sessionPromise: null,
+            liveMessageId: null,
+            currentInputTranscription: '',
+            currentOutputTranscription: '',
+            currentToolCalls: [],
+            isAiTurn: false,
+            pendingMessageQueue: [],
+            isTurnFinalizing: false,
+        };
+    }, [disableVideoStream]);
+    
+    const enableVideoStream = useCallback(() => {
+        if (!stateRef.current.isLive || !sessionRefs.current.sessionPromise) {
+            console.warn("Cannot enable video stream: live session is not active.");
+            return;
+        }
+        console.log("Enabling video stream for 30 seconds.");
+        setIsVideoStreamEnabled(true);
 
-    // ... (rest of the hook is the same until startLiveSession)
+        if (streamIntervalRef.current) clearInterval(streamIntervalRef.current);
+        streamIntervalRef.current = window.setInterval(() => {
+            if (sessionRefs.current.sessionPromise) {
+                captureAndStreamFrame(sessionRefs.current.sessionPromise);
+            }
+        }, 1000);
+
+        if (autoDisableVideoTimeoutRef.current) clearTimeout(autoDisableVideoTimeoutRef.current);
+        autoDisableVideoTimeoutRef.current = window.setTimeout(() => {
+            disableVideoStream();
+        }, 30000);
+    }, [captureAndStreamFrame, disableVideoStream]);
     
     const performPause = useCallback((durationInSeconds: number) => {
         if (!stateRef.current.isLive || stateRef.current.isMuted) return;
@@ -173,49 +398,10 @@ export const useAiLive = (props: UseAiLiveProps) => {
                 console.log(`AI turn and speech ended, executing pending pause for ${pendingPauseDuration}s.`);
                 performPause(pendingPauseDuration);
             }
-
             setPendingAction(null);
             setPendingPauseDuration(0);
         }
     }, [isAiTurn, isSpeaking, pendingAction, pendingPauseDuration, performStop, performPause]);
-
-    const requestUiUpdate = useCallback(() => {
-        if (uiUpdateTimerRef.current) return;
-    
-        uiUpdateTimerRef.current = window.setTimeout(() => {
-            const { liveMessageId, currentInputTranscription, currentOutputTranscription, currentToolCalls } = sessionRefs.current;
-            
-            if (liveMessageId) {
-                propsRef.current.updateMessage(liveMessageId, { content: currentInputTranscription });
-                propsRef.current.updateMessage(`${liveMessageId}-model`, { 
-                    content: currentOutputTranscription,
-                    toolCalls: [...currentToolCalls] 
-                });
-            }
-            
-            uiUpdateTimerRef.current = null;
-        }, 100);
-    }, []);
-
-    const cancelUiUpdate = useCallback(() => {
-        if (uiUpdateTimerRef.current) {
-            clearTimeout(uiUpdateTimerRef.current);
-            uiUpdateTimerRef.current = null;
-        }
-    }, []);
-
-    const onMessage = useCallback((message: any) => {
-        processLiveServerMessage({
-            message,
-            audioContextRefs,
-            sessionRefs,
-            setIsSpeaking,
-            setIsAiTurn,
-            requestUiUpdate,
-            cancelUiUpdate,
-            ...propsRef.current,
-        });
-    }, [requestUiUpdate, cancelUiUpdate]); 
     
     const onError = useCallback((e: ErrorEvent) => {
         console.error('Live session error:', e);
@@ -289,11 +475,6 @@ export const useAiLive = (props: UseAiLiveProps) => {
 
         sessionRefs.current.sessionPromise = sessionPromise;
 
-        // Start the visual stream
-        streamIntervalRef.current = window.setInterval(() => {
-            captureAndStreamFrame(sessionPromise);
-        }, 1000);
-
         sessionPromise.then(session => {
             sessionRefs.current.session = session;
         }).catch(err => {
@@ -303,7 +484,7 @@ export const useAiLive = (props: UseAiLiveProps) => {
         });
 
         return true;
-    }, [onMessage, onError, performStop, captureAndStreamFrame]);
+    }, [onMessage, onError, performStop]);
 
     const toggleMute = useCallback(() => {
         setIsMuted(prev => !prev);
@@ -336,8 +517,7 @@ export const useAiLive = (props: UseAiLiveProps) => {
         });
     }, [onMessage, onError, performStop]);
 
-    // --- One-time Audio Engine Setup ---
-     useEffect(() => {
+    useEffect(() => {
         const input = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
         const output = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
         audioContextRefs.current.input = input;
@@ -353,9 +533,8 @@ export const useAiLive = (props: UseAiLiveProps) => {
             output.close().catch(console.error);
             console.log("AudioContexts closed.");
         };
-    }, []); // eslint-disable-line react-hooks-exhaustive-deps
+    }, []);
 
-    // Sanity check to prevent audio context suspension by the browser
     useEffect(() => {
         if (!isLive) return;
 
@@ -365,13 +544,12 @@ export const useAiLive = (props: UseAiLiveProps) => {
                 console.warn("Input AudioContext was suspended by the browser. Attempting to resume...");
                 input.resume().catch(e => console.error("Failed to resume input AudioContext:", e));
             }
-        }, 3000); // Check every 3 seconds
+        }, 3000);
 
         return () => clearInterval(sanityCheckInterval);
     }, [isLive]);
 
 
-    // Effect for Session Restart on Voice Change
     useEffect(() => {
         const currentVoice = props.settings.voiceName;
         const previousVoice = previousVoiceNameRef.current;
@@ -387,5 +565,5 @@ export const useAiLive = (props: UseAiLiveProps) => {
         }
     }, [isLive, isSpeaking, isAiTurn, props.settings.voiceName, hotSwapSession, pendingAction]);
 
-    return { isLive, isMuted, isSpeaking, startLiveSession, stopLiveSession, toggleMute, pauseListening };
+    return { isLive, isMuted, isSpeaking, startLiveSession, stopLiveSession, toggleMute, pauseListening, enableVideoStream, disableVideoStream, isVideoStreamEnabled };
 };
