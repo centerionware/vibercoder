@@ -14,6 +14,7 @@ import { isNativeEnvironment } from '../utils/environment';
 import { createGitService } from '../services/gitService';
 import { createToolImplementations } from '../services/toolOrchestrator';
 import { startCapturingLogs, clearDebugLogs as clearGlobalLogs } from '../utils/logging';
+import { DEFAULT_SETTINGS } from '../app/config';
 
 
 // This custom hook encapsulates the core application logic.
@@ -185,10 +186,9 @@ export const useAppLogic = () => {
         corsProxy = projectSettings.custom.corsProxy;
     }
     
-    // In native environments (Capacitor/Electron), bypass the CORS proxy for direct connections.
-    if (isNativeEnvironment()) {
-        corsProxy = undefined;
-    }
+    // The CORS proxy is required for the web-based git client, as it uses browser 'fetch'.
+    // The user can remove the proxy URL from settings if they are in an environment that doesn't need it.
+    // We no longer try to auto-detect this, as it was unreliable.
 
     return { remoteUrl, userName, userEmail, authToken, corsProxy };
   }, [activeProject, settings, gitCredentials]);
@@ -210,7 +210,9 @@ export const useAppLogic = () => {
     // where the clone attempts to use the active project's (missing) remote URL.
     const cloneConfig = {
       url: url,
-      proxy: isNativeEnvironment() ? undefined : settings.gitCorsProxy,
+      // FIX: The CORS proxy is required for the web-based git client which uses 'fetch',
+      // even in native WebViews. Fall back to the default proxy if the user setting is empty.
+      proxy: settings.gitCorsProxy || DEFAULT_SETTINGS.gitCorsProxy,
       author: {
         name: settings.gitUserName,
         email: settings.gitUserEmail,

@@ -5,6 +5,7 @@ declare global {
   interface Window {
     electron?: {
       isElectron: boolean;
+      gitHttpRequest: (options: any) => Promise<any>;
     };
   }
 }

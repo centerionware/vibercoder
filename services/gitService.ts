@@ -1,5 +1,7 @@
 import git from 'isomorphic-git';
-import http from 'isomorphic-git/http/web';
+import webHttp from 'isomorphic-git/http/web';
+import { nativeHttp } from './nativeHttp';
+import { isNativeEnvironment } from '../utils/environment';
 import FS from '@isomorphic-git/lightning-fs';
 import { GitService, GitAuthor, GitStatus, GitFileStatus, GitCommit, GitFileChange, DiffLine } from '../types';
 import { Buffer } from 'buffer';
@@ -52,15 +54,25 @@ const realGitService: GitService = {
     }
     
     console.log(`Attempting to clone from URL: ${url}`);
-    if (proxyUrl) {
-      console.log(`Using CORS proxy: ${proxyUrl}`);
+    
+    const useNativeClient = isNativeEnvironment();
+    const httpClient = useNativeClient ? nativeHttp : webHttp;
+
+    if (useNativeClient) {
+        console.log("Using native HTTP client for Git operation, bypassing CORS proxy.");
+    } else if (proxyUrl) {
+        console.log(`Using web HTTP client with CORS proxy: ${proxyUrl}`);
     } else {
-      console.log('No CORS proxy configured (expected in native environment).');
+        console.warn('Using web HTTP client without a CORS proxy. This will likely fail due to browser CORS policy.');
     }
 
     try {
       await git.clone({
-        fs, http, dir, corsProxy: proxyUrl, url,
+        fs,
+        http: httpClient,
+        dir,
+        corsProxy: useNativeClient ? undefined : proxyUrl,
+        url,
         onAuth: () => ({ username: token }),
         onMessage: (message) => {
           console.info(`Git clone message: ${message.trim()}`);
