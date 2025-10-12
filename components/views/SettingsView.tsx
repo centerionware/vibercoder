@@ -1,9 +1,9 @@
 import React from 'react';
 import { AppSettings, GitCredential } from '../../types';
-import ApiConfig from '../settings/ApiConfig';
-import AiModelConfig from '../settings/AiModelConfig';
-import VoiceAssistantConfig from '../settings/VoiceAssistantConfig';
-import GitConfig from '../settings/GitConfig';
+import ApiConfig from '../modals/settings/ApiConfig';
+import AiModelConfig from '../modals/settings/AiModelConfig';
+import VoiceAssistantConfig from '../modals/settings/VoiceAssistantConfig';
+import GitConfig from '../modals/settings/GitConfig';
 
 interface SettingsViewProps {
   settings: AppSettings;

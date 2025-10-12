@@ -6,8 +6,8 @@ import { AppSettings } from '../types';
 export const DEFAULT_SETTINGS: AppSettings = {
   apiKey: process.env.API_KEY || '',
   aiModel: 'gemini-2.5-flash',
-  // Use a model with higher rate limits as the default.
-  liveAiModel: 'gemini-2.5-flash-native-audio-preview-09-2025',
+  // Set production-ready live model as default.
+  liveAiModel: 'gemini-2.5-flash',
   voiceName: 'Zephyr',
   thinkingBudget: null,
   gitRemoteUrl: '',
