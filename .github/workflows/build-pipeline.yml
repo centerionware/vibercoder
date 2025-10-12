@@ -201,6 +201,9 @@ jobs:
 
       - name: Add Capacitor Android platform
         run: npx capacitor add android
+
+      - name: Configure native permissions
+        run: npm run configure:native
         
       - name: Make gradlew executable
         run: chmod +x android/gradlew
@@ -245,6 +248,9 @@ jobs:
       - name: Add Capacitor iOS platform
         run: npx capacitor add ios
 
+      - name: Configure native permissions
+        run: npm run configure:native
+
       - name: Update CocoaPods repositories
         run: pod repo update
         working-directory: ios/App
@@ -269,4 +275,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: vibecode-ios-app
-          path: ios/App/App.xcarchive/
+          path: ios/App/App.xcarchiiOS
