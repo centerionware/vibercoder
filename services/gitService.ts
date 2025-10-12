@@ -1,6 +1,5 @@
 import git from 'isomorphic-git';
 import webHttp from 'isomorphic-git/http/web';
-import { nativeFetch } from './nativeFetch';
 import { isNativeEnvironment } from '../utils/environment';
 import FS from '@isomorphic-git/lightning-fs';
 import { GitService, GitAuthor, GitStatus, GitFileStatus, GitCommit, GitFileChange, DiffLine } from '../types';
@@ -57,17 +56,12 @@ const realGitService: GitService = {
     
     const useNative = isNativeEnvironment();
 
-    // This is the new strategy: create a client that wraps the standard webHttp client
-    // and injects our custom `nativeFetch` polyfill only when in a native environment.
-    const httpClient = {
-        async request(args: any) {
-            const fetchImpl = useNative ? nativeFetch : undefined;
-            return webHttp.request({ ...args, fetch: fetchImpl });
-        }
-    };
-
+    // By default, isomorphic-git uses the global `fetch`. In Capacitor, when `CapacitorHttp` is
+    // enabled in capacitor.config.json, it automatically patches `fetch` to use the native HTTP
+    // client, which correctly handles requests and bypasses CORS. This is more reliable than a custom fetch implementation.
+    // In a regular web environment, we still need the CORS proxy.
     if (useNative) {
-        console.log("Using native fetch implementation for Git operation, bypassing CORS proxy.");
+        console.log("Using native (patched) fetch for Git operation, bypassing CORS proxy.");
     } else if (proxyUrl) {
         console.log(`Using browser fetch with CORS proxy: ${proxyUrl}`);
     } else {
@@ -77,9 +71,9 @@ const realGitService: GitService = {
     try {
       await git.clone({
         fs,
-        http: httpClient,
+        http: webHttp, // Explicitly use the web client, which relies on the (potentially patched) global fetch.
         dir,
-        // The corsProxy is only used by the standard web fetch, so we don't need it for native.
+        // The corsProxy is only used by browser fetch, so we disable it in native environments.
         corsProxy: useNative ? undefined : proxyUrl,
         url,
         onAuth: () => ({ username: token }),
