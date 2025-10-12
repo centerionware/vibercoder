@@ -1,100 +1,84 @@
+
+
 import { Capacitor } from '@capacitor/core';
-import { Permissions } from '@capacitor/permissions';
+
+type PermissionState = 'prompt' | 'prompt-with-rationale' | 'granted' | 'denied';
 
 /**
- * Ensures that the application has microphone permissions, especially on native platforms.
- * It queries for the permission and, if necessary, prompts the user to grant it.
- * @returns {Promise<boolean>} A promise that resolves to `true` if permission is granted, and `false` otherwise.
+ * Ensures that the application has microphone permissions on native platforms.
+ * It dynamically imports the `@capacitor/microphone` plugin to query and request permission.
+ * @returns {Promise<boolean>} A promise resolving to `true` if permission is granted.
  */
 export async function ensureMicrophonePermission(): Promise<boolean> {
-  // On the web, we don't need a pre-flight check, as the browser's own UI
-  // will prompt the user when the microphone is first requested.
   if (!Capacitor.isNativePlatform()) {
-    return true;
+    return true; // Web relies on the browser's own prompt.
   }
-
-  // On native, we need to explicitly ask the OS for permission first.
   try {
-    // Check the current status of the microphone permission.
-    let status = await Permissions.query({ name: 'microphone' });
+    const { Microphone } = await import('@capacitor/microphone');
+    let permission: { microphone: PermissionState } = await Microphone.checkPermissions();
 
-    if (status.state === 'granted') {
+    if (permission.microphone === 'granted') {
       return true;
     }
-
-    // If the user hasn't been asked yet, request the permission.
-    if (status.state === 'prompt') {
-      status = await Permissions.request({ name: 'microphone' });
+    if (permission.microphone === 'prompt' || permission.microphone === 'prompt-with-rationale') {
+      permission = await Microphone.requestPermissions();
     }
-
-    // Return true only if the final state is 'granted'.
-    return status.state === 'granted';
+    return permission.microphone === 'granted';
   } catch (e) {
-    console.error("Error requesting microphone permission", e);
+    console.error("Capacitor Microphone plugin failed. Is it installed?", e);
     return false;
   }
 }
 
-
 /**
- * Ensures that the application has camera permissions, especially on native platforms.
- * It queries for the permission and, if necessary, prompts the user to grant it.
- * @returns {Promise<boolean>} A promise that resolves to `true` if permission is granted, and `false` otherwise.
+ * Ensures that the application has camera permissions on native platforms.
+ * It dynamically imports the `@capacitor/camera` plugin to query and request permission.
+ * @returns {Promise<boolean>} A promise resolving to `true` if permission is granted.
  */
 export async function ensureCameraPermission(): Promise<boolean> {
-  // On the web, we don't need a pre-flight check, as the browser's own UI
-  // will prompt the user when the camera is first requested.
   if (!Capacitor.isNativePlatform()) {
     return true;
   }
-
-  // On native, we need to explicitly ask the OS for permission first.
   try {
-    // Check the current status of the camera permission.
-    let status = await Permissions.query({ name: 'camera' });
+    const { Camera } = await import('@capacitor/camera');
+    let permission: { camera: PermissionState } = await Camera.checkPermissions();
 
-    if (status.state === 'granted') {
+    if (permission.camera === 'granted') {
       return true;
     }
-
-    // If the user hasn't been asked yet, request the permission.
-    if (status.state === 'prompt') {
-      status = await Permissions.request({ name: 'camera' });
+    if (permission.camera === 'prompt' || permission.camera === 'prompt-with-rationale') {
+      permission = await Camera.requestPermissions();
     }
-
-    // Return true only if the final state is 'granted'.
-    return status.state === 'granted';
+    return permission.camera === 'granted';
   } catch (e) {
-    console.error("Error requesting camera permission", e);
+    console.error("Capacitor Camera plugin failed. Is it installed?", e);
     return false;
   }
 }
 
 /**
- * Ensures that the application has geolocation permissions (GPS), especially on native platforms.
- * It queries for the permission and, if necessary, prompts the user to grant it.
- * @returns {Promise<boolean>} A promise that resolves to `true` if permission is granted, and `false` otherwise.
+ * Ensures that the application has geolocation permissions on native platforms.
+ * It dynamically imports the `@capacitor/geolocation` plugin to query and request permission.
+ * @returns {Promise<boolean>} A promise resolving to `true` if permission is granted.
  */
 export async function ensureGeolocationPermission(): Promise<boolean> {
   if (!Capacitor.isNativePlatform()) {
     return true;
   }
-
   try {
-    // The 'geolocation' alias handles both Android's FINE/COARSE location and iOS's CoreLocation.
-    let status = await Permissions.query({ name: 'geolocation' });
+    const { Geolocation } = await import('@capacitor/geolocation');
+    // Note: The key for geolocation is 'location'.
+    let permission: { location: PermissionState } = await Geolocation.checkPermissions();
 
-    if (status.state === 'granted') {
+    if (permission.location === 'granted') {
       return true;
     }
-
-    if (status.state === 'prompt') {
-      status = await Permissions.request({ name: 'geolocation' });
+    if (permission.location === 'prompt' || permission.location === 'prompt-with-rationale') {
+      permission = await Geolocation.requestPermissions();
     }
-
-    return status.state === 'granted';
+    return permission.location === 'granted';
   } catch (e) {
-    console.error("Error requesting geolocation permission", e);
+    console.error("Capacitor Geolocation plugin failed. Is it installed?", e);
     return false;
   }
 }

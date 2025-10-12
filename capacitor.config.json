@@ -8,6 +8,12 @@
   "plugins": {
     "SplashScreen": {
       "launchShowDuration": 0
+    },
+    "Permissions": {
+      "android": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     }
   }
 }
