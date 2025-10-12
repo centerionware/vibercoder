@@ -1,7 +1,6 @@
 # VibeCode Cross-Platform Build & Deploy Pipeline
 #
-# IMPORTANT: For this workflow to run, you MUST move this file into the `.github/workflows/` directory.
-# `mkdir -p .github/workflows && mv build-pipeline.yml .github/workflows/`
+# This workflow is now ACTIVE. It will run automatically on pushes and pull requests to the main branch.
 
 name: VibeCode Cross-Platform Build
 
@@ -105,7 +104,6 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-
 
       # Upload the final built executable/installer as an artifact.
       - name: Upload desktop artifact
