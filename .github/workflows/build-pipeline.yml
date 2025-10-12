@@ -11,9 +11,9 @@ on:
   pull_request:
     branches: [ "main" ]
 
-# Grant write permissions to the GITHUB_TOKEN for pushing to GHCR
+# Grant write permissions for contents (to push to branches) and packages (for GHCR).
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 jobs:
@@ -167,6 +167,38 @@ jobs:
           name: vibecode-desktop-${{ matrix.os }}
           path: dist/ # The electron-builder output directory.
 
+      - name: Push Desktop Artifact to Branch
+        shell: bash
+        run: |
+          git config --global user.name 'GitHub Actions'
+          git config --global user.email 'actions@github.com'
+          
+          OS_NAME=${{ matrix.os }}
+          BRANCH_NAME="dev-builds/desktop-${OS_NAME}"
+          
+          # Find the specific artifact file
+          ARTIFACT_FILE=$(find dist -maxdepth 1 -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" \))
+          if [ -z "$ARTIFACT_FILE" ]; then
+            echo "Error: No build artifact found in dist/ directory."
+            exit 1
+          fi
+          
+          echo "Found artifact: $ARTIFACT_FILE"
+          
+          if git ls-remote --exit-code --heads origin "$BRANCH_NAME"; then
+            echo "Deleting remote branch $BRANCH_NAME"
+            git push origin --delete "$BRANCH_NAME"
+          fi
+          
+          git checkout --orphan "$BRANCH_NAME"
+          git rm -rf .
+          
+          cp "$ARTIFACT_FILE" .
+          git add "$(basename "$ARTIFACT_FILE")"
+          
+          git commit -m "Desktop build for ${{ matrix.os }} from commit ${{ github.sha }}"
+          git push origin "$BRANCH_NAME"
+
   # Job 4: Build the native Android APK.
   build_android:
     name: Build Android APK
@@ -217,6 +249,28 @@ jobs:
         with:
           name: vibecode-android-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Push Android APK to Branch
+        run: |
+          git config --global user.name 'GitHub Actions'
+          git config --global user.email 'actions@github.com'
+          
+          BRANCH_NAME="dev-builds/android-apk"
+          ARTIFACT_PATH="android/app/build/outputs/apk/debug/app-debug.apk"
+          
+          if git ls-remote --exit-code --heads origin "$BRANCH_NAME"; then
+            echo "Deleting remote branch $BRANCH_NAME"
+            git push origin --delete "$BRANCH_NAME"
+          fi
+          
+          git checkout --orphan "$BRANCH_NAME"
+          git rm -rf .
+          
+          cp "$ARTIFACT_PATH" .
+          git add "$(basename "$ARTIFACT_PATH")"
+          
+          git commit -m "Android APK build from commit ${{ github.sha }}"
+          git push origin "$BRANCH_NAME"
 
   # Job 5: Build the native iOS App.
   build_ios:
@@ -275,4 +329,31 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: vibecode-ios-app
-          path: ios/App/App.xcarchiiOS
+          path: ios/App/App.xcarchive
+      
+      - name: Push iOS Archive to Branch
+        run: |
+          git config --global user.name 'GitHub Actions'
+          git config --global user.email 'actions@github.com'
+          
+          BRANCH_NAME="dev-builds/ios-app"
+          
+          # Zip the archive
+          echo "Zipping the iOS archive..."
+          zip -r App.xcarchive.zip ios/App/App.xcarchive
+          
+          ARTIFACT_PATH="App.xcarchive.zip"
+          
+          if git ls-remote --exit-code --heads origin "$BRANCH_NAME"; then
+            echo "Deleting remote branch $BRANCH_NAME"
+            git push origin --delete "$BRANCH_NAME"
+          fi
+          
+          git checkout --orphan "$BRANCH_NAME"
+          git rm -rf .
+          
+          mv "$ARTIFACT_PATH" .
+          git add "$ARTIFACT_PATH"
+          
+          git commit -m "iOS App Archive from commit ${{ github.sha }}"
+          git push origin "$BRANCH_NAME"
