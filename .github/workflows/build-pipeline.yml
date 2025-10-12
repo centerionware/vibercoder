@@ -176,28 +176,31 @@ jobs:
           OS_NAME=${{ matrix.os }}
           BRANCH_NAME="dev-builds/desktop-${OS_NAME}"
           
-          # Find the specific artifact file
-          ARTIFACT_FILE=$(find dist -maxdepth 1 -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" \))
-          if [ -z "$ARTIFACT_FILE" ]; then
+          # Find the artifact file
+          ARTIFACT_PATH=$(find dist -maxdepth 1 -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" \))
+          if [ -z "$ARTIFACT_PATH" ]; then
             echo "Error: No build artifact found in dist/ directory."
             exit 1
           fi
+          echo "Found artifact: $ARTIFACT_PATH"
           
-          echo "Found artifact: $ARTIFACT_FILE"
+          ARTIFACT_FILENAME=$(basename "$ARTIFACT_PATH")
           
-          if git ls-remote --exit-code --heads origin "$BRANCH_NAME"; then
-            echo "Deleting remote branch $BRANCH_NAME"
-            git push origin --delete "$BRANCH_NAME"
-          fi
+          # Secure the artifact by moving it out of the repo
+          mv "$ARTIFACT_PATH" "/tmp/$ARTIFACT_FILENAME"
           
+          # Create a new, clean branch
           git checkout --orphan "$BRANCH_NAME"
+          
+          # Clean the working directory completely
           git rm -rf .
+          git clean -fdx
           
-          cp "$ARTIFACT_FILE" .
-          git add "$(basename "$ARTIFACT_FILE")"
-          
+          # Bring the artifact back, commit, and force-push
+          mv "/tmp/$ARTIFACT_FILENAME" .
+          git add "$ARTIFACT_FILENAME"
           git commit -m "Desktop build for ${{ matrix.os }} from commit ${{ github.sha }}"
-          git push origin "$BRANCH_NAME"
+          git push --force origin "$BRANCH_NAME"
 
   # Job 4: Build the native Android APK.
   build_android:
@@ -257,20 +260,23 @@ jobs:
           
           BRANCH_NAME="dev-builds/android-apk"
           ARTIFACT_PATH="android/app/build/outputs/apk/debug/app-debug.apk"
-          
-          if git ls-remote --exit-code --heads origin "$BRANCH_NAME"; then
-            echo "Deleting remote branch $BRANCH_NAME"
-            git push origin --delete "$BRANCH_NAME"
-          fi
-          
+          ARTIFACT_FILENAME=$(basename "$ARTIFACT_PATH")
+
+          # Secure the artifact by moving it out of the repo
+          mv "$ARTIFACT_PATH" "/tmp/$ARTIFACT_FILENAME"
+
+          # Create a new, clean branch
           git checkout --orphan "$BRANCH_NAME"
+
+          # Clean the working directory completely
           git rm -rf .
+          git clean -fdx
           
-          cp "$ARTIFACT_PATH" .
-          git add "$(basename "$ARTIFACT_PATH")"
-          
+          # Bring the artifact back, commit, and force-push
+          mv "/tmp/$ARTIFACT_FILENAME" .
+          git add "$ARTIFACT_FILENAME"
           git commit -m "Android APK build from commit ${{ github.sha }}"
-          git push origin "$BRANCH_NAME"
+          git push --force origin "$BRANCH_NAME"
 
   # Job 5: Build the native iOS App.
   build_ios:
@@ -338,22 +344,25 @@ jobs:
           
           BRANCH_NAME="dev-builds/ios-app"
           
-          # Zip the archive
+          # Zip the archive to create a single file artifact
           echo "Zipping the iOS archive..."
           zip -r App.xcarchive.zip ios/App/App.xcarchive
           
           ARTIFACT_PATH="App.xcarchive.zip"
+          ARTIFACT_FILENAME=$(basename "$ARTIFACT_PATH")
           
-          if git ls-remote --exit-code --heads origin "$BRANCH_NAME"; then
-            echo "Deleting remote branch $BRANCH_NAME"
-            git push origin --delete "$BRANCH_NAME"
-          fi
+          # Secure the artifact by moving it out of the repo
+          mv "$ARTIFACT_PATH" "/tmp/$ARTIFACT_FILENAME"
           
+          # Create a new, clean branch
           git checkout --orphan "$BRANCH_NAME"
+          
+          # Clean the working directory completely
           git rm -rf .
+          git clean -fdx
           
-          mv "$ARTIFACT_PATH" .
-          git add "$ARTIFACT_PATH"
-          
+          # Bring the artifact back, commit, and force-push
+          mv "/tmp/$ARTIFACT_FILENAME" .
+          git add "$ARTIFACT_FILENAME"
           git commit -m "iOS App Archive from commit ${{ github.sha }}"
-          git push origin "$BRANCH_NAME"
+          git push --force origin "$BRANCH_NAME"
