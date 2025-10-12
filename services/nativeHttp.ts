@@ -47,10 +47,16 @@ async function capacitorRequest(request: GitHttpRequest): Promise<GitHttpRespons
   }
   const requestBody = Buffer.concat(bodyParts);
 
+  // Set a git-like User-Agent to ensure the server responds with the correct protocol.
+  const headers = {
+    ...request.headers,
+    'User-Agent': 'git/isomorphic-git (capacitor)',
+  };
+
   const response: HttpResponse = await CapacitorHttp.request({
     method: request.method || 'GET',
     url: request.url,
-    headers: request.headers,
+    headers: headers,
     // CapacitorHttp on native platforms can handle ArrayBuffer directly for binary data.
     data: requestBody.length > 0 ? requestBody.buffer : undefined,
     // Ask for binary data in response.

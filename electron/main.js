@@ -27,7 +27,16 @@ app.whenReady().then(() => {
   // This uses the Node.js-based http client from isomorphic-git, which is not subject to CORS.
   ipcMain.handle('git-http-request', async (event, options) => {
     try {
-      const response = await gitHttp.request(options);
+      // The body from the renderer is an array of Uint8Array parts.
+      // We must reconstruct it into an async iterable for the node http client.
+      const body = options.body ? (async function*() {
+        for (const chunk of options.body) {
+          yield chunk;
+        }
+      })() : undefined;
+
+      const response = await gitHttp.request({ ...options, body });
+      
       // The body is a stream/iterator; it must be consumed into a Buffer to be sent over IPC.
       const chunks = [];
       for await (const chunk of response.body) {
@@ -45,13 +54,14 @@ app.whenReady().then(() => {
         headers: response.headers,
       };
     } catch (error) {
-      // Re-throw the error so it can be caught in the renderer process.
-      // Serialize the error object to ensure it passes through IPC correctly.
-      throw {
-        message: error.message,
-        name: error.name,
+      // Ensure the error is serializable before throwing it back to the renderer.
+      const serializableError = {
+        message: error.message || 'An unknown error occurred in the main process.',
+        name: error.name || 'Error',
         stack: error.stack,
+        ...error
       };
+      throw serializableError;
     }
   });
 
