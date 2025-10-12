@@ -1,5 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { UseWakeWordProps } from '../types';
+import { Capacitor } from '@capacitor/core';
+import { Camera } from '@capacitor/camera';
 
 const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 const isSpeechRecognitionSupported = !!SpeechRecognition;
@@ -25,10 +27,24 @@ export const useWakeWord = ({ wakeWord, onWake, enabled, onPermissionError }: Us
     });
   }, []);
 
-  const startListening = useCallback(() => {
+  const startListening = useCallback(async () => {
     if (!isSpeechRecognitionSupported) {
         onPermissionError("Your browser does not support the Web Speech API, which is required for the wake word feature. Please try a different browser like Chrome or Edge.");
         return;
+    }
+
+    if (Capacitor.isNativePlatform()) {
+        try {
+            const permissions = await Camera.requestPermissions({ permissions: ['microphone'] });
+            if (permissions.microphone !== 'granted') {
+                onPermissionError("Microphone permission is required for the wake word feature. Please grant it in the app settings.");
+                return;
+            }
+        } catch(e) {
+            console.error("Error requesting microphone permission for wake word", e);
+            onPermissionError("Could not request microphone permission. Please check the app settings.");
+            return;
+        }
     }
 
     if (recognitionRef.current) {
@@ -55,7 +71,10 @@ export const useWakeWord = ({ wakeWord, onWake, enabled, onPermissionError }: Us
 
         recognition.onerror = (event: any) => {
           if (event.error === 'not-allowed') {
-            onPermissionError("Microphone permission was denied for the wake word listener. Please enable it in your browser's site settings (the padlock icon in the URL bar) and reload the page.");
+            const message = Capacitor.isNativePlatform()
+                ? "Microphone permission was denied. Please enable it in the app settings to use the wake word feature."
+                : "Microphone permission was denied for the wake word listener. Please enable it in your browser's site settings (the padlock icon in the URL bar) and reload the page.";
+            onPermissionError(message);
           } else if (event.error !== 'aborted' && event.error !== 'no-speech') {
               console.error('Speech recognition error:', event.error);
           }
@@ -91,7 +110,10 @@ export const useWakeWord = ({ wakeWord, onWake, enabled, onPermissionError }: Us
     } catch (e) {
         console.error("Failed to start speech recognition:", e);
         if (e instanceof Error && e.name === 'NotAllowedError') {
-             onPermissionError("Microphone permission was denied. Please enable it in your browser's site settings (the padlock icon in the URL bar) and reload the page.");
+             const message = Capacitor.isNativePlatform()
+                ? "Microphone permission was denied. Please enable it in the app settings to use the wake word feature."
+                : "Microphone permission was denied. Please enable it in your browser's site settings (the padlock icon in the URL bar) and reload the page.";
+             onPermissionError(message);
         }
     }
   }, [onWake, wakeWord, onPermissionError]);

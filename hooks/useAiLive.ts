@@ -1,6 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import html2canvas from 'html2canvas';
 import { v4 as uuidv4 } from 'uuid';
+import { Capacitor } from '@capacitor/core';
+import { Camera } from '@capacitor/camera';
 import { UseAiLiveProps, View, ToolCall, ToolCallStatus } from '../types';
 import { playNotificationSound } from '../utils/audio';
 import { createLiveSession } from './useAiLive/sessionManager';
@@ -453,12 +455,26 @@ export const useAiLive = (props: UseAiLiveProps) => {
         if (output?.state === 'suspended') await output.resume();
 
         try {
+            if (Capacitor.isNativePlatform()) {
+                const permissions = await Camera.requestPermissions({ permissions: ['microphone', 'camera'] });
+                if (permissions.microphone !== 'granted') {
+                    onPermissionError("Microphone permission was denied. Please enable it in your device's app settings to use voice chat.");
+                    return false;
+                }
+                if (permissions.camera !== 'granted') {
+                    console.warn("Camera permission was not granted. Camera-related features will be unavailable in the native app.");
+                }
+            }
+
             audioContextRefs.current.micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
             if (!audioContextRefs.current.input) throw new Error("Input AudioContext not initialized.");
             audioContextRefs.current.micSourceNode = audioContextRefs.current.input.createMediaStreamSource(audioContextRefs.current.micStream);
         } catch (e) {
             console.error("Microphone permission denied:", e);
-            onPermissionError("Microphone permission was denied. Please enable it in your browser's site settings and reload the page.");
+            const message = Capacitor.isNativePlatform()
+                ? "Microphone access was denied. Please enable it in your device's app settings."
+                : "Microphone permission was denied. Please enable it in your browser's site settings and reload the page.";
+            onPermissionError(message);
             return false;
         }
 
