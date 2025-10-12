@@ -212,6 +212,10 @@ jobs:
       - name: Add Capacitor iOS platform
         run: npx capacitor add ios
 
+      - name: Update CocoaPods repositories
+        run: pod repo update
+        working-directory: ios/App
+
       - name: Install CocoaPods
         run: pod install
         working-directory: ios/App
@@ -224,7 +228,7 @@ jobs:
             -scheme App \
             -configuration Release \
             -archivePath $PWD/ios/App/App.xcarchive \
-            archive | xcpretty
+            archive
         env:
           APPLE_DEVELOPMENT_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
