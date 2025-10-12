@@ -1,1 +1,55 @@
-full contents of package.json
+{
+  "name": "vibecode",
+  "version": "1.0.0",
+  "description": "A mobile-first, web-based coding platform with seamless Git integration, AI-enhanced productivity, and a live preview experience, all running in the browser.",
+  "main": "electron/main.js",
+  "scripts": {
+    "build:web": "rm -rf www && mkdir www && esbuild index.tsx --bundle --outfile=www/main.js --define:process.env.API_KEY=\\\"\"$API_KEY\"\\\" --jsx-factory=React.createElement --jsx-fragment=React.Fragment && cp index.html www/index.html && sed -i 's|<script type=\"module\" src=\"/index.tsx\"></script>|<script src=\"main.js\"></script>|' www/index.html",
+    "sync:native": "npx capacitor sync",
+    "open:android": "npx capacitor open android",
+    "open:ios": "npx capacitor open ios",
+    "start:electron": "npm run build:web && electron .",
+    "build:desktop": "npm run build:web && electron-builder",
+    "build:win": "npm run build:web && electron-builder --win",
+    "build:linux": "npm run build:web && electron-builder --linux",
+    "build:macos": "npm run build:web && electron-builder --mac",
+    "build:docker": "docker build -t vibecode:latest ."
+  },
+  "dependencies": {
+    "@google/genai": "^1.23.0",
+    "dexie": "^4.0.7",
+    "esbuild-wasm": "0.21.3",
+    "html2canvas": "^1.4.1",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^6.0.0",
+    "@capacitor/cli": "^6.0.0",
+    "@capacitor/core": "^6.0.0",
+    "@capacitor/ios": "^6.0.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@types/uuid": "^9.0.0",
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3",
+    "esbuild": "^0.21.3",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5.0.0"
+  },
+  "author": "VibeCode",
+  "license": "MIT",
+  "build": {
+    "appId": "com.vibecode.app",
+    "productName": "VibeCode",
+    "files": [
+      "www/**/*",
+      "electron/main.js"
+    ],
+    "directories": {
+      "buildResources": "assets",
+      "output": "dist"
+    }
+  }
+}

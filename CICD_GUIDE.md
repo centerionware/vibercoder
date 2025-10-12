@@ -1,19 +1,10 @@
 # VibeCode CI/CD Guide with GitHub Actions
 
-This guide explains the automated build process for VibeCode, which uses GitHub Actions to compile the application for all target platforms (Web, Docker, Desktop, Android, and iOS) automatically.
+This guide explains the automated build process for VibeCode, which is now **active** and uses GitHub Actions to compile the application for all target platforms automatically.
 
-## The Workflow File
+## Active Workflow
 
-The entire process is defined in the `build-pipeline.yml` file located in the project root.
-
-**IMPORTANT:** For GitHub Actions to recognize and run this workflow, you **MUST manually move** the `build-pipeline.yml` file into the `.github/workflows/` directory.
-
-```bash
-# Run this command from your project's root directory:
-mkdir -p .github/workflows && mv build-pipeline.yml .github/workflows/
-```
-
-Once moved, this workflow will automatically trigger on every `push` and `pull_request` to the `main` branch.
+The CI/CD pipeline is defined in `.github/workflows/build-pipeline.yml` and is now running in your repository. It will automatically trigger on every `push` and `pull_request` to the `main` branch.
 
 ## How It Works
 

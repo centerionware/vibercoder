@@ -1,12 +1,12 @@
 # VibeCode Native & Desktop Build Guide
 
-**⚡ Automated Builds Available! ⚡**
+**⚡ Automated Builds are Active! ⚡**
 
-This project is configured with a powerful, automated CI/CD pipeline using GitHub Actions. For the most reliable and consistent builds, we **strongly recommend** using the automated workflow.
+This project's build process is fully automated by a CI/CD pipeline using GitHub Actions. This is the primary and recommended method for creating builds.
 
-➡️ **Please see the [CI/CD Guide](./CICD_GUIDE.md) for instructions on enabling and using the automated build system.**
+➡️ **Please see the [CI/CD Guide](./CICD_GUIDE.md) for a detailed explanation of the automated workflow and how to access the final build artifacts.**
 
-The manual instructions below are provided for local development, testing, and debugging purposes when you need to build directly on your own machine.
+The manual instructions below are provided as a secondary option for local development, testing, and debugging when you need to build directly on your own machine.
 
 ---
 
