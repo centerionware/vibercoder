@@ -41,7 +41,6 @@ export interface GitSettings {
   source: 'global' | 'default' | 'specific' | 'custom';
   credentialId?: string; // For 'specific' source
   custom?: { // For 'custom' source
-    remoteUrl: string;
     userName: string;
     userEmail: string;
     authToken: string;

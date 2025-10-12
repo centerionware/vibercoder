@@ -150,27 +150,30 @@ export const useAppLogic = () => {
     const projectSettings = activeProject?.gitSettings;
     const defaultCredential = gitCredentials.find(c => c.isDefault);
 
-    let remoteUrl = settings.gitRemoteUrl;
+    // 1. Get the URL from the active project as the source of truth.
+    // 2. Fall back to the global setting if the project doesn't have one.
+    const remoteUrl = activeProject?.gitRemoteUrl || settings.gitRemoteUrl;
+
+    // Start with global settings as defaults for other properties
     let userName = settings.gitUserName;
     let userEmail = settings.gitUserEmail;
     let authToken = settings.gitAuthToken;
     let corsProxy: string | undefined = settings.gitCorsProxy;
 
+    // Override with project-specific settings for authentication and other details
     if (projectSettings?.source === 'default' && defaultCredential) {
         authToken = defaultCredential.token;
     } else if (projectSettings?.source === 'specific' && projectSettings.credentialId) {
         const specificCred = gitCredentials.find(c => c.id === projectSettings.credentialId);
         if (specificCred) authToken = specificCred.token;
     } else if (projectSettings?.source === 'custom' && projectSettings.custom) {
-        remoteUrl = projectSettings.custom.remoteUrl;
+        // Custom settings no longer include the URL
         userName = projectSettings.custom.userName;
         userEmail = projectSettings.custom.userEmail;
         authToken = projectSettings.custom.authToken;
         corsProxy = projectSettings.custom.corsProxy;
     }
     
-    remoteUrl = activeProject?.gitRemoteUrl || remoteUrl;
-
     // In native environments (Capacitor/Electron), bypass the CORS proxy for direct connections.
     if (isNativeEnvironment()) {
         corsProxy = undefined;
@@ -181,17 +184,6 @@ export const useAppLogic = () => {
   
   const handleClone = useCallback(async (url: string, name: string) => {
     if (!gitServiceRef.current) return;
-    
-    const defaultCredential = gitCredentials.find(c => c.isDefault);
-    const authToken = defaultCredential?.token || settings.gitAuthToken;
-    const userName = settings.gitUserName;
-    const userEmail = settings.gitUserEmail;
-    let corsProxy: string | undefined = settings.gitCorsProxy;
-    
-    // In native environments (Capacitor/Electron), bypass the CORS proxy for direct connections.
-    if (isNativeEnvironment()) {
-        corsProxy = undefined;
-    }
 
     if (!url || !url.trim()) {
       alert("Please provide a Git repository URL to clone.");
@@ -202,10 +194,26 @@ export const useAppLogic = () => {
       return;
     }
     
+    // Explicitly define the configuration for THIS clone operation,
+    // ensuring no data from the activeProject is used. This prevents errors
+    // where the clone attempts to use the active project's (missing) remote URL.
+    const cloneConfig = {
+      url: url,
+      proxy: isNativeEnvironment() ? undefined : settings.gitCorsProxy,
+      author: {
+        name: settings.gitUserName,
+        email: settings.gitUserEmail,
+      },
+      token: gitCredentials.find(c => c.isDefault)?.token || settings.gitAuthToken,
+    };
+    
     setIsCloning(true);
     try {
       const { files: clonedFiles } = await gitServiceRef.current.clone(
-        url, corsProxy, { name: userName, email: userEmail }, authToken
+        cloneConfig.url,
+        cloneConfig.proxy,
+        cloneConfig.author,
+        cloneConfig.token
       );
       
       const newProject = await createNewProject(name, false, url);

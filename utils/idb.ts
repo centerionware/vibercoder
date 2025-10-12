@@ -8,9 +8,9 @@ export class VibeCodeDB extends Dexie {
 
   constructor() {
     super('vibecodeDB');
-    // Fix: Cast 'this' to 'any' to allow calling Dexie's 'version' method, resolving a TypeScript type error.
-    (this as any).version(4).stores({
-      projects: '++id, &name, gitSettings',
+    // Bump version to 5 for schema change
+    (this as any).version(5).stores({
+      projects: '++id, &name, gitRemoteUrl, gitSettings',
       threads: '++id, projectId',
       gitCredentials: '++id, name, isDefault',
     });

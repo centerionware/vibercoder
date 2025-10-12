@@ -12,9 +12,10 @@ interface ProjectSettingsModalProps {
 
 const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = (props) => {
   const { isOpen, onClose, project, onSave, credentials, globalSettings } = props;
+  
+  const [remoteUrl, setRemoteUrl] = useState(project?.gitRemoteUrl || '');
   const [gitSettings, setGitSettings] = useState<GitSettings>(project?.gitSettings || { source: 'global' });
   const [customSettings, setCustomSettings] = useState(project?.gitSettings?.custom || {
-      remoteUrl: project?.gitRemoteUrl || '',
       userName: globalSettings.gitUserName,
       userEmail: globalSettings.gitUserEmail,
       authToken: '',
@@ -24,9 +25,9 @@ const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = (props) => {
   useEffect(() => {
     // Reset state when a new project is selected to edit
     if (project) {
+        setRemoteUrl(project.gitRemoteUrl || '');
         setGitSettings(project.gitSettings || { source: 'global' });
         setCustomSettings(project.gitSettings?.custom || {
-            remoteUrl: project.gitRemoteUrl || '',
             userName: globalSettings.gitUserName,
             userEmail: globalSettings.gitUserEmail,
             authToken: '',
@@ -45,11 +46,10 @@ const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = (props) => {
         delete finalSettings.custom;
     }
     
-    // Also update the top-level remote URL for convenience
     const updatedProject = {
         ...project,
+        gitRemoteUrl: remoteUrl,
         gitSettings: finalSettings,
-        gitRemoteUrl: finalSettings.source === 'custom' ? customSettings.remoteUrl : project.gitRemoteUrl
     };
     onSave(updatedProject);
     onClose();
@@ -66,7 +66,20 @@ const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = (props) => {
 
         <div className="overflow-y-auto p-4 space-y-6">
             <h3 className="text-lg font-semibold text-vibe-text-secondary">Git Configuration</h3>
-            <div className="space-y-2">
+
+            <div>
+                <label htmlFor="project-remote-url" className="block text-sm font-medium text-vibe-text-secondary mb-1">Remote Repository URL</label>
+                <input 
+                    id="project-remote-url"
+                    type="text" 
+                    value={remoteUrl} 
+                    onChange={e => setRemoteUrl(e.target.value)} 
+                    className="w-full bg-vibe-bg p-2 rounded-md" 
+                    placeholder="https://github.com/user/repo.git" 
+                />
+            </div>
+
+            <div className="space-y-2 border-t border-vibe-bg-deep pt-4">
                 <label className="block text-sm font-medium text-vibe-text-secondary">Authentication Source</label>
                 <select 
                     value={gitSettings.source} 
@@ -97,10 +110,6 @@ const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = (props) => {
             {gitSettings.source === 'custom' && (
                 <div className="border-t border-vibe-bg-deep pt-4 space-y-3">
                      <h4 className="text-md font-semibold text-vibe-text-secondary">Custom Project Settings</h4>
-                     <div>
-                        <label className="text-sm">Remote URL</label>
-                        <input type="text" value={customSettings.remoteUrl} onChange={e => setCustomSettings({...customSettings, remoteUrl: e.target.value})} className="w-full bg-vibe-bg p-2 rounded-md mt-1" />
-                     </div>
                      <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="text-sm">User Name</label>
@@ -114,6 +123,10 @@ const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = (props) => {
                      <div>
                         <label className="text-sm">Auth Token</label>
                         <input type="password" value={customSettings.authToken} onChange={e => setCustomSettings({...customSettings, authToken: e.target.value})} className="w-full bg-vibe-bg p-2 rounded-md mt-1" />
+                     </div>
+                     <div>
+                        <label className="text-sm">CORS Proxy URL</label>
+                        <input type="text" value={customSettings.corsProxy} onChange={e => setCustomSettings({...customSettings, corsProxy: e.target.value})} className="w-full bg-vibe-bg p-2 rounded-md mt-1" />
                      </div>
                 </div>
             )}
