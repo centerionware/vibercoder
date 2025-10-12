@@ -1,6 +1,6 @@
 import git from 'isomorphic-git';
 import webHttp from 'isomorphic-git/http/web';
-import { nativeHttp } from './nativeHttp';
+import { nativeFetch } from './nativeFetch';
 import { isNativeEnvironment } from '../utils/environment';
 import FS from '@isomorphic-git/lightning-fs';
 import { GitService, GitAuthor, GitStatus, GitFileStatus, GitCommit, GitFileChange, DiffLine } from '../types';
@@ -55,15 +55,23 @@ const realGitService: GitService = {
     
     console.log(`Attempting to clone from URL: ${url}`);
     
-    const useNativeClient = isNativeEnvironment();
-    const httpClient = useNativeClient ? nativeHttp : webHttp;
+    const useNative = isNativeEnvironment();
 
-    if (useNativeClient) {
-        console.log("Using native HTTP client for Git operation, bypassing CORS proxy.");
+    // This is the new strategy: create a client that wraps the standard webHttp client
+    // and injects our custom `nativeFetch` polyfill only when in a native environment.
+    const httpClient = {
+        async request(args: any) {
+            const fetchImpl = useNative ? nativeFetch : undefined;
+            return webHttp.request({ ...args, fetch: fetchImpl });
+        }
+    };
+
+    if (useNative) {
+        console.log("Using native fetch implementation for Git operation, bypassing CORS proxy.");
     } else if (proxyUrl) {
-        console.log(`Using web HTTP client with CORS proxy: ${proxyUrl}`);
+        console.log(`Using browser fetch with CORS proxy: ${proxyUrl}`);
     } else {
-        console.warn('Using web HTTP client without a CORS proxy. This will likely fail due to browser CORS policy.');
+        console.warn('Using browser fetch without a CORS proxy. This will likely fail.');
     }
 
     try {
@@ -71,7 +79,8 @@ const realGitService: GitService = {
         fs,
         http: httpClient,
         dir,
-        corsProxy: useNativeClient ? undefined : proxyUrl,
+        // The corsProxy is only used by the standard web fetch, so we don't need it for native.
+        corsProxy: useNative ? undefined : proxyUrl,
         url,
         onAuth: () => ({ username: token }),
         onMessage: (message) => {
@@ -85,14 +94,8 @@ const realGitService: GitService = {
       });
     } catch (e: any) {
       console.error("isomorphic-git clone error object:", e);
-      let detailedMessage = e.message;
-      if (e.data?.response) {
-        detailedMessage += ` | Server response: ${e.data.response}`;
-      }
-      if (e.data?.statusCode) {
-        detailedMessage += ` | Status code: ${e.data.statusCode}`;
-      }
-      throw new Error(detailedMessage);
+      // Re-throw the original error to be handled by the UI logic
+      throw e;
     }
     
     return { files: await readFileFromFS(dir) };
