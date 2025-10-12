@@ -94,8 +94,27 @@ const SettingsView: React.FC<SettingsViewProps> = ({ settings, onSettingsChange,
       {/* AI Settings */}
       <div className="bg-vibe-panel p-6 rounded-lg">
         <h3 className="text-lg font-semibold mb-4 text-vibe-text-secondary">AI Configuration</h3>
-        <p className="text-sm text-vibe-comment mb-4">The Google Gemini API key is configured securely via the <code>API_KEY</code> environment variable.</p>
         <div className="space-y-4">
+          <div>
+            <label htmlFor="geminiApiKey" className="block text-sm font-medium text-vibe-text mb-1">
+              Google Gemini API Key
+            </label>
+            <input
+              type="password"
+              id="geminiApiKey"
+              name="geminiApiKey"
+              value={localSettings.geminiApiKey}
+              onChange={handleChange}
+              placeholder="Enter your API key here"
+              className="w-full bg-vibe-bg-deep p-2 rounded-md border border-vibe-comment focus:outline-none focus:ring-2 focus:ring-vibe-accent"
+            />
+            <p className="text-xs text-vibe-comment mt-1">
+              Stored locally in your browser. Overrides any build-time key. Get one from{' '}
+              <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-vibe-accent hover:underline">
+                Google AI Studio
+              </a>.
+            </p>
+          </div>
           <div>
             <label htmlFor="aiProvider" className="block text-sm font-medium text-vibe-text mb-1">
               AI Provider

@@ -1,18 +1,28 @@
 import React from 'react';
 import SpinnerIcon from '../icons/SpinnerIcon';
+import { GitStatus, GitFileStatus } from '../../types';
 
 interface GitViewProps {
-  changedFiles: string[];
+  changedFiles: GitStatus[];
   onCommit: (message: string) => Promise<void>;
   isCommitting: boolean;
 }
 
+const statusStyles: Record<GitFileStatus, { label: string; color: string }> = {
+  [GitFileStatus.New]: { label: 'NEW', color: 'text-green-400' },
+  [GitFileStatus.Modified]: { label: 'MOD', color: 'text-yellow-400' },
+  [GitFileStatus.Deleted]: { label: 'DEL', color: 'text-red-400' },
+  [GitFileStatus.Unmodified]: { label: '', color: '' },
+  [GitFileStatus.Absorb]: { label: 'ABS', color: 'text-blue-400' },
+};
+
+
 const GitView: React.FC<GitViewProps> = ({ changedFiles, onCommit, isCommitting }) => {
   const [commitMessage, setCommitMessage] = React.useState('');
 
-  const handleCommit = () => {
+  const handleCommit = async () => {
     if (commitMessage.trim()) {
-      onCommit(commitMessage.trim());
+      await onCommit(commitMessage.trim());
       setCommitMessage('');
     }
   };
@@ -21,14 +31,21 @@ const GitView: React.FC<GitViewProps> = ({ changedFiles, onCommit, isCommitting 
     <div className="flex flex-col flex-1 h-full bg-vibe-bg-deep rounded-lg overflow-hidden p-4 space-y-4">
       <h2 className="text-xl font-bold text-vibe-text">Git Status</h2>
       
-      <div className="bg-vibe-panel p-4 rounded-lg flex-1">
+      <div className="bg-vibe-panel p-4 rounded-lg flex-1 overflow-y-auto">
         <h3 className="text-lg font-semibold mb-2 text-vibe-text-secondary">Changes ({changedFiles.length})</h3>
         {changedFiles.length > 0 ? (
-          <ul className="list-disc list-inside space-y-1 text-vibe-text">
-            {changedFiles.map(file => <li key={file}>{file}</li>)}
+          <ul className="space-y-1 text-vibe-text font-mono text-sm">
+            {changedFiles.map(file => (
+              <li key={file.filepath} className="flex items-center">
+                <span className={`w-12 flex-shrink-0 font-bold ${statusStyles[file.status]?.color || ''}`}>
+                    {statusStyles[file.status]?.label}
+                </span>
+                <span>{file.filepath}</span>
+              </li>
+            ))}
           </ul>
         ) : (
-          <p className="text-vibe-comment">No changes detected since last commit.</p>
+          <p className="text-vibe-comment">No changes detected in the working directory.</p>
         )}
       </div>
 

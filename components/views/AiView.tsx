@@ -60,6 +60,22 @@ const AiView: React.FC<AiViewProps> = (props) => {
     setIsHistoryModalOpen(false);
   };
 
+  if (!aiRef.current) {
+    return (
+      <div className="flex flex-col flex-1 h-full bg-vibe-bg-deep rounded-lg overflow-hidden items-center justify-center p-4 text-center">
+        <div className="bg-vibe-panel p-6 rounded-lg max-w-sm border border-vibe-accent/30">
+          <h3 className="text-lg font-bold text-vibe-accent mb-2">AI Not Configured</h3>
+          <p className="text-vibe-text-secondary">
+            To use the AI assistant, please enter your Google Gemini API key in the Settings view.
+          </p>
+          <p className="text-xs text-vibe-comment mt-2">
+            If a key was provided during the build, it may be invalid. The key set in settings will always take priority.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col flex-1 h-full bg-vibe-bg-deep rounded-lg overflow-hidden">
       <AiHeader 

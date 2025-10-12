@@ -1,5 +1,5 @@
 // Fix: Added Dispatch and SetStateAction to imports to resolve type errors.
-import { useState, useCallback, useEffect, Dispatch, SetStateAction } from 'react';
+import { useState, useCallback, Dispatch, SetStateAction } from 'react';
 
 const initialFiles: Record<string, string> = {
     'index.html': `<!DOCTYPE html>
@@ -51,22 +51,10 @@ h1 {
 `,
 };
 
-// A static snapshot to compare against for changes.
-const initialFilesSnapshot = { ...initialFiles };
-
 // Fix: Use imported Dispatch and SetStateAction types directly.
-export const useFiles = (setChangedFiles: Dispatch<SetStateAction<string[]>>) => {
+export const useFiles = () => {
     const [files, setFiles] = useState<Record<string, string>>(initialFiles);
     const [activeFile, setActiveFile] = useState<string | null>('index.tsx');
-
-    useEffect(() => {
-        const changed = Object.keys(files).filter(filename => {
-            // A file is changed if it's new or its content is different.
-            return !initialFilesSnapshot.hasOwnProperty(filename) || initialFilesSnapshot[filename] !== files[filename];
-        });
-        const deleted = Object.keys(initialFilesSnapshot).filter(filename => !files.hasOwnProperty(filename));
-        setChangedFiles([...new Set([...changed, ...deleted])]);
-    }, [files, setChangedFiles]);
 
     const handleWriteFile = useCallback((filename: string, content: string) => {
         setFiles(prevFiles => ({
@@ -88,6 +76,7 @@ export const useFiles = (setChangedFiles: Dispatch<SetStateAction<string[]>>) =>
     
     return {
         files,
+        setFiles, // Expose setFiles to allow workspace replacement
         activeFile,
         setActiveFile,
         onWriteFile: handleWriteFile,

@@ -32,6 +32,7 @@ export enum AiProvider {
 export interface AppSettings {
   aiProvider: AiProvider;
   aiModel: string;
+  geminiApiKey: string; // The user-provided API key
   voiceName: string; // Added to support selectable voices
   aiEndpoint: string;
   gitRemoteUrl: string;
@@ -163,4 +164,30 @@ export interface UseWakeWordProps {
     onWake: () => void;
     enabled: boolean;
     onPermissionError: (message: string) => void;
+}
+
+// --- Git Service Types ---
+export enum GitFileStatus {
+  Unmodified = 'unmodified',
+  New = 'new',
+  Modified = 'modified',
+  Deleted = 'deleted',
+  Absorb = 'absorb', // For untracked files
+}
+
+export interface GitStatus {
+  filepath: string;
+  status: GitFileStatus;
+}
+
+export interface GitAuthor {
+  name: string;
+  email: string;
+}
+
+export interface GitService {
+  isReal: boolean;
+  clone(url: string, proxyUrl: string, author: GitAuthor): Promise<{ files: Record<string, string> }>;
+  status(files: Record<string, string>, changedFilePaths?: string[]): Promise<GitStatus[]>;
+  commit(message: string, author: GitAuthor, files: Record<string, string>): Promise<{ oid: string }>;
 }

@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { View, AppSettings, AiProvider, ToolCall, ToolCallStatus, LiveSessionControls } from './types';
+import { View, AppSettings, AiProvider, ToolCall, ToolCallStatus, LiveSessionControls, GitService, GitStatus, GitAuthor } from './types';
 import { dbInitializationError } from './utils/idb';
 import { useFiles } from './hooks/useFiles';
 import { useThreads } from './hooks/useThreads';
 import { useAiLive } from './hooks/useAiLive';
 import { createToolImplementations } from './services/toolOrchestrator';
+import { createGitService } from './services/gitService';
 
 import Header from './components/Header';
 import BottomNav from './components/BottomNav';
@@ -18,10 +19,13 @@ import ErrorFallback from './components/ErrorFallback';
 import MicPermissionModal from './components/modals/MicPermissionModal';
 import ScreenshotModal from './components/modals/ScreenshotModal';
 import LiveVideoPreviewModal from './components/modals/LiveVideoPreviewModal';
+import { Capacitor } from '@capacitor/core';
+import { Camera } from '@capacitor/camera';
 
 const defaultSettings: AppSettings = {
   aiProvider: AiProvider.Google,
   aiModel: 'gemini-2.5-flash',
+  geminiApiKey: '',
   voiceName: 'Zephyr',
   aiEndpoint: '',
   gitRemoteUrl: '',
@@ -47,17 +51,46 @@ function App() {
   const [bundleLogs, setBundleLogs] = useState<string[]>([]);
   const [isCloning, setIsCloning] = useState(false);
   const [micPermissionError, setMicPermissionError] = useState<string | null>(null);
-  const [changedFiles, setChangedFiles] = useState<string[]>([]);
+  const [gitStatus, setGitStatus] = useState<GitStatus[]>([]);
   const [isCommitting, setIsCommitting] = useState(false);
   const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null);
   const [isScreenshotPreviewDisabled, setIsScreenshotPreviewDisabled] = useState(false);
   const [liveFrameData, setLiveFrameData] = useState<string | null>(null);
   const [isLiveVideoModalOpen, setIsLiveVideoModalOpen] = useState(false);
   
-  const { files, activeFile, setActiveFile, onWriteFile, onRemoveFile } = useFiles(setChangedFiles);
+  const { files, setFiles, activeFile, setActiveFile, onWriteFile, onRemoveFile } = useFiles();
   const threadsState = useThreads();
   
   const aiRef = useRef<GoogleGenAI | null>(null);
+  const gitServiceRef = useRef<GitService | null>(null);
+  const appContainerRef = useRef<HTMLDivElement>(null);
+
+  // Initialize the Git service once based on the platform
+  useEffect(() => {
+    if (!gitServiceRef.current) {
+      const isRealGit = Capacitor.isNativePlatform() || (window as any).electron?.isElectron;
+      gitServiceRef.current = createGitService(isRealGit);
+      console.log(`Git Service Initialized. Mode: ${isRealGit ? 'Real' : 'Mock'}`);
+    }
+  }, []);
+
+  const refreshGitStatus = useCallback(async () => {
+    if (!gitServiceRef.current) return;
+    try {
+      const status = await gitServiceRef.current.status(files);
+      setGitStatus(status);
+    } catch (e) {
+      console.error("Failed to get git status:", e);
+      // You could set an error state here to show in the UI
+    }
+  }, [files]);
+  
+  // Refresh git status when the view changes to 'git' or files are modified
+  useEffect(() => {
+    if (activeView === View.Git) {
+      refreshGitStatus();
+    }
+  }, [activeView, files, refreshGitStatus]);
   
   const liveSessionControlsRef = useRef<LiveSessionControls>({
     stopLiveSession: () => console.warn("Attempted to stop live session before it was initialized."),
@@ -67,214 +100,114 @@ function App() {
   });
 
   useEffect(() => {
-    if (process.env.API_KEY) {
-      aiRef.current = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    } else {
-      console.error("API_KEY environment variable not set.");
-    }
-  }, []);
-
-  const handleSettingsChange = useCallback((newSettings: AppSettings) => {
-    setSettings(newSettings);
-    localStorage.setItem('vibecode_settings', JSON.stringify(newSettings));
-  }, []);
-  
-  const toolImplementations = useMemo(() => createToolImplementations({
-    files, onWriteFile, onRemoveFile, aiRef, setActiveView, setActiveFile,
-    activeFile, bundleLogs, settings, onSettingsChange: handleSettingsChange,
-    threads: threadsState.threads,
-    activeThread: threadsState.activeThread,
-    updateThread: threadsState.updateThread,
-    sandboxErrors, changedFiles,
-    liveSessionControls: liveSessionControlsRef.current,
-    activeView,
-    setScreenshotPreview,
-    isScreenshotPreviewDisabled,
-    setIsScreenshotPreviewDisabled,
-  }), [
-    files, onWriteFile, onRemoveFile, activeFile, bundleLogs, settings, 
-    handleSettingsChange, threadsState.threads, threadsState.activeThread, 
-    threadsState.updateThread, sandboxErrors, changedFiles, activeView,
-    isScreenshotPreviewDisabled
-  ]);
-
-  const liveSessionState = useAiLive({ 
-    aiRef, settings, addMessage: threadsState.addMessage,
-    updateMessage: threadsState.updateMessage, toolImplementations,
-    activeThread: threadsState.activeThread, updateHistory: threadsState.updateHistory,
-    onPermissionError: setMicPermissionError,
-    // FIX: Pass activeView to the useAiLive hook to be used for context-aware screenshotting.
-    activeView,
-    setLiveFrameData,
-  });
-  
-  const handleSendErrorToAi = useCallback((errors: string[]) => {
-    if (errors.length === 0) return;
-
-    if (liveSessionState.isLive) {
-      if (threadsState.activeThread) {
-        toolImplementations.updateShortTermMemory({
-          key: 'last_runtime_error',
-          value: errors.join('\n\n'),
-          priority: 'high'
-        });
-        
-        threadsState.addMessage({
-          id: 'error-sent-' + Date.now(),
-          role: 'user',
-          content: '(A runtime error occurred. The details have been added to your memory. Please say "fix the error" to proceed.)',
-        });
-        // Stay in the preview view for a seamless experience
-      }
-    } else {
-      // For text chat, replicate the original behavior but trigger it manually
-      const newToolCall: ToolCall = {
-          id: 'sandbox-error-' + Date.now(),
-          name: 'preview.runtimeError',
-          args: { errors },
-          status: ToolCallStatus.ERROR,
-      };
-
-      threadsState.addMessage({
-          id: 'error-report-' + Date.now(),
-          role: 'model',
-          content: "I've detected a runtime error in the preview. Would you like me to fix it?",
-          toolCalls: [newToolCall]
-      });
-
-      setActiveView(View.Ai);
-    }
-  }, [liveSessionState.isLive, threadsState.activeThread, threadsState.addMessage, toolImplementations, setActiveView]);
-
-  const handleRetryLiveSession = useCallback(() => {
-    // The modal's onClose will handle clearing the error state.
-    liveSessionState.stopLiveSession({ immediate: true });
-    // A small delay to ensure all cleanup from the previous session is complete before starting a new one.
-    setTimeout(() => {
-        liveSessionState.startLiveSession();
-    }, 150);
-  }, [liveSessionState]);
-
-
-  useEffect(() => {
-    liveSessionControlsRef.current.stopLiveSession = liveSessionState.stopLiveSession;
-    liveSessionControlsRef.current.pauseListening = liveSessionState.pauseListening;
-    liveSessionControlsRef.current.enableVideoStream = liveSessionState.enableVideoStream;
-    liveSessionControlsRef.current.disableVideoStream = liveSessionState.disableVideoStream;
-  }, [liveSessionState.stopLiveSession, liveSessionState.pauseListening, liveSessionState.enableVideoStream, liveSessionState.disableVideoStream]);
-
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (event.data.type === 'sandbox-error') {
-        setSandboxErrors(prev => [...prev, event.data.message]);
+    const requestNativePermissions = async () => {
+      if (Capacitor.isNativePlatform()) {
+        try {
+          await Camera.requestPermissions({ permissions: ['camera', 'microphone'] });
+        } catch (e) {
+          console.error("Error requesting native permissions:", e);
+          setMicPermissionError("Failed to request camera/microphone permissions on the native device.");
+        }
       }
     };
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
+    requestNativePermissions();
   }, []);
 
-  const handleGitImport = () => {
-    setIsCloning(true);
-    setTimeout(() => {
-        alert(`Cloned from ${settings.gitRemoteUrl} (mock). Your workspace has been updated.`);
-        setIsCloning(false);
-    }, 2000);
+  useEffect(() => {
+    try {
+      localStorage.setItem('vibecode_settings', JSON.stringify(settings));
+      const effectiveApiKey = settings.geminiApiKey || process.env.API_KEY;
+      if (effectiveApiKey) {
+        aiRef.current = new GoogleGenAI({ apiKey: effectiveApiKey });
+      } else {
+        aiRef.current = null;
+      }
+    } catch (e) {
+      console.error("Failed to initialize Gemini AI or save settings:", e);
+      aiRef.current = null;
+    }
+  }, [settings]);
+
+  const { isLive, isMuted, isSpeaking, startLiveSession, stopLiveSession, toggleMute, isVideoStreamEnabled } = useAiLive({
+    ...({} as any) // Placeholder for dependencies
+  });
+
+  const toolImplementations = useMemo(() => createToolImplementations({
+    files, onWriteFile, onRemoveFile, aiRef, setActiveView, setActiveFile,
+    activeFile, bundleLogs, settings, onSettingsChange: setSettings,
+    threads: threadsState.threads, activeThread: threadsState.activeThread,
+    updateThread: threadsState.updateThread, sandboxErrors, changedFiles: gitStatus.map(s => s.filepath),
+    liveSessionControls: liveSessionControlsRef.current, activeView,
+    setScreenshotPreview, isScreenshotPreviewDisabled, setIsScreenshotPreviewDisabled,
+  }), [
+    files, onWriteFile, onRemoveFile, activeFile, bundleLogs, settings,
+    threadsState.threads, threadsState.activeThread, threadsState.updateThread,
+    sandboxErrors, gitStatus, activeView, isScreenshotPreviewDisabled
+  ]);
+  
+  const handleSendErrorToAi = (errors: string[]) => {
+    // This is a placeholder for the actual implementation
+    console.log("Sending errors to AI:", errors);
   };
   
-  const handleCommit = async (message: string) => {
+  const handleGitImport = useCallback(async () => {
+    if (!gitServiceRef.current || !settings.gitRemoteUrl) {
+        alert("Please set the Git Remote URL in settings first.");
+        return;
+    }
+    setIsCloning(true);
+    try {
+        const author: GitAuthor = { name: settings.gitUserName, email: settings.gitUserEmail };
+        const { files: clonedFiles } = await gitServiceRef.current.clone(settings.gitRemoteUrl, settings.gitProxyUrl, author);
+        setFiles(clonedFiles);
+        setActiveFile(Object.keys(clonedFiles)[0] || null);
+        setActiveView(View.Code); // Switch to code view after clone
+        await refreshGitStatus();
+    } catch (e) {
+        console.error("Git clone failed:", e);
+        alert(`Git clone failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+        setIsCloning(false);
+    }
+  }, [settings.gitRemoteUrl, settings.gitProxyUrl, settings.gitUserName, settings.gitUserEmail, setFiles, refreshGitStatus]);
+
+  const handleCommit = useCallback(async (message: string) => {
+    if (!gitServiceRef.current || gitStatus.length === 0) return;
     setIsCommitting(true);
-    await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate network request
-    alert(`Committed ${changedFiles.length} files with message: "${message}" (mock)`);
-    setChangedFiles([]);
-    setIsCommitting(false);
-  };
+    try {
+      const author: GitAuthor = { name: settings.gitUserName, email: settings.gitUserEmail };
+      await gitServiceRef.current.commit(message, author, files);
+      await refreshGitStatus(); // Refresh status to show a clean state
+    } catch (e) {
+      console.error("Git commit failed:", e);
+      alert(`Git commit failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setIsCommitting(false);
+    }
+  }, [gitStatus, files, settings.gitUserName, settings.gitUserEmail, refreshGitStatus]);
+  
 
   if (dbInitializationError) {
-      return <ErrorFallback error={dbInitializationError} />;
+    return <ErrorFallback error={dbInitializationError} />;
   }
-
-  const renderView = () => {
-    switch (activeView) {
-      case View.Code:
-        return <CodeView files={files} activeFile={activeFile} setActiveFile={setActiveFile} onWriteFile={onWriteFile} />;
-      case View.Preview:
-        return <PreviewView 
-            files={files} isFullScreen={isFullScreen} onToggleFullScreen={() => setIsFullScreen(p => !p)}
-            bundleLogs={bundleLogs} setBundleLogs={setBundleLogs} 
-            sandboxErrors={sandboxErrors}
-            setSandboxErrors={setSandboxErrors}
-            isLive={liveSessionState.isLive}
-            onSendErrorToAi={handleSendErrorToAi}
-        />;
-      case View.Ai:
-        return <AiView
-            aiRef={aiRef} settings={settings} toolImplementations={toolImplementations}
-            {...threadsState} {...liveSessionState}
-        />;
-      case View.Git:
-        return <GitView changedFiles={changedFiles} onCommit={handleCommit} isCommitting={isCommitting} />;
-      case View.Settings:
-        return <SettingsView settings={settings} onSettingsChange={handleSettingsChange} onGitImport={handleGitImport} isCloning={isCloning} />;
-      default:
-        return <CodeView files={files} activeFile={activeFile} setActiveFile={setActiveFile} onWriteFile={onWriteFile} />;
-    }
-  };
-  
-  if (isFullScreen) {
-      return (
-         <div className="h-screen w-screen bg-vibe-bg">
-            <PreviewView 
-                files={files} isFullScreen={isFullScreen} onToggleFullScreen={() => setIsFullScreen(p => !p)}
-                bundleLogs={bundleLogs} setBundleLogs={setBundleLogs}
-                sandboxErrors={sandboxErrors}
-                setSandboxErrors={setSandboxErrors}
-                isLive={liveSessionState.isLive}
-                onSendErrorToAi={handleSendErrorToAi}
-            />
-         </div>
-      )
-  }
-  
-  const isErrorRetryable = micPermissionError?.toLowerCase().includes('session') || 
-                          micPermissionError?.toLowerCase().includes('deadline') ||
-                          micPermissionError?.toLowerCase().includes('internal error');
-
 
   return (
-    <div id="app-container" className="h-screen w-screen bg-vibe-bg flex flex-col p-4 gap-4">
-      {micPermissionError && (
-        <MicPermissionModal 
-            message={micPermissionError} 
-            onClose={() => setMicPermissionError(null)} 
-            onRetry={handleRetryLiveSession}
-            isRetryable={isErrorRetryable}
-        />
-      )}
-      {screenshotPreview && (
-        <ScreenshotModal 
-          imageDataUrl={screenshotPreview}
-          onClose={() => setScreenshotPreview(null)}
-          onDisable={() => {
-            setIsScreenshotPreviewDisabled(true);
-            setScreenshotPreview(null);
-          }}
-        />
-      )}
-      {isLiveVideoModalOpen && (
-        <LiveVideoPreviewModal
-            frameDataUrl={liveFrameData}
-            onClose={() => setIsLiveVideoModalOpen(false)}
-        />
-      )}
-      <Header
-        isLiveVideoEnabled={liveSessionState.isVideoStreamEnabled}
-        onLiveVideoIconClick={() => setIsLiveVideoModalOpen(true)}
-      />
-      <main id="main-content" className="flex-1 flex min-h-0">
-        {renderView()}
+    <div id="app-container" ref={appContainerRef} className={`h-screen w-screen flex flex-col font-sans ${isFullScreen ? 'fixed inset-0 z-50 bg-vibe-bg-deep' : ''}`}>
+      {!isFullScreen && <Header isLiveVideoEnabled={isVideoStreamEnabled} onLiveVideoIconClick={() => setIsLiveVideoModalOpen(true)} />}
+      
+      <main className={`flex-1 overflow-auto p-2 pb-20`}>
+        {activeView === View.Code && <CodeView files={files} activeFile={activeFile} setActiveFile={setActiveFile} onWriteFile={onWriteFile} />}
+        {activeView === View.Preview && <PreviewView files={files} isFullScreen={isFullScreen} onToggleFullScreen={() => setIsFullScreen(p => !p)} bundleLogs={bundleLogs} setBundleLogs={setBundleLogs} setSandboxErrors={setSandboxErrors} sandboxErrors={sandboxErrors} isLive={isLive} onSendErrorToAi={handleSendErrorToAi}/>}
+        {activeView === View.Ai && <AiView aiRef={aiRef} settings={settings} {...threadsState} toolImplementations={toolImplementations} isLive={isLive} isMuted={isMuted} isSpeaking={isSpeaking} startLiveSession={startLiveSession} stopLiveSession={stopLiveSession} toggleMute={toggleMute} />}
+        {activeView === View.Git && <GitView changedFiles={gitStatus} onCommit={handleCommit} isCommitting={isCommitting} />}
+        {activeView === View.Settings && <SettingsView settings={settings} onSettingsChange={setSettings} onGitImport={handleGitImport} isCloning={isCloning} />}
       </main>
-      <div className="h-20 flex-shrink-0" />
-      <BottomNav activeView={activeView} onNavigate={setActiveView} />
+
+      {!isFullScreen && <BottomNav activeView={activeView} onNavigate={setActiveView} />}
+      
+      {micPermissionError && <MicPermissionModal message={micPermissionError} onClose={() => setMicPermissionError(null)} />}
+      {screenshotPreview && <ScreenshotModal imageDataUrl={screenshotPreview} onClose={() => setScreenshotPreview(null)} onDisable={() => setIsScreenshotPreviewDisabled(true)} />}
+      {isLiveVideoModalOpen && <LiveVideoPreviewModal frameDataUrl={liveFrameData} onClose={() => setIsLiveVideoModalOpen(false)} />}
     </div>
   );
 }

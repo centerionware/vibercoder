@@ -16,10 +16,15 @@
     "build:docker": "docker build -t vibecode:latest ."
   },
   "dependencies": {
+    "@capacitor/camera": "^6.0.0",
+    "@capacitor/core": "^6.0.0",
+    "@capacitor/filesystem": "^6.0.0",
     "@google/genai": "^1.23.0",
+    "@isomorphic-git/lightning-fs": "^4.6.15",
     "dexie": "^4.0.7",
     "esbuild-wasm": "0.21.3",
     "html2canvas": "^1.4.1",
+    "isomorphic-git": "^1.25.5",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "uuid": "^13.0.0"
@@ -27,7 +32,6 @@
   "devDependencies": {
     "@capacitor/android": "^6.0.0",
     "@capacitor/cli": "^6.0.0",
-    "@capacitor/core": "^6.0.0",
     "@capacitor/ios": "^6.0.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
@@ -45,7 +49,7 @@
     "productName": "VibeCode",
     "files": [
       "www/**/*",
-      "electron/main.js"
+      "electron/**/*"
     ],
     "directories": {
       "buildResources": "assets",
