@@ -5,10 +5,16 @@
 name: VibeCode Cross-Platform Build
 
 on:
+  workflow_dispatch: # Allows manual triggering of the workflow
   push:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+
+# Grant write permissions to the GITHUB_TOKEN for pushing to GHCR
+permissions:
+  contents: read
+  packages: write
 
 jobs:
   # Job 1: Build the core web assets and the Docker image. This is the foundation for all other jobs.
