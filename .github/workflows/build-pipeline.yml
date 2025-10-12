@@ -160,8 +160,8 @@ jobs:
           name: web-assets
           path: www
 
-      - name: Sync Capacitor Android platform
-        run: npx capacitor sync android
+      - name: Add Capacitor Android platform
+        run: npx capacitor add android
         
       - name: Make gradlew executable
         run: chmod +x android/gradlew
@@ -209,8 +209,8 @@ jobs:
           name: web-assets
           path: www
 
-      - name: Sync Capacitor assets
-        run: npx capacitor sync ios
+      - name: Add Capacitor iOS platform
+        run: npx capacitor add ios
 
       - name: Install CocoaPods
         run: pod install
