@@ -47,34 +47,41 @@ async function capacitorRequest(request: GitHttpRequest): Promise<GitHttpRespons
   }
   const requestBody = Buffer.concat(bodyParts);
 
-  // Set a git-like User-Agent to ensure the server responds with the correct protocol.
+  // Set standard git-like headers to ensure the server responds with the correct protocol.
   const headers = {
     ...request.headers,
     'User-Agent': 'git/isomorphic-git (capacitor)',
+    'Accept': '*/*', // Add a generic Accept header
   };
 
-  const response: HttpResponse = await CapacitorHttp.request({
-    method: request.method || 'GET',
-    url: request.url,
-    headers: headers,
-    // CapacitorHttp on native platforms can handle ArrayBuffer directly for binary data.
-    data: requestBody.length > 0 ? requestBody.buffer : undefined,
-    // Ask for binary data in response.
-    responseType: 'arraybuffer'
-  });
+  try {
+    const response: HttpResponse = await CapacitorHttp.request({
+      method: request.method || 'GET',
+      url: request.url,
+      headers: headers,
+      // CapacitorHttp on native platforms can handle ArrayBuffer directly for binary data.
+      data: requestBody.length > 0 ? requestBody.buffer : undefined,
+      // Ask for binary data in response.
+      responseType: 'arraybuffer'
+    });
 
-  // `response.data` will be an ArrayBuffer, convert it to Uint8Array for isomorphic-git
-  const responseBody = new Uint8Array(response.data);
+    // `response.data` will be an ArrayBuffer, convert it to Uint8Array for isomorphic-git
+    const responseBody = new Uint8Array(response.data);
 
-  return {
-    url: response.url,
-    method: request.method || 'GET',
-    statusCode: response.status,
-    statusMessage: `Status ${response.status}`, // Capacitor does not provide a status message string
-    // FIX: Wrap the response body in an async iterable to match the required type.
-    body: singleChunkAsyncIterable(responseBody),
-    headers: response.headers,
-  };
+    return {
+      url: response.url,
+      method: request.method || 'GET',
+      statusCode: response.status,
+      statusMessage: `Status ${response.status}`, // Capacitor does not provide a status message string
+      // FIX: Wrap the response body in an async iterable to match the required type.
+      body: singleChunkAsyncIterable(responseBody),
+      headers: response.headers,
+    };
+  } catch (nativeError: any) {
+    console.error("CapacitorHttp native layer threw an error:", nativeError);
+    // Re-throw a more informative error for the main git service to catch.
+    throw new Error(`Native HTTP request failed: ${nativeError.message || 'Unknown native error'}`);
+  }
 }
 
 /**

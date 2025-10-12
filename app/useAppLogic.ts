@@ -204,6 +204,10 @@ export const useAppLogic = () => {
       alert("Please provide a local name for the new project.");
       return;
     }
+    if (!url.trim().startsWith('https://')) {
+      alert("Invalid Git URL. Only HTTPS URLs (e.g., 'https://github.com/user/repo.git') are supported for cloning.");
+      return;
+    }
     
     // Explicitly define the configuration for THIS clone operation,
     // ensuring no data from the activeProject is used. This prevents errors
