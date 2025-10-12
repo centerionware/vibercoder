@@ -11,20 +11,12 @@ interface State {
 }
 
 class ErrorBoundary extends React.Component<Props, State> {
-  constructor(props: Props) {
-    super(props);
-    // Initialize state within the constructor.
-    this.state = {
-      hasError: false,
-      error: null,
-    };
-    
-    // Bind class methods to the component instance to ensure `this` is correctly referenced
-    // when they are used as event handlers. This resolves errors where `this.setState` would
-    // otherwise be called on an incorrect context.
-    this.handleError = this.handleError.bind(this);
-    this.handleRejection = this.handleRejection.bind(this);
-  }
+  // FIX: State is initialized as a class property using modern syntax.
+  // This is a more robust way to handle state and avoids potential issues within the constructor.
+  public state: State = {
+    hasError: false,
+    error: null,
+  };
 
   // This is the standard React error boundary method for render-phase errors
   static getDerivedStateFromError(error: Error): State {
@@ -48,12 +40,15 @@ class ErrorBoundary extends React.Component<Props, State> {
     window.removeEventListener('unhandledrejection', this.handleRejection);
   }
 
-  private handleError(event: ErrorEvent) {
+  // FIX: Event handlers are converted to arrow functions.
+  // This automatically binds `this` to the component instance, removing the need for
+  // a constructor and manual `.bind(this)` calls, which resolves errors where `this.setState` was not found.
+  private handleError = (event: ErrorEvent) => {
     console.error("Global uncaught error:", event.error);
     this.setState({ hasError: true, error: event.error });
   }
 
-  private handleRejection(event: PromiseRejectionEvent) {
+  private handleRejection = (event: PromiseRejectionEvent) => {
     console.error("Global unhandled rejection:", event.reason);
     // Coerce the reason to an Error object if it's not one already
     const error = event.reason instanceof Error ? event.reason : new Error(JSON.stringify(event.reason));
