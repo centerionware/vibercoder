@@ -114,6 +114,7 @@ jobs:
   build_desktop:
     name: Build Desktop App (${{ matrix.os }})
     needs: build_web # This job can't start until the web assets are ready.
+    if: github.event_name == 'workflow_dispatch' # This job will only run on manual triggers.
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
