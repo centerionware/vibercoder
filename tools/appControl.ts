@@ -1,5 +1,3 @@
-
-
 import { FunctionDeclaration, Type } from '@google/genai';
 import html2canvas from 'html2canvas';
 import { ToolImplementationsDependencies, View, AppSettings } from '../types';
@@ -210,8 +208,8 @@ export const getImplementations = ({
         return { activeFile: activeFile || null };
     },
     viewBuildOutput: async () => {
-        // FIX: Corrected a reference error. The `bundleLogs` variable is in scope, not `buildLogs`.
-        return { buildLogs: bundleLogs };
+        // FIX: Corrected a reference error. The `bundleLogs` variable is in scope, not `buildLogs`. The property name is also corrected to `bundleLogs`.
+        return { bundleLogs: bundleLogs };
     },
     viewRuntimeErrors: async () => {
         return { runtimeErrors: sandboxErrors };

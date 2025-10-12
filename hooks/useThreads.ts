@@ -3,39 +3,45 @@ import { v4 as uuidv4 } from 'uuid';
 import { db } from '../utils/idb';
 import { ChatThread, AiMessage, GeminiContent } from '../types';
 
-export const useThreads = () => {
+export const useThreads = (activeProjectId: string | null) => {
     const [threads, setThreads] = useState<ChatThread[]>([]);
     const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
 
     const activeThread = threads.find(t => t.id === activeThreadId);
     
-    // Load threads from IndexedDB on initial mount
+    // Load threads from IndexedDB on initial mount or when project changes
     useEffect(() => {
-        db?.threads.toArray().then(dbThreads => {
-        if (dbThreads.length > 0) {
-            setThreads(dbThreads);
-            // Try to load last active thread, otherwise load the most recent one
-            const lastActiveId = localStorage.getItem('vibecode_activeThreadId');
-            if (lastActiveId && dbThreads.some(t => t.id === lastActiveId)) {
-            setActiveThreadId(lastActiveId);
-            } else {
-            setActiveThreadId(dbThreads.sort((a, b) => b.createdAt - a.createdAt)[0].id);
-            }
-        } else {
-            // No threads, create a new one
-            createNewThread();
-        }
-        });
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
-    // Disabling lint because createNewThread is not memoized and would cause a loop if added.
-    // It is safe to run only once.
+        if (!activeProjectId || !db) {
+            setThreads([]);
+            setActiveThreadId(null);
+            return;
+        };
 
-    // Persist active thread ID
+        db.threads.where('projectId').equals(activeProjectId).toArray().then(dbThreads => {
+            if (dbThreads.length > 0) {
+                setThreads(dbThreads);
+                // Try to load last active thread FOR THIS PROJECT, otherwise load the most recent one
+                const lastActiveId = localStorage.getItem(`vibecode_activeThreadId_${activeProjectId}`);
+                if (lastActiveId && dbThreads.some(t => t.id === lastActiveId)) {
+                    setActiveThreadId(lastActiveId);
+                } else {
+                    setActiveThreadId(dbThreads.sort((a, b) => b.createdAt - a.createdAt)[0].id);
+                }
+            } else {
+                // No threads for this project, create a new one
+                setThreads([]); // Clear old threads from previous project
+                createNewThread();
+            }
+        });
+    }, [activeProjectId]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Disabling lint because createNewThread is not memoized and would cause a loop if added.
+
+    // Persist active thread ID for the specific project
     useEffect(() => {
-        if (activeThreadId) {
-        localStorage.setItem('vibecode_activeThreadId', activeThreadId);
+        if (activeThreadId && activeProjectId) {
+            localStorage.setItem(`vibecode_activeThreadId_${activeProjectId}`, activeThreadId);
         }
-    }, [activeThreadId]);
+    }, [activeThreadId, activeProjectId]);
 
     const saveActiveThread = useCallback(async () => {
         if (activeThread && db) {
@@ -46,11 +52,14 @@ export const useThreads = () => {
     // Save thread whenever its messages/history change
     useEffect(() => {
         saveActiveThread();
-    }, [activeThread, saveActiveThread]);
+    }, [activeThread?.messages, activeThread?.history, saveActiveThread]);
 
-    const createNewThread = () => {
+    const createNewThread = useCallback(() => {
+        if (!activeProjectId) return '';
+
         const newThread: ChatThread = {
             id: uuidv4(),
+            projectId: activeProjectId,
             title: 'New Chat',
             createdAt: Date.now(),
             messages: [],
@@ -59,8 +68,9 @@ export const useThreads = () => {
         };
         setThreads(prev => [...prev, newThread]);
         setActiveThreadId(newThread.id);
+        db?.threads.put(newThread); // Save immediately
         return newThread.id;
-    };
+    }, [activeProjectId]);
 
     const switchThread = (threadId: string) => {
         if (threadId !== activeThreadId) {
@@ -69,6 +79,8 @@ export const useThreads = () => {
     };
 
     const deleteThread = async (threadId: string) => {
+        if (!activeProjectId) return;
+
         await db?.threads.delete(threadId);
         const remainingThreads = threads.filter(t => t.id !== threadId);
         setThreads(remainingThreads);

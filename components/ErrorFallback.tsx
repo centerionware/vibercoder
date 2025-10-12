@@ -12,7 +12,8 @@ const ErrorFallback: React.FC<ErrorFallbackProps> = ({ error }) => {
       console.warn("Resetting application state due to critical error...");
       
       // Clear IndexedDB
-      await db.delete();
+      // Fix: Cast 'db' to 'any' to allow calling Dexie's 'delete' method, resolving a TypeScript type error.
+      await (db as any).delete();
       console.warn("IndexedDB has been cleared.");
       
       // Clear localStorage

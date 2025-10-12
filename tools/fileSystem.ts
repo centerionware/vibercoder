@@ -69,38 +69,59 @@ export const declarations = [
 
 // --- Implementations Factory ---
 
-export const getImplementations = ({ files, onWriteFile, onRemoveFile }: Pick<ToolImplementationsDependencies, 'files' | 'onWriteFile' | 'onRemoveFile'>) => ({
-    listFiles: async () => ({ files: Object.keys(files) }),
+export const getImplementations = ({ aiVirtualFiles, setAiVirtualFiles }: Pick<ToolImplementationsDependencies, 'aiVirtualFiles' | 'setAiVirtualFiles'>) => ({
+    listFiles: async () => {
+        if (aiVirtualFiles === null) {
+            throw new Error("No active AI session. Cannot list files.");
+        }
+        return { files: Object.keys(aiVirtualFiles) };
+    },
     readFile: async (args: { filename: string }) => {
-      if (typeof args.filename !== 'string' || !args.filename) {
-        throw new Error("readFile tool call is missing the required 'filename' argument.");
-      }
-      const filename = normalizePath(args.filename);
-      if (files[filename] !== undefined) {
-        return { content: files[filename] };
-      }
-      throw new Error(`File "${filename}" not found.`);
+        if (aiVirtualFiles === null) {
+            throw new Error("No active AI session. Cannot read file.");
+        }
+        if (typeof args.filename !== 'string' || !args.filename) {
+            throw new Error("readFile tool call is missing the required 'filename' argument.");
+        }
+        const filename = normalizePath(args.filename);
+        if (aiVirtualFiles[filename] !== undefined) {
+            return { content: aiVirtualFiles[filename] };
+        }
+        throw new Error(`File "${filename}" not found in the AI virtual session.`);
     },
     writeFile: async (args: { filename: string; content: string }) => {
-      if (typeof args.filename !== 'string' || !args.filename) {
-        throw new Error("writeFile tool call is missing the required 'filename' argument.");
-      }
-      if (typeof args.content !== 'string') {
-        throw new Error("writeFile tool call is missing the required 'content' argument.");
-      }
-      const filename = normalizePath(args.filename);
-      onWriteFile(filename, args.content);
-      return { success: true };
+        if (aiVirtualFiles === null) {
+            throw new Error("No active AI session. Cannot write file.");
+        }
+        if (typeof args.filename !== 'string' || !args.filename) {
+            throw new Error("writeFile tool call is missing the required 'filename' argument.");
+        }
+        if (typeof args.content !== 'string') {
+            throw new Error("writeFile tool call is missing the required 'content' argument.");
+        }
+        const filename = normalizePath(args.filename);
+        setAiVirtualFiles(prevFiles => ({
+            ...(prevFiles || {}),
+            [filename]: args.content,
+        }));
+        return { success: true };
     },
     removeFile: async (args: { filename: string }) => {
+        if (aiVirtualFiles === null) {
+            throw new Error("No active AI session. Cannot remove file.");
+        }
         if (typeof args.filename !== 'string' || !args.filename) {
             throw new Error("removeFile tool call is missing the required 'filename' argument.");
         }
         const filename = normalizePath(args.filename);
-        if (files[filename] === undefined) {
-            throw new Error(`File "${filename}" not found.`);
+        if (aiVirtualFiles[filename] === undefined) {
+            throw new Error(`File "${filename}" not found in the AI virtual session.`);
         }
-        onRemoveFile(filename);
+        setAiVirtualFiles(prevFiles => {
+            const newFiles = { ...(prevFiles || {}) };
+            delete newFiles[filename];
+            return newFiles;
+        });
         return { success: true };
     }
 });

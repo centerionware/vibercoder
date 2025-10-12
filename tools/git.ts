@@ -1,59 +1,106 @@
 import { FunctionDeclaration, Type } from '@google/genai';
-// Fix: Added `View` enum to imports to fix type errors.
 import { ToolImplementationsDependencies, View } from '../types';
 
 // --- Function Declarations ---
 
-export const gitStatusFunction: FunctionDeclaration = {
-  name: 'gitStatus',
-  description: 'Check the status of the Git repository, showing changed files.',
+export const listBranchesFunction: FunctionDeclaration = {
+  name: 'listBranches',
+  description: 'List all local branches in the Git repository.',
 };
 
-export const gitCommitFunction: FunctionDeclaration = {
-  name: 'gitCommit',
-  description: 'Commit all staged changes with a given message.',
+export const switchBranchFunction: FunctionDeclaration = {
+  name: 'switchBranch',
+  description: 'Switch the workspace to a different branch. This will replace all files in the editor with the files from the head of the specified branch.',
   parameters: {
     type: Type.OBJECT,
     properties: {
-      message: {
+      branchName: {
         type: Type.STRING,
-        description: 'The commit message.',
+        description: 'The name of the branch to check out.',
       },
     },
-    required: ['message'],
+    required: ['branchName'],
+  },
+};
+
+export const gitLogFunction: FunctionDeclaration = {
+  name: 'gitLog',
+  description: 'View the commit history for the current branch.',
+};
+
+export const viewCommitChangesFunction: FunctionDeclaration = {
+  name: 'viewCommitChanges',
+  description: "View the list of files that were changed in a specific commit, and see the diff for each file.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      commitOid: {
+        type: Type.STRING,
+        description: 'The full SHA-1 hash (oid) of the commit to inspect.',
+      },
+    },
+    required: ['commitOid'],
   },
 };
 
 export const declarations = [
-    gitStatusFunction,
-    gitCommitFunction
+    listBranchesFunction,
+    switchBranchFunction,
+    gitLogFunction,
+    viewCommitChangesFunction,
 ];
 
 // --- Implementations Factory ---
 
-export const getImplementations = ({ changedFiles, setActiveView, onSettingsChange, settings }: Pick<ToolImplementationsDependencies, 'changedFiles' | 'setActiveView' | 'onSettingsChange' | 'settings'>) => ({
-    gitStatus: async () => {
-        // This tool is best when combined with switching to the git view
-        // Fix: Used `View.Git` enum member instead of a string literal.
-        setActiveView(View.Git);
-        return { changedFiles };
-    },
-    gitCommit: async (args: { message: string }) => {
-        if (typeof args.message !== 'string' || !args.message) {
-            throw new Error("gitCommit tool call is missing the required 'message' argument.");
-        }
-        if (changedFiles.length === 0) {
-            return { success: false, message: 'No changes to commit.' };
-        }
-        
-        // This is a mock implementation.
-        // In a real scenario, this would trigger the commit logic in App.tsx
-        console.log(`(Mock) Committing ${changedFiles.length} files with message: "${args.message}"`);
-        
-        // For the mock, we can't directly clear the changedFiles state here,
-        // but we return a success message. The UI commit button in GitView handles the state clearing.
-        // Fix: Used `View.Git` enum member instead of a string literal.
-        setActiveView(View.Git);
-        return { success: true, message: `Committed ${changedFiles.length} files. The list of changed files will be cleared.` };
-    },
-});
+export const getImplementations = ({ gitServiceRef, setFiles, setActiveView }: Pick<ToolImplementationsDependencies, 'gitServiceRef' | 'setFiles' | 'setActiveView'>) => {
+    
+    const getSvc = () => {
+        const svc = gitServiceRef.current;
+        if (!svc) throw new Error("Git service is not available.");
+        return svc;
+    }
+
+    return {
+        listBranches: async () => {
+            const svc = getSvc();
+            const branches = await svc.listBranches();
+            return { branches };
+        },
+        switchBranch: async (args: { branchName: string }) => {
+            if (typeof args.branchName !== 'string' || !args.branchName) {
+                throw new Error("switchBranch tool call is missing the required 'branchName' argument.");
+            }
+            const svc = getSvc();
+            const { files } = await svc.checkout(args.branchName);
+            setFiles(files);
+            setActiveView(View.Git);
+            return { success: true, message: `Switched to branch "${args.branchName}". Files have been updated.` };
+        },
+        gitLog: async () => {
+            const svc = getSvc();
+            const commits = await svc.log();
+            // Return a more concise version for the AI
+            const summarizedCommits = commits.map(c => ({
+                oid: c.oid,
+                message: c.message.split('\n')[0], // Only first line
+                author: c.author.name,
+                date: new Date(c.author.timestamp * 1000).toISOString().split('T')[0],
+            }));
+            return { log: summarizedCommits };
+        },
+        viewCommitChanges: async (args: { commitOid: string }) => {
+            if (typeof args.commitOid !== 'string' || !args.commitOid) {
+                throw new Error("viewCommitChanges tool call is missing the required 'commitOid' argument.");
+            }
+            const svc = getSvc();
+            const changes = await svc.getCommitChanges(args.commitOid);
+            // Don't return the full diff to the AI, just the file list and status.
+            const summarizedChanges = changes.map(c => ({
+                filepath: c.filepath,
+                status: c.status,
+            }));
+            setActiveView(View.Git); // Switch to Git view so user can see the changes
+            return { changes: summarizedChanges };
+        },
+    };
+};

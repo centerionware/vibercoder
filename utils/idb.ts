@@ -1,27 +1,37 @@
 import Dexie, { Table } from 'dexie';
-import { ChatThread } from '../types';
+import { Project, ChatThread, GitCredential } from '../types';
 
-// Safely initialize the database and capture any errors.
-// This prevents top-level exceptions that would crash the app before React can render.
+export class VibeCodeDB extends Dexie {
+  projects!: Table<Project>;
+  threads!: Table<ChatThread>;
+  gitCredentials!: Table<GitCredential>;
 
-let dbInstance: (Dexie & { threads: Table<ChatThread> }) | null = null;
-let initializationError: Error | null = null;
-
-try {
-  const db = new Dexie('VibeCodeDB') as Dexie & {
-    threads: Table<ChatThread>;
-  };
-  
-  // Define the schema.
-  db.version(1).stores({
-    threads: 'id, createdAt' // Primary key: 'id', Indexed property: 'createdAt'
-  });
-
-  dbInstance = db;
-} catch (e) {
-    console.error("Critical: Failed to initialize Dexie/IndexedDB.", e);
-    initializationError = e instanceof Error ? e : new Error(String(e || 'Unknown IndexedDB initialization error'));
+  constructor() {
+    super('vibecodeDB');
+    // Fix: Cast 'this' to 'any' to allow calling Dexie's 'version' method, resolving a TypeScript type error.
+    (this as any).version(4).stores({
+      projects: '++id, &name, gitSettings',
+      threads: '++id, projectId',
+      gitCredentials: '++id, name, isDefault',
+    });
+  }
 }
 
-export const db = dbInstance;
-export const dbInitializationError = initializationError;
+export const db = new VibeCodeDB();
+
+// Pre-populate with a default project if none exist
+// Fix: Cast 'db' to 'any' to allow calling Dexie's 'on' method for event handling, resolving a TypeScript type error.
+(db as any).on('ready', async () => {
+    const projectCount = await db.projects.count();
+    if (projectCount === 0) {
+        console.log("No projects found, creating a default project.");
+        await db.projects.add({
+            id: 'default-project',
+            name: 'My First Project',
+            entryPoint: 'index.tsx',
+            gitRemoteUrl: '',
+            createdAt: Date.now(),
+            gitSettings: { source: 'global' }
+        });
+    }
+});

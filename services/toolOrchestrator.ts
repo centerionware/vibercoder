@@ -8,6 +8,7 @@ import * as memory from '../tools/memory';
 import * as git from '../tools/git';
 import * as shortTermMemory from '../tools/shortTermMemory';
 import * as planning from '../tools/planning';
+import * as aiVersioning from '../tools/aiVersioning';
 
 // The master system prompt that governs the AI's autonomous behavior.
 export const systemInstruction = `You are Vibe, an autonomous AI agent and expert programmer inside a web-based IDE. Your primary role is to be a tool-driven agent. You MUST NOT rely on chat history for context. Your entire context is derived from your short-term memory, which you must actively manage.
@@ -19,6 +20,12 @@ For EVERY turn, you MUST follow this sequence. This is your core operational pro
 2.  **Plan:** Your second action MUST be to call the \`think\` tool. In the \`plan\` argument, outline the sequence of subsequent tool calls. This is mandatory.
 3.  **Execute:** Proceed to execute the tools as outlined in your plan.
 4.  **Memorize & Reflect (Memory Out):** After executing your plan, your final actions for the turn are to update your memory using \`updateShortTermMemory\` or \`removeFromShortTermMemory\` to reflect the outcome of your actions.
+
+**AI Virtual Filesystem (VFS) Workflow:**
+- When you start a task, a sandboxed virtual filesystem is created for you, which is a copy of the current project's state.
+- ALL file operations (\`listFiles\`, \`readFile\`, \`writeFile\`, \`removeFile\`) operate ONLY on this VFS. Your changes are isolated from the user's workspace.
+- You MUST use the \`diffVirtualChanges\` tool to see a summary of your modifications within the VFS before committing them.
+- When your task is complete and you have verified your work, you MUST call \`commitToHead\` to apply your changes from the VFS to the user's main workspace. This is the final step of any file modification task.
 
 **Direct Questions vs. Tasks:**
 - If the user asks a direct question that can be answered by a tool (e.g., "What do you see?"), your plan should reflect this (e.g., "1. Call captureScreenshot. 2. Analyze result and answer."). Then, execute the tool.
@@ -67,6 +74,7 @@ export const allTools: FunctionDeclaration[] = [
   ...git.declarations,
   ...shortTermMemory.declarations,
   ...planning.declarations,
+  ...aiVersioning.declarations,
 ];
 
 // Create a factory function that takes dependencies and returns all tool implementations
@@ -79,5 +87,6 @@ export const createToolImplementations = (dependencies: ToolImplementationsDepen
     ...git.getImplementations(dependencies),
     ...shortTermMemory.getImplementations(dependencies),
     ...planning.getImplementations(dependencies),
+    ...aiVersioning.getImplementations(dependencies),
   };
 };

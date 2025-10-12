@@ -54,7 +54,7 @@ export const createLiveSession = ({ aiRef, settings, activeThread, callbacks }: 
     }
 
     return ai.live.connect({
-        model: 'gemini-2.5-flash-native-audio-preview-09-2025',
+        model: settings.liveAiModel,
         callbacks,
         config: {
             responseModalities: [Modality.AUDIO],

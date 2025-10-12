@@ -30,12 +30,13 @@ interface AiViewProps {
   startLiveSession: () => Promise<boolean>;
   stopLiveSession: () => void;
   toggleMute: () => void;
+  onStartAiRequest: () => Promise<void>;
 }
 
 const AiView: React.FC<AiViewProps> = (props) => {
   const { 
     aiRef, settings, activeThread, addMessage, updateMessage, 
-    updateHistory, toolImplementations, updateThread
+    updateHistory, toolImplementations, updateThread, onStartAiRequest
   } = props;
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   
@@ -48,6 +49,7 @@ const AiView: React.FC<AiViewProps> = (props) => {
     updateMessage,
     updateHistory,
     updateThread,
+    onStartAiRequest,
   });
 
   const handleSwitchThread = (threadId: string) => {

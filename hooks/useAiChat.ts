@@ -8,7 +8,7 @@ import { startTurn, updateTurn, finalizeTurn } from './useAiChat/turnManager';
 import { TurnState } from './useAiChat/types';
 
 export const useAiChat = (props: UseAiChatProps) => {
-    const { aiRef, activeThread, addMessage, updateHistory } = props;
+    const { aiRef, activeThread, addMessage, updateHistory, onStartAiRequest } = props;
     const [isResponding, setIsResponding] = useState(false);
 
     // This ref now holds all the state for a single, complex model turn.
@@ -23,6 +23,9 @@ export const useAiChat = (props: UseAiChatProps) => {
         if (!ai || isResponding || !activeThread) return;
         
         setIsResponding(true);
+
+        // Initialize the AI's virtual file system for this request
+        await onStartAiRequest();
         
         startTurn({ turnStateRef, addMessage, userMessage: message });
         
@@ -76,7 +79,7 @@ export const useAiChat = (props: UseAiChatProps) => {
 
         setIsResponding(false);
 
-    }, [aiRef, isResponding, activeThread, addMessage, updateHistory, props]);
+    }, [aiRef, isResponding, activeThread, addMessage, updateHistory, props, onStartAiRequest]);
 
     return { isResponding, handleSendMessage };
 };
