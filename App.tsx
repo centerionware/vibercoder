@@ -82,6 +82,7 @@ const App = () => {
         onOpenProjectSettings={(p) => { app.setProjectToEdit(p); app.setIsProjectSettingsModalOpen(true); }}
         onCloneProject={app.handleClone}
         isCloning={app.isCloning}
+        cloningProgress={app.cloningProgress}
       />
       <ProjectSettingsModal
         isOpen={app.isProjectSettingsModalOpen}

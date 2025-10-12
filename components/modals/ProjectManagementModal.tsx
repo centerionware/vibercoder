@@ -16,10 +16,11 @@ interface ProjectManagementModalProps {
   onOpenProjectSettings: (project: Project) => void;
   onCloneProject: (url: string, name: string) => void;
   isCloning?: boolean;
+  cloningProgress?: string | null;
 }
 
 const ProjectManagementModal: React.FC<ProjectManagementModalProps> = (props) => {
-  const { isOpen, onClose, projects, activeProject, onNewProject, onSwitchProject, onDeleteProject, onOpenProjectSettings, onCloneProject, isCloning } = props;
+  const { isOpen, onClose, projects, activeProject, onNewProject, onSwitchProject, onDeleteProject, onOpenProjectSettings, onCloneProject, isCloning, cloningProgress } = props;
   const [newProjectName, setNewProjectName] = useState('');
   const [cloneUrl, setCloneUrl] = useState('');
   const [cloneProjectName, setCloneProjectName] = useState('');
@@ -97,7 +98,7 @@ const ProjectManagementModal: React.FC<ProjectManagementModalProps> = (props) =>
                     className="w-full bg-vibe-bg-deep text-vibe-text-secondary px-4 py-2 rounded-md hover:bg-vibe-comment transition-colors disabled:opacity-50 disabled:cursor-wait flex items-center justify-center"
                 >
                     {isCloning && <SpinnerIcon className="w-5 h-5 mr-2" />}
-                    {isCloning ? 'Cloning...' : 'Clone Project'}
+                    {isCloning ? (cloningProgress || 'Cloning...') : 'Clone Project'}
                 </button>
             </div>
           </div>

@@ -1,243 +1,331 @@
-import git from 'isomorphic-git';
-import webHttp from 'isomorphic-git/http/web';
 import { isNativeEnvironment } from '../utils/environment';
+import { GitService, GitAuthor, GitStatus, GitCommit, GitFileChange, GitProgress } from '../types';
+
+const gitWorkerCode = `
+// Worker scope. 'self' is the global object.
+import git from 'isomorphic-git';
+import http from 'isomorphic-git/http/web';
 import FS from '@isomorphic-git/lightning-fs';
-import { GitService, GitAuthor, GitStatus, GitFileStatus, GitCommit, GitFileChange, DiffLine } from '../types';
 import { Buffer } from 'buffer';
-import { performDiff } from '../utils/diff';
 
-// Lazily initialize the persistent, in-browser filesystem to prevent startup crashes.
-let fsInstance: FS | null = null;
-const getFs = (): FS => {
-    if (!fsInstance) {
-        fsInstance = new FS('vibecode-git-fs');
-    }
-    return fsInstance;
-};
-
+const fs = new FS('vibecode-git-fs');
 const dir = '/';
 
-const readFileFromFS = async (currentDir: string): Promise<Record<string, string>> => {
-    const fs = getFs();
-    const files: Record<string, string> = {};
-    const entries = await fs.promises.readdir(currentDir);
-    for (const entry of entries) {
-        if (entry === '.git') continue;
-        const path = `${currentDir === '/' ? '' : currentDir}/${entry}`;
-        const stat = await fs.promises.stat(path);
-        if (stat.isDirectory()) {
-            const nestedFiles = await readFileFromFS(path);
-            Object.assign(files, nestedFiles);
-        } else {
-            const content = await fs.promises.readFile(path, 'utf8');
-            files[path.substring(1)] = content as string;
+const performDiff = (text1, text2) => {
+    const lines1 = text1.split('\\n');
+    const lines2 = text2.split('\\n');
+    const matrix = Array(lines1.length + 1).fill(null).map(() => Array(lines2.length + 1).fill(0));
+
+    for (let i = 1; i <= lines1.length; i++) {
+        for (let j = 1; j <= lines2.length; j++) {
+            if (lines1[i - 1] === lines2[j - 1]) {
+                matrix[i][j] = matrix[i - 1][j - 1] + 1;
+            } else {
+                matrix[i][j] = Math.max(matrix[i - 1][j], matrix[i][j - 1]);
+            }
         }
     }
-    return files;
+
+    const diff = [];
+    let i = lines1.length;
+    let j = lines2.length;
+    while (i > 0 || j > 0) {
+        if (i > 0 && j > 0 && lines1[i - 1] === lines2[j - 1]) {
+            diff.unshift({ type: 'eql', content: lines1[i - 1] });
+            i--; j--;
+        } else if (j > 0 && (i === 0 || matrix[i][j - 1] >= matrix[i - 1][j])) {
+            diff.unshift({ type: 'add', content: lines2[j - 1] });
+            j--;
+        } else if (i > 0 && (j === 0 || matrix[i][j - 1] < matrix[i - 1][j])) {
+            diff.unshift({ type: 'del', content: lines1[i - 1] });
+            i--;
+        } else {
+            break;
+        }
+    }
+    return diff;
 };
 
-// --- Real Git Service (for Native/Desktop) ---
-const realGitService: GitService = {
-  isReal: true,
-
-  async clone(url, proxyUrl, author, token) {
-    const fs = getFs();
-    // Wipe the filesystem before cloning
-    const oldFiles = await fs.promises.readdir(dir);
-    for (const file of oldFiles) {
-        if (file === '.git') {
-            await fs.promises.rmdir(`/${file}`).catch(() => {});
-        } else {
-            await fs.promises.unlink(`/${file}`).catch(() => {});
-        }
-    }
-    
-    console.log(`Attempting to clone from URL: ${url}`);
-    
-    const useNative = isNativeEnvironment();
-
-    // By default, isomorphic-git uses the global `fetch`. In Capacitor, when `CapacitorHttp` is
-    // enabled in capacitor.config.json, it automatically patches `fetch` to use the native HTTP
-    // client, which correctly handles requests and bypasses CORS. This is more reliable than a custom fetch implementation.
-    // In a regular web environment, we still need the CORS proxy.
-    if (useNative) {
-        console.log("Using native (patched) fetch for Git operation, bypassing CORS proxy.");
-    } else if (proxyUrl) {
-        console.log(`Using browser fetch with CORS proxy: ${proxyUrl}`);
-    } else {
-        console.warn('Using browser fetch without a CORS proxy. This will likely fail.');
-    }
-
-    try {
-      await git.clone({
-        fs,
-        http: webHttp, // Explicitly use the web client, which relies on the (potentially patched) global fetch.
-        dir,
-        // The corsProxy is only used by browser fetch, so we disable it in native environments.
-        corsProxy: useNative ? undefined : proxyUrl,
-        url,
-        onAuth: () => ({ username: token }),
-        onMessage: (message) => {
-          console.info(`Git clone message: ${message.trim()}`);
-        },
-        onProgress: (event) => {
-          if (event.phase) {
-            console.log(`Git clone phase: ${event.phase}, Loaded: ${event.loaded}, Total: ${event.total}`);
-          }
-        }
-      });
-    } catch (e: any) {
-      console.error("isomorphic-git clone error object:", e);
-      // Re-throw the original error to be handled by the UI logic
-      throw e;
-    }
-    
-    return { files: await readFileFromFS(dir) };
-  },
-
-  async status(appFiles) {
-     const fs = getFs();
-     for (const filepath in appFiles) {
-         await fs.promises.writeFile(`${dir}${filepath}`, appFiles[filepath], 'utf8');
-     }
-    const gitStatus = await git.statusMatrix({ fs, dir });
-    const statuses: GitStatus[] = gitStatus.map(([filepath, head, workdir]) => {
-        let status: GitFileStatus;
-        if (head === 0 && workdir === 2) status = GitFileStatus.New;
-        else if (workdir === 0) status = GitFileStatus.Deleted;
-        else if (head === 1 && workdir === 2) status = GitFileStatus.Modified;
-        else status = GitFileStatus.Unmodified;
-        return { filepath, status };
-    });
-    return statuses.filter(s => s.status !== GitFileStatus.Unmodified);
-  },
-
-  async commit(message, author, appFiles) {
-    const fs = getFs();
-    for (const filepath in appFiles) {
-        await fs.promises.writeFile(`${dir}${filepath}`, appFiles[filepath], 'utf8');
-    }
-    const files = await git.statusMatrix({ fs, dir });
-    for (const [filepath] of files) {
-        await git.add({ fs, dir, filepath });
-    }
-    const oid = await git.commit({ fs, dir, message, author });
-    return { oid };
-  },
-
-  async log(ref = 'HEAD'): Promise<GitCommit[]> {
-    const fs = getFs();
-    const commits = await git.log({ fs, dir, ref, depth: 50 });
-    return commits.map(c => ({
-      oid: c.oid,
-      message: c.commit.message,
-      author: { ...c.commit.author },
-      parent: c.commit.parent,
-    }));
-  },
-
-  async listBranches(): Promise<string[]> {
-    const fs = getFs();
-    return git.listBranches({ fs, dir });
-  },
-
-  async checkout(branch: string): Promise<{ files: Record<string, string> }> {
-    const fs = getFs();
-    await git.checkout({ fs, dir, ref: branch, force: true });
-    return { files: await readFileFromFS(dir) };
-  },
-
-  async readFileAtCommit(oid: string, filepath: string): Promise<string | null> {
-    const fs = getFs();
+const readFileAtCommit = async (oid, filepath) => {
     try {
         const { blob } = await git.readBlob({ fs, dir, oid, filepath });
         return Buffer.from(blob).toString('utf8');
     } catch (e) {
-        console.error(`Could not read file ${filepath} at ${oid}`, e);
-        return null; // File might not exist in that commit
+        return null;
     }
+};
+
+self.onmessage = async (event) => {
+    const { command, payload, id } = event.data;
+    const post = (type, data) => self.postMessage({ type, id, ...data });
+
+    try {
+        let result;
+        switch (command) {
+            case 'clone':
+                const { url, proxyUrl, author, token, isNative } = payload;
+                
+                // Clear the filesystem before cloning
+                const entries = await fs.promises.readdir(dir);
+                for (const entry of entries) {
+                    await fs.promises.rm(\`/\${entry}\`, { recursive: true });
+                }
+
+                await git.clone({
+                    fs,
+                    http,
+                    dir,
+                    corsProxy: isNative ? undefined : proxyUrl,
+                    url,
+                    onAuth: () => ({ username: token }),
+                    onProgress: (progress) => {
+                        self.postMessage({ type: 'progress', id, progress });
+                    }
+                });
+                result = { success: true };
+                break;
+
+            case 'status':
+                for (const filepath in payload.appFiles) {
+                    await fs.promises.writeFile(\`\${dir}\${filepath}\`, payload.appFiles[filepath], 'utf8');
+                }
+                const gitStatus = await git.statusMatrix({ fs, dir });
+                result = gitStatus.map(([filepath, head, workdir]) => {
+                    let status;
+                    if (head === 0 && workdir === 2) status = 2; // New
+                    else if (workdir === 0) status = 3; // Deleted
+                    else if (head === 1 && workdir === 2) status = 1; // Modified
+                    else status = 0; // Unmodified
+                    return { filepath, status };
+                }).filter(s => s.status !== 0);
+                break;
+            
+            case 'commit':
+                for (const filepath in payload.appFiles) {
+                    await fs.promises.writeFile(\`\${dir}\${filepath}\`, payload.appFiles[filepath], 'utf8');
+                }
+                const filesToCommit = await git.statusMatrix({ fs, dir });
+                for (const [filepath] of filesToCommit) {
+                    await git.add({ fs, dir, filepath });
+                }
+                const oid = await git.commit({ fs, dir, message: payload.message, author: payload.author });
+                result = { oid };
+                break;
+            
+            case 'log':
+                const commits = await git.log({ fs, dir, ref: payload.ref || 'HEAD', depth: 50 });
+                result = commits.map(c => ({
+                    oid: c.oid,
+                    message: c.commit.message,
+                    author: { ...c.commit.author },
+                    parent: c.commit.parent,
+                }));
+                break;
+
+            case 'listBranches':
+                result = await git.listBranches({ fs, dir });
+                break;
+            
+            case 'checkout':
+                await git.checkout({ fs, dir, ref: payload.branch, force: true });
+                // Return files on checkout
+                const files = {};
+                await git.walk({
+                    fs, dir,
+                    trees: [git.TREE({ ref: payload.branch })],
+                    map: async (filepath, [entry]) => {
+                        if (filepath === '.' || !entry) return;
+                        if (await entry.type() === 'blob') {
+                            const content = await readFileAtCommit(await entry.oid(), filepath);
+                            if (content !== null) files[filepath] = content;
+                        }
+                    },
+                });
+                result = { files };
+                break;
+
+            case 'readFileAtCommit':
+                result = await readFileAtCommit(payload.oid, payload.filepath);
+                break;
+            
+            case 'getHeadFiles':
+                 result = {};
+                 try {
+                    await git.walk({
+                        fs, dir,
+                        trees: [git.TREE({ ref: 'HEAD' })],
+                        map: async (filepath, [entry]) => {
+                            if (filepath === '.' || !entry) return;
+                            if (await entry.type() === 'blob') {
+                                const oid = await entry.oid();
+                                const content = await readFileAtCommit(oid, filepath);
+                                if (content !== null) result[filepath] = content;
+                            }
+                        },
+                    });
+                } catch (e) { /* an empty repo will throw */ }
+                break;
+            
+            case 'getCommitChanges':
+                const commit = await git.readCommit({ fs, dir, oid: payload.oid });
+                const parentOid = commit.commit.parent[0];
+                const changes = [];
+                if (!parentOid) { // Initial commit
+                    await git.walk({
+                        fs, dir, trees: [git.TREE({ ref: payload.oid })],
+                        map: async (filepath, [entry]) => {
+                            if (filepath === '.') return;
+                            const content = await readFileAtCommit(await entry.oid(), filepath) || '';
+                            changes.push({ filepath, status: 'added', diff: performDiff('', content) });
+                        }
+                    });
+                } else {
+                     await git.walk({
+                      fs, dir,
+                      trees: [git.TREE({ ref: parentOid }), git.TREE({ ref: payload.oid })],
+                      map: async (filepath, [A, B]) => {
+                        if (filepath === '.' || (!A && !B)) return;
+                        const Aoid = await A?.oid();
+                        const Boid = await B?.oid();
+                        if (Aoid === Boid) return;
+
+                        const contentA = Aoid ? await readFileAtCommit(Aoid, filepath) : '';
+                        const contentB = Boid ? await readFileAtCommit(Boid, filepath) : '';
+
+                        let status = 'modified';
+                        if (!Aoid) status = 'added';
+                        if (!Boid) status = 'deleted';
+
+                        changes.push({ filepath, status, diff: performDiff(contentA, contentB) });
+                      },
+                    });
+                }
+                result = changes;
+                break;
+
+            default:
+                throw new Error(\`Unknown command: \${command}\`);
+        }
+        post('success', { result });
+    } catch (e) {
+        post('error', { error: { message: e.message, stack: e.stack, ...e } });
+    }
+};
+`;
+
+let worker: Worker | null = null;
+const pendingRequests = new Map<string, { resolve: (value: any) => void, reject: (reason?: any) => void, onProgress?: (progress: GitProgress) => void }>();
+let requestIdCounter = 0;
+
+const getWorker = (): Worker => {
+    if (!worker) {
+        try {
+            const blob = new Blob([gitWorkerCode], { type: 'application/javascript' });
+            const workerUrl = URL.createObjectURL(blob);
+            worker = new Worker(workerUrl, { type: 'module' });
+
+            worker.onmessage = (event) => {
+                const { type, id, result, error, progress } = event.data;
+                const request = pendingRequests.get(id);
+                if (!request) return;
+
+                if (type === 'progress') {
+                    if (request.onProgress) {
+                        request.onProgress(progress);
+                    }
+                    return; // Don't resolve or delete yet
+                }
+
+                if (type === 'success') {
+                    request.resolve(result);
+                } else if (type === 'error') {
+                    const err = new Error(error.message);
+                    Object.assign(err, error);
+                    request.reject(err);
+                }
+                pendingRequests.delete(id);
+            };
+            worker.onerror = (event) => {
+                console.error("Git Worker Error:", event);
+                pendingRequests.forEach(p => p.reject(new Error("Git worker terminated unexpectedly.")));
+                pendingRequests.clear();
+            };
+        } catch (e) {
+            console.error("Failed to create Git worker:", e);
+            worker = null;
+        }
+    }
+    return worker as Worker;
+};
+
+const sendCommand = (command: string, payload: any, onProgress?: (progress: GitProgress) => void): Promise<any> => {
+    return new Promise((resolve, reject) => {
+        const activeWorker = getWorker();
+        if (!activeWorker) {
+            return reject(new Error("Git worker is not available."));
+        }
+        const id = `git-request-${requestIdCounter++}`;
+        pendingRequests.set(id, { resolve, reject, onProgress });
+        activeWorker.postMessage({ command, payload, id });
+    });
+};
+
+const realGitService: GitService = {
+  isReal: true,
+
+  clone(url, proxyUrl, author, token, onProgress) {
+    const isNative = isNativeEnvironment();
+    return sendCommand('clone', { url, proxyUrl, author, token, isNative }, onProgress) as Promise<void>;
   },
 
-  async getCommitChanges(oid: string): Promise<GitFileChange[]> {
-    const fs = getFs();
-    const commit = await git.readCommit({ fs, dir, oid });
-    const parentOid = commit.commit.parent[0];
-    if (!parentOid) { // Initial commit
-        const changes: GitFileChange[] = [];
-        await git.walk({
-            fs, dir, trees: [git.TREE({ ref: oid })],
-            map: async (filepath, [entry]) => {
-                if (filepath === '.') return;
-                const content = await this.readFileAtCommit(await entry.oid(), filepath) || '';
-                changes.push({ filepath, status: 'added', diff: performDiff('', content) });
-            }
-        });
-        return changes;
-    }
+  async status(appFiles, changedFilePaths) {
+    const statuses = await sendCommand('status', { appFiles });
+    return statuses.map((s: any) => ({ ...s, status: s.status }));
+  },
 
-    const changes: GitFileChange[] = [];
-    await git.walk({
-      fs, dir,
-      trees: [git.TREE({ ref: parentOid }), git.TREE({ ref: oid })],
-      map: async (filepath, [A, B]) => {
-        if (filepath === '.' || !A && !B) return;
-        const Aoid = await A?.oid();
-        const Boid = await B?.oid();
+  commit(message, author, appFiles) {
+    return sendCommand('commit', { message, author, appFiles });
+  },
 
-        if (Aoid === Boid) return; // Unchanged
+  log(ref = 'HEAD') {
+    return sendCommand('log', { ref });
+  },
 
-        const contentA = Aoid ? await this.readFileAtCommit(Aoid, filepath) : '';
-        const contentB = Boid ? await this.readFileAtCommit(Boid, filepath) : '';
+  listBranches() {
+    return sendCommand('listBranches', {});
+  },
 
-        let status: GitFileChange['status'] = 'modified';
-        if (!Aoid) status = 'added';
-        if (!Boid) status = 'deleted';
+  checkout(branch: string) {
+    return sendCommand('checkout', { branch });
+  },
 
-        changes.push({ filepath, status, diff: performDiff(contentA!, contentB!) });
-      },
-    });
-    return changes;
+  readFileAtCommit(oid: string, filepath: string) {
+    return sendCommand('readFileAtCommit', { oid, filepath });
+  },
+
+  getCommitChanges(oid: string) {
+    return sendCommand('getCommitChanges', { oid });
   },
   
-  async getHeadFiles(): Promise<Record<string, string>> {
-    const fs = getFs();
-    const files: Record<string, string> = {};
-    try {
-        await git.walk({
-            fs, dir,
-            trees: [git.TREE({ ref: 'HEAD' })],
-            map: async (filepath, [entry]) => {
-                if (filepath === '.' || !entry) return;
-                const type = await entry.type();
-                if (type === 'blob') {
-                    const oid = await entry.oid();
-                    const content = await this.readFileAtCommit(oid, filepath);
-                    if (content !== null) {
-                        files[filepath] = content;
-                    }
-                }
-            },
-        });
-    } catch (e) {
-        console.warn("Could not get HEAD files, possibly an empty repo. Returning empty.", e);
-        return {};
-    }
-    return files;
+  getHeadFiles() {
+    return sendCommand('getHeadFiles', {});
   }
 };
 
-// --- Mock Git Service (for Web Sandbox) ---
 const mockGitService: GitService = {
   isReal: false,
-  async clone() {
-    await new Promise(res => setTimeout(res, 1500));
-    alert(`Cloning is a mock action in the web sandbox.`);
-    return { files: {} };
+  async clone(url, proxy, author, token, onProgress) {
+    if (onProgress) {
+        onProgress({ phase: 'Cloning (mock)', loaded: 50, total: 100 });
+        await new Promise(res => setTimeout(res, 750));
+        onProgress({ phase: 'Finished (mock)', loaded: 100, total: 100 });
+    }
+    await new Promise(res => setTimeout(res, 500));
   },
   async status(files, changedFilePaths = []) {
     return changedFilePaths.map(filepath => ({
       filepath,
-      status: GitFileStatus.Modified,
+      status: 1, // Modified
     }));
   },
   async commit(message) {
@@ -246,7 +334,7 @@ const mockGitService: GitService = {
   },
   async log() {
     return [
-        { oid: 'abc1234', message: 'feat: Implement new UI\n\nMore details about this great feature.', author: { name: 'Vibe Coder', email: 'vibecoder@example.com', timestamp: Date.now() / 1000 }, parent: ['def5678'] },
+        { oid: 'abc1234', message: 'feat: Implement new UI\\n\\nMore details about this great feature.', author: { name: 'Vibe Coder', email: 'vibecoder@example.com', timestamp: Date.now() / 1000 }, parent: ['def5678'] },
         { oid: 'def5678', message: 'fix: Correct login bug', author: { name: 'Vibe Coder', email: 'vibecoder@example.com', timestamp: Date.now() / 1000 - 3600 }, parent: ['ghi9012'] },
     ];
   },
@@ -263,11 +351,6 @@ const mockGitService: GitService = {
   },
   async readFileAtCommit(oid, filepath) { return `/* Content of ${filepath} at commit ${oid} */`; },
   async getHeadFiles() {
-    console.log("MOCK: Getting HEAD files.");
-    // In a mock environment, the current files *are* the head files.
-    // This part of the code is hard to mock perfectly without a full git history.
-    // We'll rely on the parent `useFiles` hook to provide the files.
-    // This is a known limitation of the mock service. The real service is what matters.
     return Promise.resolve({
         'index.html': `<html><body>Mock HEAD</body></html>`,
         'index.tsx': `console.log("Mock HEAD");`,
@@ -275,7 +358,6 @@ const mockGitService: GitService = {
   },
 };
 
-// --- Service Factory ---
 export const createGitService = (isReal: boolean): GitService => {
   return isReal ? realGitService : mockGitService;
 };

@@ -11,28 +11,19 @@ interface State {
 }
 
 class ErrorBoundary extends React.Component<Props, State> {
-  private handleError: (event: ErrorEvent) => void;
-  private handleRejection: (event: PromiseRejectionEvent) => void;
-
   constructor(props: Props) {
     super(props);
+    // Initialize state within the constructor.
     this.state = {
       hasError: false,
       error: null,
     };
-
-    // Bind event handlers to the component instance
-    this.handleError = (event: ErrorEvent) => {
-      console.error("Global uncaught error:", event.error);
-      this.setState({ hasError: true, error: event.error });
-    };
-
-    this.handleRejection = (event: PromiseRejectionEvent) => {
-      console.error("Global unhandled rejection:", event.reason);
-      // Coerce the reason to an Error object if it's not one already
-      const error = event.reason instanceof Error ? event.reason : new Error(JSON.stringify(event.reason));
-      this.setState({ hasError: true, error });
-    };
+    
+    // Bind class methods to the component instance to ensure `this` is correctly referenced
+    // when they are used as event handlers. This resolves errors where `this.setState` would
+    // otherwise be called on an incorrect context.
+    this.handleError = this.handleError.bind(this);
+    this.handleRejection = this.handleRejection.bind(this);
   }
 
   // This is the standard React error boundary method for render-phase errors
@@ -55,6 +46,18 @@ class ErrorBoundary extends React.Component<Props, State> {
   componentWillUnmount() {
     window.removeEventListener('error', this.handleError);
     window.removeEventListener('unhandledrejection', this.handleRejection);
+  }
+
+  private handleError(event: ErrorEvent) {
+    console.error("Global uncaught error:", event.error);
+    this.setState({ hasError: true, error: event.error });
+  }
+
+  private handleRejection(event: PromiseRejectionEvent) {
+    console.error("Global unhandled rejection:", event.reason);
+    // Coerce the reason to an Error object if it's not one already
+    const error = event.reason instanceof Error ? event.reason : new Error(JSON.stringify(event.reason));
+    this.setState({ hasError: true, error });
   }
 
   render() {

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { View, GitService, ChatThread, AppSettings, Project, GitSettings, GitCredential, GitAuthor, LogEntry } from '../types';
+import { View, GitService, ChatThread, AppSettings, Project, GitSettings, GitCredential, GitAuthor, LogEntry, GitProgress } from '../types';
 
 import { useSettings } from '../hooks/useSettings';
 import { useFiles } from '../hooks/useFiles';
@@ -32,6 +32,7 @@ export const useAppLogic = () => {
   const [sandboxErrors, setSandboxErrors] = useState<string[]>([]);
   const [isCommitting, setIsCommitting] = useState(false);
   const [isCloning, setIsCloning] = useState(false);
+  const [cloningProgress, setCloningProgress] = useState<string | null>(null);
   const [permissionError, setPermissionError] = useState<string | null>(null);
   const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null);
   const [isScreenshotPreviewDisabled, setIsScreenshotPreviewDisabled] = useState(false);
@@ -162,86 +163,76 @@ export const useAppLogic = () => {
     const projectSettings = activeProject?.gitSettings;
     const defaultCredential = gitCredentials.find(c => c.isDefault);
 
-    // 1. Get the URL from the active project as the source of truth.
-    // 2. Fall back to the global setting if the project doesn't have one.
     const remoteUrl = activeProject?.gitRemoteUrl || settings.gitRemoteUrl;
 
-    // Start with global settings as defaults for other properties
     let userName = settings.gitUserName;
     let userEmail = settings.gitUserEmail;
     let authToken = settings.gitAuthToken;
     let corsProxy: string | undefined = settings.gitCorsProxy;
 
-    // Override with project-specific settings for authentication and other details
     if (projectSettings?.source === 'default' && defaultCredential) {
         authToken = defaultCredential.token;
     } else if (projectSettings?.source === 'specific' && projectSettings.credentialId) {
         const specificCred = gitCredentials.find(c => c.id === projectSettings.credentialId);
         if (specificCred) authToken = specificCred.token;
     } else if (projectSettings?.source === 'custom' && projectSettings.custom) {
-        // Custom settings no longer include the URL
         userName = projectSettings.custom.userName;
         userEmail = projectSettings.custom.userEmail;
         authToken = projectSettings.custom.authToken;
         corsProxy = projectSettings.custom.corsProxy;
     }
     
-    // The CORS proxy is required for the web-based git client, as it uses browser 'fetch'.
-    // The user can remove the proxy URL from settings if they are in an environment that doesn't need it.
-    // We no longer try to auto-detect this, as it was unreliable.
-
     return { remoteUrl, userName, userEmail, authToken, corsProxy };
   }, [activeProject, settings, gitCredentials]);
   
   const handleClone = useCallback(async (url: string, name: string) => {
     if (!gitServiceRef.current) return;
 
-    if (!url || !url.trim()) {
-      alert("Please provide a Git repository URL to clone.");
-      return;
-    }
-    if (!name || !name.trim()) {
-      alert("Please provide a local name for the new project.");
+    if (!url || !url.trim() || !name || !name.trim()) {
+      alert("Please provide both a Git repository URL and a local project name.");
       return;
     }
     if (!url.trim().startsWith('https://')) {
-      alert("Invalid Git URL. Only HTTPS URLs (e.g., 'https://github.com/user/repo.git') are supported for cloning.");
+      alert("Invalid Git URL. Only HTTPS URLs (e.g., 'https://github.com/user/repo.git') are supported.");
       return;
     }
     
-    // Explicitly define the configuration for THIS clone operation,
-    // ensuring no data from the activeProject is used. This prevents errors
-    // where the clone attempts to use the active project's (missing) remote URL.
     const cloneConfig = {
       url: url,
-      // FIX: The CORS proxy is required for the web-based git client which uses 'fetch',
-      // even in native WebViews. Fall back to the default proxy if the user setting is empty.
       proxy: settings.gitCorsProxy || DEFAULT_SETTINGS.gitCorsProxy,
-      author: {
-        name: settings.gitUserName,
-        email: settings.gitUserEmail,
-      },
+      author: { name: settings.gitUserName, email: settings.gitUserEmail },
       token: gitCredentials.find(c => c.isDefault)?.token || settings.gitAuthToken,
     };
     
     setIsCloning(true);
+    setCloningProgress('Preparing to clone...');
     try {
-      const { files: clonedFiles } = await gitServiceRef.current.clone(
+      const onProgress = (progress: GitProgress) => {
+        const percent = progress.total ? Math.round((progress.loaded / progress.total) * 100) : 0;
+        setCloningProgress(`Phase: ${progress.phase} (${percent}%)`);
+      };
+
+      await gitServiceRef.current.clone(
         cloneConfig.url,
         cloneConfig.proxy,
         cloneConfig.author,
-        cloneConfig.token
+        cloneConfig.token,
+        onProgress
       );
       
+      setCloningProgress('Reading project files...');
       const newProject = await createNewProject(name, false, url);
-      setFiles(clonedFiles);
-      switchProject(newProject.id);
+      
+      const headFiles = await gitServiceRef.current.getHeadFiles();
+      setFiles(headFiles);
+      switchProject(newProject.id); // Switch after files are ready
 
     } catch (error: any) {
         alert(`Cloning failed: ${error.message}`);
         console.error("CLONE FAILED:", error);
     } finally {
       setIsCloning(false);
+      setCloningProgress(null);
       setIsProjectModalOpen(false);
     }
   }, [settings, gitCredentials, createNewProject, setFiles, switchProject]);
@@ -260,31 +251,25 @@ export const useAppLogic = () => {
   }, []);
   
   return {
-    // Fix: Return settings as a nested object instead of spreading to resolve type errors in consuming components.
     settings, onSettingsChange: setSettings,
     projects, activeProject, createNewProject, switchProject, deleteProject, updateProject,
-    // Fix: Changed shorthand property 'onFileRemove' to an explicit mapping to resolve scope error.
     files, activeFile, onFileChange: onWriteFile, onFileSelect: setActiveFile, onFileAdd: onWriteFile, onFileRemove: onRemoveFile,
     threads, activeThread, activeThreadId, createNewThread, switchThread, deleteThread, addMessage, updateMessage, updateHistory, updateThread,
     gitCredentials, createGitCredential, deleteGitCredential, setDefaultGitCredential,
     activeView, onNavigate,
     bundleLogs, handleLog, clearBundleLogs, sandboxErrors, handleRuntimeError,
-    isCommitting, handleCommit, isCloning, handleClone,
+    isCommitting, handleCommit, isCloning, handleClone, cloningProgress,
     permissionError, setPermissionError,
     screenshotPreview, setScreenshotPreview, setIsScreenshotPreviewDisabled, isScreenshotPreviewDisabled,
     isProjectModalOpen, setIsProjectModalOpen,
-    // Fix: Corrected typo from 'setProjectTo-Edit' to 'setProjectToEdit'.
     projectToEdit, setProjectToEdit,
     isProjectSettingsModalOpen, setIsProjectSettingsModalOpen,
-
     isGitCredentialsModalOpen, setIsGitCredentialsModalOpen,
     liveFrameData, isLiveVideoModalOpen, setIsLiveVideoModalOpen,
 
     isFullScreen, onToggleFullScreen: () => setIsFullScreen(p => !p),
-    // Fix: Added gitServiceRef to the return object to make it available to consumers like ViewRenderer.
     aiRef, toolImplementations, gitServiceRef,
     handleStartAiRequest,
-    // Debug Logging
     debugLogs, isDebugLogModalOpen, setIsDebugLogModalOpen, handleClearDebugLogs,
     ...liveSession,
   };

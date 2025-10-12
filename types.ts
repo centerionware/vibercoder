@@ -187,7 +187,7 @@ export interface ToolImplementationsDependencies {
 // Git Service
 export interface GitService {
     isReal: boolean;
-    clone(url: string, proxyUrl: string | undefined, author: GitAuthor, token: string): Promise<{ files: Record<string, string> }>;
+    clone(url: string, proxyUrl: string | undefined, author: GitAuthor, token: string, onProgress?: (progress: GitProgress) => void): Promise<void>;
     status(appFiles: Record<string, string>, changedFilePaths?: string[]): Promise<GitStatus[]>;
     commit(message: string, author: GitAuthor, appFiles: Record<string, string>): Promise<{ oid: string }>;
     log(ref?: string): Promise<GitCommit[]>;
@@ -231,6 +231,12 @@ export interface GitFileChange {
     filepath: string;
     status: 'added' | 'deleted' | 'modified';
     diff?: DiffLine[];
+}
+
+export interface GitProgress {
+    phase: string;
+    loaded: number;
+    total: number;
 }
 
 // Preview Sandbox
