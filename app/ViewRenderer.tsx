@@ -83,6 +83,7 @@ const ViewRenderer: React.FC<ViewRendererProps> = (app) => {
           onSettingsChange={app.onSettingsChange}
           gitCredentials={app.gitCredentials}
           onManageCredentials={() => app.setIsGitCredentialsModalOpen(true)}
+          onOpenDebugLog={() => app.setIsDebugLogModalOpen(true)}
         />
       );
     default:

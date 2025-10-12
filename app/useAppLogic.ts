@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { View, GitService, ChatThread, AppSettings, Project, GitSettings, GitCredential, GitAuthor } from '../types';
+import { View, GitService, ChatThread, AppSettings, Project, GitSettings, GitCredential, GitAuthor, LogEntry } from '../types';
 
 import { useSettings } from '../hooks/useSettings';
 import { useFiles } from '../hooks/useFiles';
@@ -13,6 +13,8 @@ import { isNativeEnvironment } from '../utils/environment';
 
 import { createGitService } from '../services/gitService';
 import { createToolImplementations } from '../services/toolOrchestrator';
+import { startCapturingLogs, clearDebugLogs as clearGlobalLogs } from '../utils/logging';
+
 
 // This custom hook encapsulates the core application logic.
 export const useAppLogic = () => {
@@ -39,6 +41,9 @@ export const useAppLogic = () => {
   const [isProjectSettingsModalOpen, setIsProjectSettingsModalOpen] = useState(false);
   const [isGitCredentialsModalOpen, setIsGitCredentialsModalOpen] = useState(false);
   const [isLiveVideoModalOpen, setIsLiveVideoModalOpen] = useState(false);
+  const [isDebugLogModalOpen, setIsDebugLogModalOpen] = useState(false);
+  const [debugLogs, setDebugLogs] = useState<LogEntry[]>([]);
+
 
   const [liveFrameData, setLiveFrameData] = useState<string | null>(null);
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -67,6 +72,12 @@ export const useAppLogic = () => {
   }, []);
 
   // --- Initializers ---
+  useEffect(() => {
+    startCapturingLogs((newLog) => {
+        setDebugLogs(prev => [...prev.slice(-500), newLog]); // Keep max 500 logs in state
+    });
+  }, []);
+
   useEffect(() => {
     if (settings.apiKey) {
       try { aiRef.current = new GoogleGenAI({ apiKey: settings.apiKey }); }
@@ -222,6 +233,7 @@ export const useAppLogic = () => {
 
     } catch (error: any) {
         alert(`Cloning failed: ${error.message}`);
+        console.error("CLONE FAILED:", error);
     } finally {
       setIsCloning(false);
       setIsProjectModalOpen(false);
@@ -235,6 +247,11 @@ export const useAppLogic = () => {
     await gitServiceRef.current.commit(message, { name: userName, email: userEmail }, files);
     setIsCommitting(false);
   }, [files, resolveGitSettings]);
+
+  const handleClearDebugLogs = useCallback(() => {
+    clearGlobalLogs();
+    setDebugLogs([]);
+  }, []);
   
   return {
     // Fix: Return settings as a nested object instead of spreading to resolve type errors in consuming components.
@@ -261,6 +278,8 @@ export const useAppLogic = () => {
     // Fix: Added gitServiceRef to the return object to make it available to consumers like ViewRenderer.
     aiRef, toolImplementations, gitServiceRef,
     handleStartAiRequest,
+    // Debug Logging
+    debugLogs, isDebugLogModalOpen, setIsDebugLogModalOpen, handleClearDebugLogs,
     ...liveSession,
   };
 };

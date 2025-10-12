@@ -11,6 +11,7 @@ import ScreenshotModal from './components/modals/ScreenshotModal';
 import ProjectManagementModal from './components/modals/ProjectManagementModal';
 import ProjectSettingsModal from './components/modals/ProjectSettingsModal';
 import LiveVideoPreviewModal from './components/modals/LiveVideoPreviewModal';
+import DebugLogModal from './components/modals/DebugLogModal';
 
 const App = () => {
   const app = useAppLogic();
@@ -96,6 +97,13 @@ const App = () => {
             onClose={() => app.setIsLiveVideoModalOpen(false)}
         />
       )}
+      <DebugLogModal
+        isOpen={app.isDebugLogModalOpen}
+        onClose={() => app.setIsDebugLogModalOpen(false)}
+        logs={app.debugLogs}
+        onClear={app.handleClearDebugLogs}
+      />
+
 
       {/* Mobile Nav */}
       {!app.isFullScreen && (

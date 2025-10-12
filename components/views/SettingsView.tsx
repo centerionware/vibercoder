@@ -10,10 +10,11 @@ interface SettingsViewProps {
   onSettingsChange: (settings: AppSettings) => void;
   gitCredentials: GitCredential[];
   onManageCredentials: () => void;
+  onOpenDebugLog: () => void;
 }
 
 const SettingsView: React.FC<SettingsViewProps> = (props) => {
-  const { settings, onSettingsChange, gitCredentials, onManageCredentials } = props;
+  const { settings, onSettingsChange, gitCredentials, onManageCredentials, onOpenDebugLog } = props;
   return (
     <div className="flex-1 h-full bg-vibe-bg-deep rounded-lg overflow-y-auto p-4 md:p-6">
       <div className="max-w-4xl mx-auto space-y-8">
@@ -32,6 +33,20 @@ const SettingsView: React.FC<SettingsViewProps> = (props) => {
           onSettingsChange={onSettingsChange}
           onManageCredentials={onManageCredentials}
         />
+        <section>
+          <h3 className="text-lg font-semibold text-vibe-text mb-2">Debugging</h3>
+          <div className="bg-vibe-panel p-4 rounded-lg">
+              <button
+                  onClick={onOpenDebugLog}
+                  className="bg-vibe-bg-deep text-vibe-text-secondary px-4 py-2 rounded-md text-sm hover:bg-vibe-comment transition-colors"
+              >
+                  View Debug Log
+              </button>
+              <p className="text-xs text-vibe-comment mt-2">
+                  View all console messages from this session to help diagnose issues.
+              </p>
+          </div>
+        </section>
 
       </div>
     </div>

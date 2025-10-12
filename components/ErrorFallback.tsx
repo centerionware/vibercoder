@@ -1,11 +1,14 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { db } from '../utils/idb';
+import { getDebugLogs } from '../utils/logging';
 
 interface ErrorFallbackProps {
   error: Error;
 }
 
 const ErrorFallback: React.FC<ErrorFallbackProps> = ({ error }) => {
+  const [showLogs, setShowLogs] = useState(false);
+  const logs = getDebugLogs();
   
   const handleReset = async () => {
     try {
@@ -40,6 +43,23 @@ const ErrorFallback: React.FC<ErrorFallbackProps> = ({ error }) => {
             {error.message}\n\n{error.stack}
           </pre>
         </div>
+
+        {logs.length > 0 && (
+            <div className="mb-4">
+                <button onClick={() => setShowLogs(p => !p)} className="text-sm text-vibe-accent hover:underline">
+                    {showLogs ? 'Hide' : 'Show'} Debug Log
+                </button>
+                {showLogs && (
+                    <div className="mt-2 bg-vibe-bg-deep p-4 rounded-md">
+                        <pre className="text-xs text-vibe-text-secondary whitespace-pre-wrap font-mono break-all max-h-60 overflow-y-auto">
+                            {logs.map((log, i) => 
+                                `[${new Date(log.timestamp).toLocaleTimeString()}] [${log.level.toUpperCase()}] ${log.message}`
+                            ).join('\n')}
+                        </pre>
+                    </div>
+                )}
+            </div>
+        )}
 
         <p className="text-sm text-vibe-comment mb-4">
           You can try reloading the page. If the problem persists, the most reliable solution is to reset the application's stored data. This will clear all chat history and settings.

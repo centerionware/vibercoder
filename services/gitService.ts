@@ -50,11 +50,38 @@ const realGitService: GitService = {
             await fs.promises.unlink(`/${file}`).catch(() => {});
         }
     }
+    
+    console.log(`Attempting to clone from URL: ${url}`);
+    if (proxyUrl) {
+      console.log(`Using CORS proxy: ${proxyUrl}`);
+    } else {
+      console.log('No CORS proxy configured (expected in native environment).');
+    }
 
-    await git.clone({
-      fs, http, dir, corsProxy: proxyUrl, url,
-      onAuth: () => ({ username: token }),
-    });
+    try {
+      await git.clone({
+        fs, http, dir, corsProxy: proxyUrl, url,
+        onAuth: () => ({ username: token }),
+        onMessage: (message) => {
+          console.info(`Git clone message: ${message.trim()}`);
+        },
+        onProgress: (event) => {
+          if (event.phase) {
+            console.log(`Git clone phase: ${event.phase}, Loaded: ${event.loaded}, Total: ${event.total}`);
+          }
+        }
+      });
+    } catch (e: any) {
+      console.error("isomorphic-git clone error object:", e);
+      let detailedMessage = e.message;
+      if (e.data?.response) {
+        detailedMessage += ` | Server response: ${e.data.response}`;
+      }
+      if (e.data?.statusCode) {
+        detailedMessage += ` | Status code: ${e.data.statusCode}`;
+      }
+      throw new Error(detailedMessage);
+    }
     
     return { files: await readFileFromFS(dir) };
   },

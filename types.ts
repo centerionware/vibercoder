@@ -239,3 +239,10 @@ export interface PreviewState {
     videoFrameDataUrl: string | null;
     videoFrameRect: DOMRect | null;
 }
+
+// Debugging
+export interface LogEntry {
+  timestamp: number;
+  level: 'log' | 'warn' | 'error' | 'info';
+  message: string;
+}
