@@ -4,7 +4,7 @@
   "description": "A mobile-first, web-based coding platform with seamless Git integration, AI-enhanced productivity, and a live preview experience, all running in the browser.",
   "main": "electron/main.js",
   "scripts": {
-    "build:web": "rm -rf www && mkdir www && esbuild index.tsx --bundle --outfile=www/main.js --define:process.env.API_KEY=\\\"\"$API_KEY\"\\\" --jsx-factory=React.createElement --jsx-fragment=React.Fragment && cp index.html www/index.html && sed -i 's|<script type=\"module\" src=\"/index.tsx\"></script>|<script src=\"main.js\"></script>|' www/index.html",
+    "build:web": "rm -rf www && mkdir www && esbuild index.tsx --bundle --outfile=www/main.js --define:process.env.API_KEY=\\\"\"$API_KEY\"\\\" --jsx-factory=React.createElement --jsx-fragment=React.Fragment && cp index.html www/index.html && perl -pi -e 's|<script type=\"module\" src=\"/index.tsx\"></script>|<script src=\"main.js\"></script>|' www/index.html",
     "sync:native": "npx capacitor sync",
     "open:android": "npx capacitor open android",
     "open:ios": "npx capacitor open ios",
