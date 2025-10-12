@@ -1,0 +1,213 @@
+# VibeCode Cross-Platform Build & Deploy Pipeline
+#
+# IMPORTANT: For this workflow to run, you MUST move this file into the `.github/workflows/` directory.
+# `mkdir -p .github/workflows && mv build-pipeline.yml .github/workflows/`
+
+name: VibeCode Cross-Platform Build
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  # Job 1: Build the core web assets and the Docker image. This is the foundation for all other jobs.
+  build_web_and_docker:
+    name: Build Web Assets & Docker Image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      # This step builds the static web app into the 'www' directory, which is Capacitor's web asset source.
+      - name: Build web assets
+        run: npm run build:web
+        env:
+          # The bundler needs the API key to embed it in the final code for the client.
+          # You MUST set this as a secret in your repository settings.
+          API_KEY: ${{ secrets.API_KEY_PLACEHOLDER }}
+
+      # Upload the 'www' directory as an artifact so that other, parallel jobs can download and use it.
+      - name: Upload web assets artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-assets
+          path: www
+
+      # Docker build and push steps for server deployments.
+      - name: Log in to the GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}:${{ github.sha }}
+
+  # Job 2: Build desktop executables for Windows, macOS, and Linux using a matrix strategy for parallel builds.
+  build_desktop:
+    name: Build Desktop App (${{ matrix.os }})
+    needs: build_web_and_docker # This job can't start until the web assets are ready.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      # Download the web assets that were built and uploaded in the previous job.
+      - name: Download web assets artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-assets
+          path: www # Electron is configured to look in 'www' for the index.html file.
+
+      # Run the correct build script based on the runner's operating system.
+      - name: Build Electron app for Linux
+        if: matrix.os == 'ubuntu-latest'
+        run: npm run build:linux
+
+      - name: Build Electron app for Windows
+        if: matrix.os == 'windows-latest'
+        run: npm run build:win
+
+      - name: Build Electron app for macOS
+        if: matrix.os == 'macos-latest'
+        run: npm run build:macos
+        env:
+          # macOS builds require code signing for distribution. Add these secrets to your repository.
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+
+      # Upload the final built executable/installer as an artifact.
+      - name: Upload desktop artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vibecode-desktop-${{ matrix.os }}
+          path: dist/ # The electron-builder output directory.
+
+  # Job 3: Build the native Android APK.
+  build_android:
+    name: Build Android APK
+    needs: build_web_and_docker
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Download web assets artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-assets
+          path: www
+
+      - name: Sync Capacitor assets
+        run: npx capacitor sync android
+
+      # The actual Android build process using Gradle.
+      - name: Build Android Release
+        run: cd android && ./gradlew assembleRelease
+        env:
+          # For a signed release APK, you must add these secrets to your repository.
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          SIGNING_KEY_STORE_PASSWORD: ${{ secrets.SIGNING_KEY_STORE_PASSWORD }}
+          ENCODED_SIGNING_KEY: ${{ secrets.ENCODED_SIGNING_KEY }}
+
+      - name: Upload Android APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vibecode-android-apk
+          path: android/app/build/outputs/apk/release/app-release-unsigned.apk # Path for unsigned APK. Change if signing.
+
+  # Job 4: Build the native iOS App.
+  build_ios:
+    name: Build iOS App
+    needs: build_web_and_docker
+    runs-on: macos-latest # iOS builds MUST run on a macOS machine.
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Download web assets artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-assets
+          path: www
+
+      - name: Sync Capacitor assets
+        run: npx capacitor sync ios
+
+      - name: Install CocoaPods
+        run: pod install
+        working-directory: ios/App
+
+      # This is a placeholder for the complex iOS build and signing process.
+      # A real build would use xcodebuild and require secrets for signing certificates and provisioning profiles.
+      - name: Build iOS App (Archive)
+        run: |
+          set -o pipefail && xcodebuild -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -archivePath $PWD/ios/App/App.xcarchive \
+            archive | xcpretty
+        env:
+          APPLE_DEVELOPMENT_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Upload iOS App artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vibecode-ios-app
+          path: ios/App/App.xcarchive
