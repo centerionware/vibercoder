@@ -34,6 +34,7 @@
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@types/uuid": "^10.0.0",
+    "@vitejs/plugin-react": "^4.3.1",
     "buffer": "^6.0.3",
     "dexie": "^4.0.8",
     "electron": "^31.2.1",
@@ -44,7 +45,8 @@
     "memfs": "^4.49.0",
     "monaco-editor": "^0.50.0",
     "typescript": "^5.5.4",
-    "uuid": "^10.0.0"
+    "uuid": "^10.0.0",
+    "vite": "^5.3.5"
   },
   "build": {
     "appId": "com.vibecode.app",

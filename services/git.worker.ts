@@ -13,12 +13,15 @@ const fs = new LightningFS('vibecode-fs');
 const dir = '/';
 let http = webHttp; // Default to the standard web fetch client
 
+// FIX: Infer the correct response type from the library to ensure type safety.
+type GitHttpResponse = Awaited<ReturnType<typeof webHttp.request>>;
+
 const pendingHttpRequests = new Map<string, { resolve: (value: any) => void; reject: (reason?: any) => void; }>();
 
 // A custom http client for isomorphic-git that proxies requests to the main thread.
 // This is used in native environments to leverage native HTTP clients and bypass CORS.
 const nativeProxyHttp = {
-  async request({ url, method, headers, body }: any) {
+  async request({ url, method, headers, body }: any): Promise<GitHttpResponse> {
     const requestId = `http-${Math.random()}`;
     const bodyParts: Uint8Array[] = [];
     if (body) {
@@ -30,7 +33,8 @@ const nativeProxyHttp = {
       type: 'http-request',
       payload: { url, method, headers, body: bodyParts, requestId }
     });
-    return new Promise((resolve, reject) => {
+    // FIX: Explicitly type the promise to match the expected GitHttpResponse.
+    return new Promise<GitHttpResponse>((resolve, reject) => {
       pendingHttpRequests.set(requestId, { resolve, reject });
     });
   }
