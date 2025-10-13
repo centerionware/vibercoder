@@ -83,7 +83,9 @@ self.onmessage = async (event: MessageEvent) => {
         break;
 
       case 'listBranches':
-        result = await git.listBranches({ fs, dir });
+        const localBranches = await git.listBranches({ fs, dir });
+        const remoteBranches = await git.listBranches({ fs, dir, remote: 'origin' });
+        result = [...new Set([...localBranches, ...remoteBranches])];
         break;
       
       case 'checkout':

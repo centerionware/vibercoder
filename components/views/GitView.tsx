@@ -132,25 +132,32 @@ const GitView: React.FC<GitViewProps> = ({ changedFiles, onCommit, isCommitting,
         </div>
 
         {/* Right Panel: Changes & Diffs */}
-        <div className="w-2/3 bg-vibe-panel p-2 rounded-lg flex-1 overflow-y-auto">
+        <div className="w-2/3 bg-vibe-panel p-2 rounded-lg flex flex-col overflow-hidden">
             {selectedCommit ? (
-                <div className="flex h-full gap-2">
-                    <div className="w-1/3 border-r border-vibe-bg-deep pr-2">
-                        <h3 className="text-lg font-semibold mb-2 text-vibe-text-secondary">Changes</h3>
-                        <ul className="space-y-1">
-                            {commitChanges.map(change => (
-                                <li key={change.filepath}>
-                                    <button onClick={() => setSelectedFile(change)} className={`w-full text-left p-1.5 rounded text-sm ${selectedFile?.filepath === change.filepath ? 'bg-vibe-accent text-white' : 'hover:bg-vibe-bg-deep'}`}>
-                                        {change.filepath}
-                                    </button>
-                                </li>
-                            ))}
-                        </ul>
+                <>
+                    <div className="flex-shrink-0 p-2 border-b border-vibe-bg-deep mb-2">
+                        <p className="font-semibold text-vibe-text truncate" title={selectedCommit.message}>{selectedCommit.message}</p>
+                        <p className="text-xs text-vibe-text-secondary">{selectedCommit.author.name} committed on {new Date(selectedCommit.author.timestamp * 1000).toLocaleDateString()}</p>
+                        <p className="font-mono text-xs text-vibe-comment">{selectedCommit.oid}</p>
                     </div>
-                    <div className="w-2/3">
-                        {selectedFile ? <DiffViewer file={selectedFile} onShowFileHistory={handleShowFileInEditor}/> : <div className="flex h-full items-center justify-center text-vibe-comment">Select a file to see the diff.</div>}
+                    <div className="flex flex-1 gap-2 overflow-hidden">
+                        <div className="w-1/3 border-r border-vibe-bg-deep pr-2 overflow-y-auto">
+                            <h3 className="text-sm font-semibold mb-2 text-vibe-text-secondary sticky top-0 bg-vibe-panel py-1">Files Changed ({commitChanges.length})</h3>
+                            <ul className="space-y-1">
+                                {commitChanges.map(change => (
+                                    <li key={change.filepath}>
+                                        <button onClick={() => setSelectedFile(change)} className={`w-full text-left p-1.5 rounded text-sm ${selectedFile?.filepath === change.filepath ? 'bg-vibe-accent text-white' : 'hover:bg-vibe-bg-deep'}`}>
+                                            {change.filepath}
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                        <div className="w-2/3">
+                            {selectedFile ? <DiffViewer file={selectedFile} onShowFileHistory={handleShowFileInEditor}/> : <div className="flex h-full items-center justify-center text-vibe-comment">Select a file to see the diff.</div>}
+                        </div>
                     </div>
-                </div>
+                </>
             ) : <div className="flex h-full items-center justify-center text-vibe-comment">Select a commit to see changes.</div>}
         </div>
       </div>

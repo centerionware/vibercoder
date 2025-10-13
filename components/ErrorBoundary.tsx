@@ -11,9 +11,10 @@ interface State {
 }
 
 class ErrorBoundary extends React.Component<Props, State> {
-  // FIX: Reverted to using class fields for state and arrow functions for handlers.
-  // The previous constructor-based approach was causing type errors where component properties like 'state' and 'props' were not found.
-  // This is a more standard and robust pattern for React class components.
+  // FIX: Use class fields for state and arrow functions for handlers.
+  // This is a standard and robust pattern for React class components that ensures 'this'
+  // is correctly bound, resolving type errors where component properties like 'setState' 
+  // and 'props' might not be found.
   state: State = {
     hasError: false,
     error: null,

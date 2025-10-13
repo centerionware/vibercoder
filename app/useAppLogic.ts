@@ -162,31 +162,32 @@ export const useAppLogic = () => {
   }, [activeView, settings.autoEnableLiveMode, liveSession.isLive, liveSession.startLiveSession]);
   
   const handleClone = useCallback(async (url: string, name: string) => {
-    if (!gitService?.isReal) {
-        alert("Git service is not available. This may be because it's running in a mock environment.");
-        return;
-    }
-    
     setIsCloning(true);
     setCloningProgress('Creating project...');
     try {
+      // 1. Create project record, but DON'T switch active project yet.
       const newProject = await createNewProject(name, false, url);
-      // Switch to the new project so the gitService gets re-initialized for it
-      switchProject(newProject.id);
-
-      // We need to wait for the new gitService instance to be ready
+      
+      // 2. Create a git service instance specifically for this new project's ID.
       const newGitService = createGitService(true, newProject.id);
       
       const token = gitCredentials.find(c => c.isDefault)?.token || settings.gitAuthToken;
 
+      // 3. Clone using the new service instance.
       await newGitService.clone(url, settings.gitCorsProxy, { name: settings.gitUserName, email: settings.gitUserEmail }, token, (progress: GitProgress) => {
         setCloningProgress(`${progress.phase} (${progress.loaded}/${progress.total})`);
       });
 
       setCloningProgress('Reading project files...');
+      // 4. Read the files from the cloned repo HEAD.
       const headFiles = await newGitService.getHeadFiles();
+
+      // 5. Update the main application file state. This is the key fix.
       setFiles(headFiles);
-      setGitService(newGitService); // Set the new service as active
+
+      // 6. Now, officially switch the active project in the UI.
+      // This will trigger the useEffect to set the main gitService state correctly for future operations.
+      switchProject(newProject.id);
 
     } catch (error: any) {
         alert(`Cloning failed: ${error.message}`);
@@ -196,7 +197,7 @@ export const useAppLogic = () => {
       setCloningProgress(null);
       setIsProjectModalOpen(false);
     }
-  }, [settings, gitCredentials, createNewProject, setFiles, switchProject, gitService]);
+  }, [settings, gitCredentials, createNewProject, setFiles, switchProject]);
 
   const handleCommit = useCallback(async (message: string) => {
     if (!gitService) return;
