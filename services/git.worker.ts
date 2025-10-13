@@ -15,23 +15,36 @@ if (typeof self !== 'undefined' && !('global' in self)) {
   (self as any).global = self;
 }
 
-const fs = new LightningFS('vibecode-fs');
+let fs: any = null;
 const dir = '/';
 
 self.onmessage = async (event: MessageEvent) => {
   const { id, type, payload } = event.data;
 
   try {
+    if (type === 'init') {
+        const { projectId } = payload;
+        if (!projectId) {
+            throw new Error("Initialization error: projectId is missing.");
+        }
+        fs = new LightningFS(`vibecode-fs-${projectId}`);
+        self.postMessage({ type: 'result', id, payload: { success: true } });
+        return;
+    }
+
+    if (!fs) {
+        throw new Error("Git worker has not been initialized. Please send an 'init' message with a projectId first.");
+    }
+    
     let result: any;
     switch (type) {
       case 'clone':
-        for (const file of await fs.promises.readdir(dir)) {
-            if (file !== '.git') { // Do not delete the git directory itself
-                // FIX: Cast to `any` to bypass outdated type definitions for LightningFS, which do not include the `rm` method.
-                // The method exists at runtime, so this cast resolves the TypeScript error without changing functionality.
-                await (fs.promises as any).rm(`${dir}${file}`, { recursive: true, force: true });
-            }
+        // Nuke the entire FS for this project before cloning
+        const filesInRoot = await fs.promises.readdir(dir);
+        for (const file of filesInRoot) {
+            await (fs.promises as any).rm(`${dir}${file}`, { recursive: true, force: true });
         }
+
         await git.clone({
           fs, http, dir, corsProxy: payload.proxyUrl, url: payload.url,
           onAuth: () => ({ username: payload.token }),

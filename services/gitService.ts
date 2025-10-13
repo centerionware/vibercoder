@@ -20,21 +20,19 @@ class ElectronMainThreadGitService implements GitService {
     private dir = '/';
     private http: any;
 
-    constructor() {
-        this.fs = new LightningFS('vibecode-fs-electron');
+    constructor(projectId: string) {
+        this.fs = new LightningFS(`vibecode-fs-electron-${projectId}`);
         if (!window.electron?.git) {
             throw new Error("Electron Git IPC bridge is not available.");
         }
-        this.http = window.electron.git; // Use the IPC proxy
+        this.http = window.electron.git;
     }
     
     private async clearFs() {
         for (const file of await this.fs.promises.readdir(this.dir)) {
-            if (file !== '.git') {
-                // FIX: Cast to `any` to bypass outdated type definitions for LightningFS, which do not include the `rm` method.
-                // The method exists at runtime, so this cast resolves the TypeScript error without changing functionality.
-                await (this.fs.promises as any).rm(`${this.dir}${file}`, { recursive: true, force: true });
-            }
+            // FIX: Cast to `any` to bypass outdated type definitions for LightningFS, which do not include the `rm` method.
+            // The method exists at runtime, so this cast resolves the TypeScript error without changing functionality.
+            await (this.fs.promises as any).rm(`${this.dir}${file}`, { recursive: true, force: true });
         }
     }
 
@@ -165,8 +163,9 @@ class WorkerGitService implements GitService {
     private worker: Worker | null = null;
     private requests: Map<string, { resolve: (value: any) => void; reject: (reason?: any) => void; }> = new Map();
     private mockService = new MockGitService();
+    private initPromise: Promise<void> | null = null;
 
-    constructor() {
+    constructor(projectId: string) {
         try {
             // The URL resolution for the worker can fail in some sandboxed environments.
             // This gracefully disables Git functionality instead of crashing the app.
@@ -177,6 +176,18 @@ class WorkerGitService implements GitService {
                 this.isReal = false;
                 this.worker = null; // Disable the worker
             };
+
+            this.initPromise = new Promise((resolve, reject) => {
+                const id = uuidv4();
+                this.requests.set(id, { resolve, reject });
+                this.worker!.postMessage({ id, type: 'init', payload: { projectId } });
+            });
+            this.initPromise.catch(err => {
+                console.error("Worker initialization failed:", err);
+                this.isReal = false;
+                this.worker = null;
+            });
+
         } catch (e) {
             console.warn("Could not initialize Git worker. Git functionality will be disabled in this environment.", e);
             this.isReal = false;
@@ -200,7 +211,12 @@ class WorkerGitService implements GitService {
         this.requests.delete(id);
     }
 
-    private sendCommand(type: string, payload: any, onProgress?: (progress: GitProgress) => void): Promise<any> {
+    private async sendCommand(type: string, payload: any, onProgress?: (progress: GitProgress) => void): Promise<any> {
+        await this.initPromise;
+        if (!this.worker) {
+            throw new Error("Git worker is not available.");
+        }
+
         return new Promise((resolve, reject) => {
             const id = uuidv4();
             this.requests.set(id, { resolve, reject });
@@ -281,17 +297,17 @@ class MockGitService implements GitService {
 
 // --- Service Factory ---
 export function createGitService(isReal: boolean, projectId: string | null): GitService {
-  if (!isReal || !projectId) { // projectId is not used here but kept for API consistency
+  if (!isReal || !projectId) {
     return new MockGitService();
   }
 
   // Use the main-thread service for Electron to access the IPC bridge
   if (window.electron?.isElectron) {
-    console.log("Initializing main-thread Electron Git Service.");
-    return new ElectronMainThreadGitService();
+    console.log(`Initializing main-thread Electron Git Service for project ${projectId}.`);
+    return new ElectronMainThreadGitService(projectId);
   }
   
   // Use the worker-based service for all other environments (web, Capacitor) for performance
-  console.log("Initializing worker-based Git Service for web/Capacitor.");
-  return new WorkerGitService();
+  console.log(`Initializing worker-based Git Service for project ${projectId}.`);
+  return new WorkerGitService(projectId);
 }

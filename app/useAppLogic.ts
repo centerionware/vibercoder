@@ -105,7 +105,7 @@ export const useAppLogic = () => {
     };
 
     loadProjectFiles();
-  }, [activeProjectId, gitService, setFiles]); // This effect synchronizes the workspace.
+  }, [activeProjectId, gitService]); // This effect synchronizes the workspace.
   
   // Fetch git status when the view changes to Git or files change
   useEffect(() => {
@@ -189,6 +189,7 @@ export const useAppLogic = () => {
     setCloningProgress('Creating project...');
     try {
         const newProject = await createNewProject(name, false, url);
+        // A temporary git service for the new project ID before it's active
         const tempGitService = createGitService(true, newProject.id);
         const token = gitCredentials.find(c => c.isDefault)?.token || settings.gitAuthToken;
         await tempGitService.clone(url, settings.gitCorsProxy, { name: settings.gitUserName, email: settings.gitUserEmail }, token, (progress: GitProgress) => {
