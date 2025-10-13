@@ -199,7 +199,7 @@ export const useAppLogic = () => {
     
     const cloneConfig = {
       url: url,
-      proxy: settings.gitCorsProxy || DEFAULT_SETTINGS.gitCorsProxy,
+      proxy: isNativeEnvironment() ? undefined : (settings.gitCorsProxy || DEFAULT_SETTINGS.gitCorsProxy),
       author: { name: settings.gitUserName, email: settings.gitUserEmail },
       token: gitCredentials.find(c => c.isDefault)?.token || settings.gitAuthToken,
     };
