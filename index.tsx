@@ -1,34 +1,8 @@
-
-
 import { Buffer } from 'buffer';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
-import { isNativeEnvironment } from './utils/environment';
-import { capacitorFetch, electronFetch } from './services/nativeFetch';
-import { Capacitor } from '@capacitor/core';
-
-
-// Polyfill fetch for native environments to bypass WebView restrictions.
-// This allows libraries like esbuild-wasm (running on the main thread) to fetch remote resources.
-if (isNativeEnvironment()) {
-  const originalFetch = window.fetch;
-  (window as any).fetch = (url: string | URL, options?: RequestInit): Promise<Response> => {
-    const urlString = url.toString();
-    // Only intercept http/https requests.
-    if (urlString.startsWith('http')) {
-      if (Capacitor.isNativePlatform()) {
-        return capacitorFetch(url, options);
-      }
-      if (window.electron?.isElectron) {
-        return electronFetch(url, options);
-      }
-    }
-    // For all other cases (e.g., data URLs), use the original browser fetch.
-    return originalFetch.call(window, url, options);
-  };
-}
 
 
 // Polyfill the global Buffer object for libraries like isomorphic-git
@@ -44,7 +18,7 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    {/* FIX: The <App /> component must be a child of <ErrorBoundary> to be caught by it and to satisfy its 'children' prop requirement. */}
+    {/* FIX: The <ErrorBoundary> component requires a 'children' prop. To fix the error and enable it to catch errors within the application, the <App /> component has been moved to be a child of <ErrorBoundary>. */}
     <ErrorBoundary>
       <App />
     </ErrorBoundary>

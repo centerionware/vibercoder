@@ -1,6 +1,3 @@
-
-
-
 import React, { ErrorInfo, ReactNode } from 'react';
 import ErrorFallback from './ErrorFallback';
 
@@ -22,9 +19,6 @@ class ErrorBoundary extends React.Component<Props, State> {
       hasError: false,
       error: null,
     };
-
-    // The explicit binding is no longer necessary because the handler methods
-    // have been converted to arrow functions, which lexically bind `this`.
   }
 
   // This is the standard React error boundary method for render-phase errors
@@ -49,15 +43,13 @@ class ErrorBoundary extends React.Component<Props, State> {
     window.removeEventListener('unhandledrejection', this.handleRejection);
   }
 
-  // FIX: Converted to an arrow function to ensure `this` is correctly bound when called as a window event listener.
-  // This resolves the error "Property 'setState' does not exist on type 'ErrorBoundary'".
+  // FIX: Converted `handleError` to an arrow function to ensure `this` is correctly bound. When used as a window event listener, a regular class method loses its `this` context, causing `this.setState` to be undefined. Arrow functions lexically bind `this`, resolving the error.
   private handleError = (event: ErrorEvent) => {
     console.error("Global uncaught error:", event.error);
     this.setState({ hasError: true, error: event.error });
   }
 
-  // FIX: Converted to an arrow function to ensure `this` is correctly bound when called as a window event listener.
-  // This also resolves the "Property 'setState' does not exist" error.
+  // FIX: Converted `handleRejection` to an arrow function to ensure `this` is correctly bound. Similar to `handleError`, this prevents the loss of `this` context when used as a window event listener, resolving the error where `this.setState` is not found.
   private handleRejection = (event: PromiseRejectionEvent) => {
     console.error("Global unhandled rejection:", event.reason);
     // Coerce the reason to an Error object if it's not one already
