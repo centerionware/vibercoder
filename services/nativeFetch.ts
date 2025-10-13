@@ -1,3 +1,4 @@
+
 import { Capacitor, CapacitorHttp, HttpResponse } from '@capacitor/core';
 import { Buffer } from 'buffer';
 
@@ -20,7 +21,7 @@ async function readBodyToBuffer(body: BodyInit | null | undefined): Promise<Buff
 }
 
 // A `fetch` implementation using Capacitor's native HTTP plugin
-async function capacitorFetch(url: string | URL, options?: RequestInit): Promise<Response> {
+export async function capacitorFetch(url: string | URL, options?: RequestInit): Promise<Response> {
     console.log('[VibeCode Debug] capacitorFetch called for URL:', url.toString());
 
     if (!CapacitorHttp || typeof CapacitorHttp.request !== 'function') {
@@ -81,7 +82,7 @@ async function capacitorFetch(url: string | URL, options?: RequestInit): Promise
 
 
 // A `fetch` implementation using Electron's IPC to the main process
-async function electronFetch(url: string | URL, options?: RequestInit): Promise<Response> {
+export async function electronFetch(url: string | URL, options?: RequestInit): Promise<Response> {
     if (!window.electron?.gitHttpRequest) throw new Error('Electron IPC for git not available.');
     
     const bodyParts: Uint8Array[] = [];

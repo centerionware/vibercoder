@@ -1,4 +1,6 @@
+
 import * as esbuild from 'esbuild-wasm';
+import { isNativeEnvironment } from '../../utils/environment';
 
 let serviceInitialized = false;
 
@@ -12,7 +14,10 @@ export const initializeService = async () => {
         const esbuildService = (esbuild as any).default || esbuild;
         await esbuildService.initialize({
             wasmURL: 'https://esm.sh/esbuild-wasm@0.25.10/esbuild.wasm',
-            worker: true,
+            // Critical fix for native: Disable the worker on native platforms.
+            // This forces esbuild to run on the main thread, where our `fetch`
+            // polyfill can intercept its requests and route them through the native layer.
+            worker: !isNativeEnvironment(),
         });
         serviceInitialized = true;
     } catch (e) {
