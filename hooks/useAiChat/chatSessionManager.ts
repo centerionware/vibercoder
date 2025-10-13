@@ -1,4 +1,4 @@
-import { Chat, GenerationConfig, GeminiContent } from '@google/genai';
+import { Chat, GenerationConfig } from '@google/genai';
 import { UseAiChatProps } from '../../types';
 import { allTools, systemInstruction } from '../../services/toolOrchestrator';
 
@@ -31,7 +31,7 @@ export const createChatSession = async ({
 
   // The history is now managed exclusively by the AI using its tools.
   // We start every turn with a blank history slate to force the AI to rely on its protocol.
-  const history: GeminiContent[] = [];
+  const history: [];
 
 
   // Create the chat instance with a blank history and the new configuration.
