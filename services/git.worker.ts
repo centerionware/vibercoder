@@ -1,3 +1,5 @@
+
+
 import git from 'isomorphic-git';
 import webHttp from 'isomorphic-git/http/web';
 import LightningFS from '@isomorphic-git/lightning-fs';
@@ -9,9 +11,10 @@ if (typeof self !== 'undefined' && !(self as any).Buffer) {
   (self as any).Buffer = Buffer;
 }
 
-// FIX: Polyfill 'global' for libraries that expect it in a worker context.
+// FIX: Changed `typeof global` to `!('global' in self)` to be type-safe and avoid the "Cannot find name 'global'" error in TypeScript.
+// This polyfills 'global' for libraries that expect it in a worker context.
 // Vite's top-level `define` config sets `global` to `window`, which is incorrect for workers.
-if (typeof global === 'undefined' && typeof self !== 'undefined') {
+if (typeof self !== 'undefined' && !('global' in self)) {
   (self as any).global = self;
 }
 
