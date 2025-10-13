@@ -61,18 +61,15 @@ const ViewRenderer: React.FC<ViewRendererProps> = (app) => {
         />
       );
     case View.Git:
-        const handleShowFileHistory = (file: { filename: string, content: string }) => {
-            // This is a temporary view, so we don't change the main file state
-            // It could be enhanced to show a read-only editor in the future
-            alert(`Showing history for ${file.filename}:\n\n${file.content}`);
-        };
       return (
         <GitView
+          files={app.files}
           changedFiles={app.changedFiles}
           onCommit={app.handleCommit}
           isCommitting={app.isCommitting}
           gitService={app.gitServiceRef.current} // Pass the actual service
-          onShowFileHistory={handleShowFileHistory}
+          onBranchSwitch={app.handleBranchSwitch}
+          onOpenFileInEditor={app.handleOpenFileInEditor}
         />
       );
     case View.Settings:

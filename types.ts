@@ -232,6 +232,8 @@ export interface GitFileChange {
     filepath: string;
     status: 'added' | 'deleted' | 'modified';
     diff?: DiffLine[];
+    isBinary?: boolean;
+    isTooLarge?: boolean;
 }
 
 export interface GitProgress {

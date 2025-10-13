@@ -3,7 +3,7 @@ import http from 'isomorphic-git/http/web';
 import LightningFS from '@isomorphic-git/lightning-fs';
 import { Buffer } from 'buffer';
 import { performDiff } from '../utils/diff';
-import { GitFileStatus } from '../types';
+import { GitFileStatus, GitFileChange } from '../types';
 
 if (typeof self !== 'undefined' && !(self as any).Buffer) {
   (self as any).Buffer = Buffer;
@@ -96,12 +96,24 @@ self.onmessage = async (event: MessageEvent) => {
       case 'getCommitChanges':
         const commit = await git.readCommit({ fs, dir, oid: payload.oid });
         const parentOid = commit.commit.parent[0];
-        const changes: any[] = [];
+        const changes: GitFileChange[] = [];
+        const MAX_DIFF_SIZE = 200 * 1024; // 200KB
+
         if (!parentOid) { // This is the initial commit
             const filepaths = await git.listFiles({fs, dir, ref: payload.oid});
             for(const filepath of filepaths) {
-                const content = await readFileAtCommitFromFs(payload.oid, filepath) || '';
-                changes.push({ filepath, status: 'added', diff: content.split('\n').map(line => ({type: 'add', content: line})) });
+                const change: GitFileChange = { filepath, status: 'added' };
+                const blobResult = await git.readBlob({ fs, dir, oid: payload.oid, filepath });
+
+                if (blobResult.blob.byteLength > MAX_DIFF_SIZE) {
+                    change.isTooLarge = true;
+                } else if (Buffer.from(blobResult.blob.slice(0, 8000)).includes(0)) {
+                    change.isBinary = true;
+                } else {
+                    const content = Buffer.from(blobResult.blob).toString();
+                    change.diff = content.split('\n').map(line => ({type: 'add', content: line}));
+                }
+                changes.push(change);
             }
         } else {
             await git.walk({ fs, dir, trees: [git.TREE({ ref: parentOid }), git.TREE({ ref: payload.oid })],
@@ -109,11 +121,31 @@ self.onmessage = async (event: MessageEvent) => {
                     if (filepath === '.') return;
                     const aOid = await A?.oid(); const bOid = await B?.oid();
                     if (aOid === bOid) return; // Unchanged
+
                     let status: 'added' | 'deleted' | 'modified' = 'modified';
                     if (!aOid) status = 'added'; if (!bOid) status = 'deleted';
+                    
+                    const change: GitFileChange = { filepath, status };
+                    const blobForCheckOid = status === 'added' ? bOid : (bOid || aOid);
+
+                    if (blobForCheckOid) {
+                        const { blob } = await git.readBlob({fs, dir, oid: blobForCheckOid});
+                         if (blob.byteLength > MAX_DIFF_SIZE) {
+                            change.isTooLarge = true;
+                        } else if (Buffer.from(blob.slice(0, 8000)).includes(0)) {
+                            change.isBinary = true;
+                        }
+                    }
+
+                    if (change.isTooLarge || change.isBinary) {
+                        changes.push(change);
+                        return;
+                    }
+
                     const contentA = status === 'added' ? '' : Buffer.from((await git.readBlob({ fs, dir, oid: aOid! })).blob).toString();
                     const contentB = status === 'deleted' ? '' : Buffer.from((await git.readBlob({ fs, dir, oid: bOid! })).blob).toString();
-                    changes.push({ filepath, status, diff: performDiff(contentA, contentB) });
+                    change.diff = performDiff(contentA, contentB);
+                    changes.push(change);
                 }
             });
         }

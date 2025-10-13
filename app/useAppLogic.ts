@@ -86,7 +86,7 @@ export const useAppLogic = () => {
   
   // Fetch git status when the view changes to Git or files change
   useEffect(() => {
-    if (gitService?.isReal && activeView === View.Git) {
+    if (gitService?.isReal && (activeView === View.Git || changedFiles.length === 0)) {
         gitService.status(files).then(setChangedFiles).catch(err => {
             console.error("Failed to get git status:", err);
             setChangedFiles([]);
@@ -165,43 +165,30 @@ export const useAppLogic = () => {
     setIsCloning(true);
     setCloningProgress('Creating project...');
     try {
-      // 1. Create project record, but DON'T switch active project yet.
-      const newProject = await createNewProject(name, false, url);
-      
-      // 2. Create a git service instance specifically for this new project's ID.
-      const newGitService = createGitService(true, newProject.id);
-      
-      const token = gitCredentials.find(c => c.isDefault)?.token || settings.gitAuthToken;
-
-      // 3. Clone using the new service instance.
-      await newGitService.clone(url, settings.gitCorsProxy, { name: settings.gitUserName, email: settings.gitUserEmail }, token, (progress: GitProgress) => {
-        setCloningProgress(`${progress.phase} (${progress.loaded}/${progress.total})`);
-      });
-
-      setCloningProgress('Reading project files...');
-      // 4. Read the files from the cloned repo HEAD.
-      const headFiles = await newGitService.getHeadFiles();
-
-      // 5. Update the main application file state. This is the key fix.
-      setFiles(headFiles);
-
-      // 6. Now, officially switch the active project in the UI.
-      // This will trigger the useEffect to set the main gitService state correctly for future operations.
-      switchProject(newProject.id);
-
+        const newProject = await createNewProject(name, false, url);
+        const tempGitService = createGitService(true, newProject.id);
+        const token = gitCredentials.find(c => c.isDefault)?.token || settings.gitAuthToken;
+        await tempGitService.clone(url, settings.gitCorsProxy, { name: settings.gitUserName, email: settings.gitUserEmail }, token, (progress: GitProgress) => {
+            setCloningProgress(`${progress.phase} (${progress.loaded}/${progress.total})`);
+        });
+        setCloningProgress('Reading project files...');
+        const headFiles = await tempGitService.getHeadFiles();
+        
+        setFiles(headFiles);
+        await switchProject(newProject.id);
+        setChangedFiles([]); // A fresh clone has no modified files.
     } catch (error: any) {
         alert(`Cloning failed: ${error.message}`);
         console.error("CLONE FAILED:", error);
     } finally {
-      setIsCloning(false);
-      setCloningProgress(null);
-      setIsProjectModalOpen(false);
+        setIsCloning(false);
+        setCloningProgress(null);
+        setIsProjectModalOpen(false);
     }
-  }, [settings, gitCredentials, createNewProject, setFiles, switchProject]);
+  }, [settings, gitCredentials, createNewProject, switchProject, setFiles]);
 
   const handleCommit = useCallback(async (message: string) => {
     if (!gitService) return;
-    // FIX: Destructured the correct property names `gitUserName` and `gitUserEmail` from the settings object.
     const { gitUserName, gitUserEmail } = settings;
     if (!gitUserName || !gitUserEmail) {
         alert("Please set your Git user name and email in the global settings.");
@@ -226,6 +213,30 @@ export const useAppLogic = () => {
     setDebugLogs([]);
   }, []);
   
+  const handleBranchSwitch = async (branch: string) => {
+      if (!gitService) return;
+      setIsCommitting(true); // Re-use for loading state
+      try {
+          const { files: newFiles } = await gitService.checkout(branch);
+          setFiles(newFiles);
+          setChangedFiles([]); // Workspace is clean after checkout
+      } catch (e: any) {
+          alert(`Failed to switch branch: ${e.message}`);
+      } finally {
+          setIsCommitting(false);
+      }
+  };
+
+  const handleOpenFileInEditor = useCallback((filepath: string) => {
+    if (files[filepath] !== undefined) {
+      setActiveFile(filepath);
+      setActiveView(View.Code);
+    } else {
+      alert(`File "${filepath}" does not exist in the current workspace.`);
+    }
+  }, [files, setActiveFile, setActiveView]);
+
+
   return {
     settings, onSettingsChange: setSettings,
     projects, activeProject, createNewProject, switchProject, deleteProject, updateProject,
@@ -248,6 +259,8 @@ export const useAppLogic = () => {
     gitServiceRef: { current: gitService }, 
     handleStartAiRequest,
     debugLogs, isDebugLogModalOpen, setIsDebugLogModalOpen, handleClearDebugLogs,
+    handleBranchSwitch,
+    handleOpenFileInEditor,
     ...liveSession,
   };
 };
