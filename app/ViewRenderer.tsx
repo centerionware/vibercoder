@@ -57,7 +57,7 @@ const ViewRenderer: React.FC<ViewRendererProps> = (app) => {
           startLiveSession={app.startLiveSession}
           stopLiveSession={app.stopLiveSession}
           toggleMute={app.toggleMute}
-          onStartAiRequest={app.handleStartAiRequest}
+          onStartAiRequest={() => app.handleStartAiRequest()}
           onEndAiRequest={app.onEndAiRequest}
         />
       );
