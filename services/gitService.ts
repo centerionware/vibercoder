@@ -1,12 +1,13 @@
 
 
+
+
 import { v4 as uuidv4 } from 'uuid';
 import {
   GitService, GitStatus, GitCommit, GitAuthor,
   GitFileChange, GitProgress
 } from '../types';
 import { isNativeEnvironment } from '../utils/environment';
-import { nativeFetch } from './nativeFetch';
 
 // This is the main thread service that acts as a proxy to the web worker.
 class WorkerGitService implements GitService {
@@ -20,58 +21,8 @@ class WorkerGitService implements GitService {
         this.pendingRequests = new Map();
         this.progressListeners = new Map();
 
-        // After creating the worker, send it an initialization message so it knows
-        // whether to use its internal web-based http client or proxy requests back here.
-        this.worker.postMessage({ type: 'init', payload: { isNative: isNativeEnvironment() } });
-
         this.worker.onmessage = async (event) => {
             const { type, id, payload } = event.data;
-
-            // Handle HTTP requests proxied from the worker in native environments
-            if (type === 'http-request') {
-                try {
-                    // The body is an array of Uint8Arrays. Reconstruct it into an async iterable stream for fetch.
-                    const bodyStream = payload.body ? (async function*() {
-                        for (const chunk of payload.body) {
-                            yield chunk;
-                        }
-                    })() : undefined;
-                    
-                    // FIX: Cast `bodyStream` to `any` because `BodyInit` does not include AsyncGenerators, but our custom nativeFetch implementation handles it.
-                    const response = await nativeFetch(payload.url, {
-                        method: payload.method,
-                        headers: payload.headers,
-                        body: bodyStream as any,
-                    });
-
-                    // Read the response body into a single buffer to send back to the worker.
-                    const responseBody = new Uint8Array(await response.arrayBuffer());
-                    const responseHeaders: Record<string, string> = {};
-                    response.headers.forEach((value, key) => { responseHeaders[key] = value; });
-
-                    this.worker.postMessage({
-                        type: 'http-response',
-                        payload: {
-                            requestId: payload.requestId,
-                            response: {
-                                url: response.url,
-                                method: payload.method, // Reflect the original method
-                                statusCode: response.status,
-                                statusMessage: response.statusText,
-                                body: responseBody,
-                                headers: responseHeaders,
-                            }
-                        }
-                    });
-                } catch (error) {
-                    const err = error instanceof Error ? { message: error.message, stack: error.stack } : { message: String(error) };
-                    this.worker.postMessage({
-                        type: 'http-response',
-                        payload: { requestId: payload.requestId, error: err }
-                    });
-                }
-                return;
-            }
             
             if (type === 'progress') {
                 const listener = this.progressListeners.get(id);
@@ -117,7 +68,7 @@ class WorkerGitService implements GitService {
         if (onProgress) {
             this.progressListeners.set(id, onProgress);
         }
-        // In native mode, the proxyUrl is ignored by the worker's custom http client.
+        // The worker will use the appropriate http client (via global fetch) internally.
         return this.postMessage(id, 'clone', { url, proxyUrl, token });
     }
 

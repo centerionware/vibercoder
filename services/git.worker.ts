@@ -1,7 +1,9 @@
 
 
+
+
 import git from 'isomorphic-git';
-import webHttp from 'isomorphic-git/http/web';
+import http from 'isomorphic-git/http/web';
 import LightningFS from '@isomorphic-git/lightning-fs';
 import { Buffer } from 'buffer';
 import { performDiff } from '../utils/diff';
@@ -20,68 +22,10 @@ if (typeof self !== 'undefined' && !('global' in self)) {
 
 const fs = new LightningFS('vibecode-fs');
 const dir = '/';
-let http = webHttp; // Default to the standard web fetch client
-
-// FIX: Infer the correct response type from the library to ensure type safety.
-type GitHttpResponse = Awaited<ReturnType<typeof webHttp.request>>;
-
-const pendingHttpRequests = new Map<string, { resolve: (value: any) => void; reject: (reason?: any) => void; }>();
-
-// A custom http client for isomorphic-git that proxies requests to the main thread.
-// This is used in native environments to leverage native HTTP clients and bypass CORS.
-const nativeProxyHttp = {
-  async request({ url, method, headers, body }: any): Promise<GitHttpResponse> {
-    const requestId = `http-${Math.random()}`;
-    const bodyParts: Uint8Array[] = [];
-    if (body) {
-      for await (const part of body) {
-        bodyParts.push(part);
-      }
-    }
-    self.postMessage({
-      type: 'http-request',
-      payload: { url, method, headers, body: bodyParts, requestId }
-    });
-    // FIX: Explicitly type the promise to match the expected GitHttpResponse.
-    return new Promise<GitHttpResponse>((resolve, reject) => {
-      pendingHttpRequests.set(requestId, { resolve, reject });
-    });
-  }
-};
 
 self.onmessage = async (event: MessageEvent) => {
   const { id, type, payload } = event.data;
 
-  // Handle non-command messages first
-  if (type === 'init') {
-    http = payload.isNative ? nativeProxyHttp : webHttp;
-    console.log(`Git worker initialized in ${payload.isNative ? 'NATIVE' : 'WEB'} mode.`);
-    return;
-  }
-
-  if (type === 'http-response') {
-    const pending = pendingHttpRequests.get(payload.requestId);
-    if (pending) {
-      if (payload.error) {
-        const err = new Error(payload.error.message);
-        err.stack = payload.error.stack;
-        pending.reject(err);
-      } else {
-        // Reconstruct the response body as an async iterable for isomorphic-git
-        const responsePayload = {
-          ...payload.response,
-          body: (async function*() {
-            yield payload.response.body;
-          })()
-        };
-        pending.resolve(responsePayload);
-      }
-      pendingHttpRequests.delete(payload.requestId);
-    }
-    return;
-  }
-
-  // Handle standard git commands
   try {
     let result: any;
     switch (type) {
