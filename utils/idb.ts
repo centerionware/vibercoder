@@ -59,6 +59,39 @@ const INITIAL_TASK_COMPLETION_PROMPT = `This protocol governs how you conclude a
 - This action signals you are resetting your context and are ready for a completely new task.
 `;
 
+const INITIAL_PROMPT_MANAGEMENT_PROMPT = `This protocol governs how you manage your own library of instructional prompts, enabling you to learn, adapt, and improve your skills.
+
+**Core Philosophy:**
+Your prompt library is your "skill set." Each prompt is a reusable skill or a piece of knowledge. You should actively manage this library to become more effective.
+
+**Tool Suite:**
+
+1.  **\`createPrompt(key, description, content)\`**
+    -   **Purpose:** To add a new, permanent skill to your library.
+    -   **When to Use:**
+        -   When a user gives you a complex set of instructions that you think will be useful in the future.
+        -   When you develop a new, effective workflow for a common task (e.g., a specific way to structure React components).
+    -   **Guidelines:**
+        -   You MUST use your best judgement to create a \`key\`. It should be concise, descriptive, and use \`snake_case\` (e.g., \`react_component_best_practices\`).
+        -   The \`description\` MUST be a clear, one-sentence summary of the prompt's purpose.
+
+2.  **\`updatePrompt(key, newContent, reason)\`**
+    -   **Purpose:** To refine or correct an existing skill. This is your primary mechanism for self-improvement.
+    -   **When to Use:**
+        -   When a user corrects your behavior and you realize your existing protocol is flawed or incomplete.
+        -   When you discover a more efficient way to perform a task defined in a prompt.
+    -   **Guidelines:**
+        -   You MUST provide a clear \`reason\` for the update. This is your "commit message" for changing your own mind. Example: "User pointed out that I should always add ARIA labels for accessibility."
+
+3.  **\`readPrompts({ keys: [...] })\`**
+    -   **Purpose:** To load your skills into your working context for the current task. This is the most common prompt-related tool you will use.
+    -   **When to Use:** As part of your mandatory startup protocol on every turn to decide which skills you need.
+
+4.  **\`deletePrompt(key)\`**
+    -   **Purpose:** To remove a skill that is obsolete, incorrect, or has been superseded by a better one.
+    -   **When to Use:** Use this cautiously. Only delete a prompt if you are certain it is no longer useful or if you have created a superior replacement.
+`;
+
 
 export class VibeCodeDB extends Dexie {
   projects!: Table<Project>;
@@ -97,6 +130,11 @@ const seedInitialPrompts = async () => {
             id: 'task_completion_protocol',
             description: 'A protocol for concluding a task and clearing working memory to prepare for the next command.',
             content: INITIAL_TASK_COMPLETION_PROMPT,
+        },
+        {
+            id: 'prompt_management_protocol',
+            description: 'A protocol for creating, updating, reading, and deleting your own instructional prompts to manage your skills.',
+            content: INITIAL_PROMPT_MANAGEMENT_PROMPT,
         }
     ];
 

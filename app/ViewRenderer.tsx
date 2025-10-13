@@ -101,6 +101,7 @@ const ViewRenderer: React.FC<ViewRendererProps> = (app) => {
             createPrompt={app.createPrompt}
             updatePrompt={app.updatePrompt}
             revertToVersion={app.revertToVersion}
+            deletePrompt={app.deletePrompt}
         />
       );
     default:

@@ -11,7 +11,7 @@ import { getPreviewState, blobToBase64 } from '../../utils/preview';
 import { interruptPlayback, playAudioChunk } from './useAiLive/playbackQueue';
 import { requestMediaPermissions } from '../../utils/permissions';
 
-const INACTIVITY_TIMEOUT = 20000; // 20 seconds
+const INACTIVITY_TIMEOUT = 10000; // 10 seconds
 
 export const useAiLive = (props: UseAiLiveProps) => {
     // --- State and Refs ---
@@ -43,6 +43,8 @@ export const useAiLive = (props: UseAiLiveProps) => {
         pendingMessageQueue: [],
         isTurnFinalizing: false,
     });
+    
+    const isSessionDirty = useRef(false);
 
     const uiUpdateTimerRef = useRef<number | null>(null);
     const previousVoiceNameRef = useRef(props.settings.voiceName);
@@ -50,6 +52,7 @@ export const useAiLive = (props: UseAiLiveProps) => {
     const autoDisableVideoTimeoutRef = useRef<number | null>(null);
     const endOfTurnTimerRef = useRef<number | null>(null);
     const inactivityTimerRef = useRef<number | null>(null);
+    const inactivityResetCallbackRef = useRef<() => void>();
 
 
     // --- Core Logic Implementations ---
@@ -146,7 +149,7 @@ export const useAiLive = (props: UseAiLiveProps) => {
                 } catch (e) {
                     const error = e instanceof Error ? e.message : String(e);
                     const session = await sessionRefs.current.sessionPromise;
-                    session?.sendToolResponse({ functionResponses: { id: fc.id, name: fc.name, response: { error } } });
+                    session?.sendToolResponse({ functionResponses: { id: fc.id, name: fc.name, response: { result: { error } } } });
                     status = ToolCallStatus.ERROR;
                 }
                 
@@ -168,17 +171,15 @@ export const useAiLive = (props: UseAiLiveProps) => {
         if (inactivityTimerRef.current) {
             clearTimeout(inactivityTimerRef.current);
             inactivityTimerRef.current = null;
+            console.log('[AI Live] User activity detected, inactivity reset timer canceled.');
         }
         startTurnIfNeeded();
         sessionRefs.current.currentInputTranscription += message.serverContent.inputTranscription.text;
         requestUiUpdate();
     }, [requestUiUpdate, startTurnIfNeeded]);
 
-    // Forward declaration for mutual recursion with finalizeTurn
-    const handleInactivityReset = useCallback(() => {}, []);
-
     const finalizeTurn = useCallback(() => {
-        console.log("Finalizing turn, processing message queue.");
+        console.log("[AI Live] Finalizing turn, processing message queue.");
         sessionRefs.current.isTurnFinalizing = false;
         endOfTurnTimerRef.current = null;
     
@@ -212,12 +213,17 @@ export const useAiLive = (props: UseAiLiveProps) => {
 
         // Start the inactivity timer to perform a silent reset if the user doesn't speak.
         if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
-        inactivityTimerRef.current = window.setTimeout(handleInactivityReset, INACTIVITY_TIMEOUT);
+        console.log(`[AI Live] Starting ${INACTIVITY_TIMEOUT / 1000}s inactivity reset timer.`);
+        inactivityTimerRef.current = window.setTimeout(() => {
+            inactivityResetCallbackRef.current?.();
+        }, INACTIVITY_TIMEOUT);
 
-    }, [processModelOutput, cancelUiUpdate, setIsAiTurn, handleInactivityReset]);
+    }, [processModelOutput, cancelUiUpdate, setIsAiTurn]);
 
 
     const onMessage = useCallback((message: any) => {
+        isSessionDirty.current = true; // Any message from the server means context is being built.
+        
         if (message.serverContent?.inputTranscription) {
             if (endOfTurnTimerRef.current) {
                 clearTimeout(endOfTurnTimerRef.current);
@@ -225,7 +231,7 @@ export const useAiLive = (props: UseAiLiveProps) => {
             }
             sessionRefs.current.isTurnFinalizing = false;
             if (sessionRefs.current.pendingMessageQueue.length > 0) {
-                console.log("User interrupted; discarding premature AI response.");
+                console.log("[AI Live] User interrupted; discarding premature AI response.");
                 sessionRefs.current.pendingMessageQueue = [];
                 interruptPlayback(sessionRefs);
                 setIsSpeaking(false);
@@ -236,7 +242,7 @@ export const useAiLive = (props: UseAiLiveProps) => {
     
         if (message.serverContent?.turnComplete) {
             if (!sessionRefs.current.isTurnFinalizing) {
-                console.log("turnComplete received. Starting 1s cooldown timer.");
+                console.log("[AI Live] turnComplete received. Starting 1s cooldown timer.");
                 sessionRefs.current.isTurnFinalizing = true;
                 endOfTurnTimerRef.current = window.setTimeout(finalizeTurn, 1000);
             }
@@ -326,7 +332,7 @@ export const useAiLive = (props: UseAiLiveProps) => {
     }, []);
 
     const disableVideoStream = useCallback(() => {
-        console.log("Disabling video stream.");
+        console.log("[AI Live] Disabling video stream.");
         propsRef.current.setLiveFrameData(null);
         setIsVideoStreamEnabled(false);
         if (streamIntervalRef.current) {
@@ -348,6 +354,8 @@ export const useAiLive = (props: UseAiLiveProps) => {
             clearTimeout(inactivityTimerRef.current);
             inactivityTimerRef.current = null;
         }
+        
+        isSessionDirty.current = false;
         
         setIsLive(false);
         disableVideoStream();
@@ -384,10 +392,10 @@ export const useAiLive = (props: UseAiLiveProps) => {
     
     const enableVideoStream = useCallback(() => {
         if (!stateRef.current.isLive || !sessionRefs.current.sessionPromise) {
-            console.warn("Cannot enable video stream: live session is not active.");
+            console.warn("[AI Live] Cannot enable video stream: live session is not active.");
             return;
         }
-        console.log("Enabling video stream for 30 seconds.");
+        console.log("[AI Live] Enabling video stream for 30 seconds.");
         setIsVideoStreamEnabled(true);
 
         if (streamIntervalRef.current) clearInterval(streamIntervalRef.current);
@@ -405,10 +413,10 @@ export const useAiLive = (props: UseAiLiveProps) => {
     
     const performPause = useCallback((durationInSeconds: number) => {
         if (!stateRef.current.isLive || stateRef.current.isMuted) return;
-        console.log(`Pausing listening for ${durationInSeconds} seconds.`);
+        console.log(`[AI Live] Pausing listening for ${durationInSeconds} seconds.`);
         setIsMuted(true);
         setTimeout(() => {
-            console.log("Resuming listening.");
+            console.log("[AI Live] Resuming listening.");
             if (stateRef.current.isLive) {
                  setIsMuted(false);
             }
@@ -420,10 +428,10 @@ export const useAiLive = (props: UseAiLiveProps) => {
 
         if (canExecuteAction) {
             if (pendingAction === 'stop') {
-                console.log("AI turn and speech ended, executing pending stop.");
+                console.log("[AI Live] AI turn and speech ended, executing pending stop.");
                 performStop();
             } else if (pendingAction === 'pause') {
-                console.log(`AI turn and speech ended, executing pending pause for ${pendingPauseDuration}s.`);
+                console.log(`[AI Live] AI turn and speech ended, executing pending pause for ${pendingPauseDuration}s.`);
                 performPause(pendingPauseDuration);
             }
             setPendingAction(null);
@@ -487,21 +495,30 @@ export const useAiLive = (props: UseAiLiveProps) => {
         });
     }, [onMessage, onError, performStop]);
 
-    // Update the forward-declared reset handler with its actual implementation.
-    Object.assign(handleInactivityReset, {
-      callback: useCallback(() => {
-        if (!stateRef.current.isLive) return;
-        console.log("Inactivity detected. Performing silent session reset.");
-        
-        sessionRefs.current.session?.close();
-        if (audioContextRefs.current.scriptProcessor) {
-            audioContextRefs.current.scriptProcessor.disconnect();
-            audioContextRefs.current.scriptProcessor = null;
-        }
-        
-        initiateSession();
-      }, [initiateSession])
-    }.callback);
+    useEffect(() => {
+        inactivityResetCallbackRef.current = () => {
+            if (!stateRef.current.isLive) return;
+            
+            console.log('[AI Live] Inactivity timer fired. Checking if session is dirty.');
+    
+            if (!isSessionDirty.current) {
+                console.log("[AI Live] Session is clean. Skipping reset.");
+                return;
+            }
+    
+            console.log("[AI Live] Session is dirty. Performing silent session reset.");
+            
+            isSessionDirty.current = false; // Reset the flag for the new session.
+            
+            sessionRefs.current.session?.close();
+            if (audioContextRefs.current.scriptProcessor) {
+                audioContextRefs.current.scriptProcessor.disconnect();
+                audioContextRefs.current.scriptProcessor = null;
+            }
+            
+            initiateSession();
+        };
+    }, [initiateSession]);
 
 
     const startLiveSession = useCallback(async (): Promise<boolean> => {
@@ -530,6 +547,8 @@ export const useAiLive = (props: UseAiLiveProps) => {
             onPermissionError(message);
             return false;
         }
+        
+        isSessionDirty.current = false;
 
         await playNotificationSound('start', audioContextRefs.current.output);
         setIsLive(true);
@@ -542,7 +561,7 @@ export const useAiLive = (props: UseAiLiveProps) => {
     }, []);
 
     const hotSwapSession = useCallback(async () => {
-        console.log("Performing session hot-swap for voice change...");
+        console.log("[AI Live] Performing session hot-swap for voice change...");
         sessionRefs.current.session?.close();
         if (audioContextRefs.current.scriptProcessor) {
             audioContextRefs.current.scriptProcessor.disconnect();
@@ -550,7 +569,7 @@ export const useAiLive = (props: UseAiLiveProps) => {
         }
 
         initiateSession();
-        console.log("Hot-swap complete. New session is live.");
+        console.log("[AI Live] Hot-swap complete. New session is live.");
 
     }, [initiateSession]);
 

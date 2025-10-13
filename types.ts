@@ -203,7 +203,9 @@ export interface ToolImplementationsDependencies {
   gitCredentials: GitCredential[];
   // Prompt Management
   prompts: Prompt[];
+  createPrompt: (id: string, description: string, content: string) => Promise<void>;
   updatePrompt: (id: string, content: string, author: 'user' | 'ai') => Promise<void>;
+  deletePrompt: (id: string) => Promise<void>;
 }
 
 // Prompt Management

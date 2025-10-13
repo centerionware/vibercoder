@@ -53,15 +53,55 @@ export const updatePromptFunction: FunctionDeclaration = {
   },
 };
 
+export const createPromptFunction: FunctionDeclaration = {
+  name: 'createPrompt',
+  description: "Create a new prompt in the library. Use this to add new, reusable skills or instructions for yourself. Use your best judgement to create a concise, descriptive 'key' (ID) and a clear 'description' for the new prompt.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      key: {
+        type: Type.STRING,
+        description: "A unique key for the new prompt (e.g., 'code_review_guidelines'). Use snake_case.",
+      },
+      description: {
+        type: Type.STRING,
+        description: 'A brief, one-sentence description of what this prompt helps you do.',
+      },
+      content: {
+        type: Type.STRING,
+        description: 'The full content of the new instructional prompt.',
+      },
+    },
+    required: ['key', 'description', 'content'],
+  },
+};
+
+export const deletePromptFunction: FunctionDeclaration = {
+  name: 'deletePrompt',
+  description: "Delete a prompt from the library. This should only be used if a prompt is obsolete or no longer needed.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      key: {
+        type: Type.STRING,
+        description: "The unique key (ID) of the prompt to delete.",
+      },
+    },
+    required: ['key'],
+  },
+};
+
 // --- Aggregated Declarations ---
 export const declarations = [
     listPromptsFunction,
     readPromptsFunction,
     updatePromptFunction,
+    createPromptFunction,
+    deletePromptFunction,
 ];
 
 // --- Implementations Factory ---
-export const getImplementations = ({ prompts, updatePrompt }: Pick<ToolImplementationsDependencies, 'prompts' | 'updatePrompt'>) => {
+export const getImplementations = ({ prompts, createPrompt, updatePrompt, deletePrompt }: Pick<ToolImplementationsDependencies, 'prompts' | 'createPrompt' | 'updatePrompt' | 'deletePrompt'>) => {
 
     const findPrompt = (key: string): Prompt => {
         const prompt = prompts.find(p => p.id === key);
@@ -108,10 +148,26 @@ export const getImplementations = ({ prompts, updatePrompt }: Pick<ToolImplement
             };
         },
         updatePrompt: async (args: { key: string, newContent: string, reason: string }) => {
-            const prompt = findPrompt(args.key); // Ensure it exists first
+            findPrompt(args.key); // Ensure it exists first
             console.log(`AI is updating prompt "${args.key}". Reason: ${args.reason}`);
             await updatePrompt(args.key, args.newContent, 'ai');
             return { success: true };
+        },
+        createPrompt: async (args: { key: string, description: string, content: string }) => {
+            const { key, description, content } = args;
+            if (!key || !description || !content) {
+                throw new Error("Missing required arguments: key, description, and content are all required.");
+            }
+            await createPrompt(key, description, content);
+            return { success: true, message: `Successfully created new prompt with key: '${key}'.` };
+        },
+        deletePrompt: async (args: { key: string }) => {
+            if (!args.key) {
+                throw new Error("Missing required argument: key.");
+            }
+            findPrompt(args.key); // will throw if not found
+            await deletePrompt(args.key);
+            return { success: true, message: `Successfully deleted prompt with key: '${args.key}'.` };
         },
     };
 };

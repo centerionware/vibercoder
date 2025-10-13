@@ -1,18 +1,20 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import Editor, { OnMount } from '@monaco-editor/react';
-import { Prompt, PromptVersion } from '../../types';
+import Editor from '@monaco-editor/react';
+import { Prompt } from '../../types';
 import PlusIcon from '../icons/PlusIcon';
 import HistoryIcon from '../icons/HistoryIcon';
+import TrashIcon from '../icons/TrashIcon';
 
 interface PromptsViewProps {
   prompts: Prompt[];
   createPrompt: (id: string, description: string, content: string) => Promise<void>;
   updatePrompt: (id: string, content: string, author: 'user' | 'ai') => Promise<void>;
   revertToVersion: (id: string, versionId: string) => Promise<void>;
+  deletePrompt: (id: string) => Promise<void>;
 }
 
 const PromptsView: React.FC<PromptsViewProps> = (props) => {
-  const { prompts, createPrompt, updatePrompt, revertToVersion } = props;
+  const { prompts, createPrompt, updatePrompt, revertToVersion, deletePrompt } = props;
   const [activePromptId, setActivePromptId] = useState<string | null>(null);
   const [editorContent, setEditorContent] = useState('');
   const [isDirty, setIsDirty] = useState(false);
@@ -22,8 +24,10 @@ const PromptsView: React.FC<PromptsViewProps> = (props) => {
   const activeVersion = useMemo(() => activePrompt?.versions.find(v => v.versionId === activePrompt.currentVersionId), [activePrompt]);
 
   useEffect(() => {
-    if (sortedPrompts.length > 0 && !activePromptId) {
+    if (sortedPrompts.length > 0 && (!activePromptId || !sortedPrompts.some(p => p.id === activePromptId))) {
         setActivePromptId(sortedPrompts[0].id);
+    } else if (sortedPrompts.length === 0) {
+        setActivePromptId(null);
     }
   }, [sortedPrompts, activePromptId]);
 
@@ -67,7 +71,16 @@ const PromptsView: React.FC<PromptsViewProps> = (props) => {
         await createPrompt(id, description, `// Start writing your new prompt for "${id}" here.`);
         setActivePromptId(id);
     }
-  }
+  };
+
+  const handleDeletePrompt = async (id: string) => {
+      if (window.confirm(`Are you sure you want to delete the prompt "${id}"? This action cannot be undone.`)) {
+          await deletePrompt(id);
+          if (activePromptId === id) {
+              setActivePromptId(null);
+          }
+      }
+  };
 
   return (
     <div className="flex flex-1 h-full bg-vibe-bg-deep rounded-lg overflow-hidden p-4 gap-4">
@@ -79,14 +92,25 @@ const PromptsView: React.FC<PromptsViewProps> = (props) => {
         </header>
         <ul className="overflow-y-auto space-y-1">
             {sortedPrompts.map(prompt => (
-                <li key={prompt.id}>
-                    <button 
-                        onClick={() => setActivePromptId(prompt.id)}
-                        className={`w-full text-left p-2 rounded transition-colors ${activePromptId === prompt.id ? 'bg-vibe-accent text-white' : 'hover:bg-vibe-bg-deep'}`}
+                <li key={prompt.id} className="group">
+                    <div 
+                        className={`w-full flex items-center justify-between text-left p-2 rounded transition-colors ${activePromptId === prompt.id ? 'bg-vibe-accent text-white' : 'hover:bg-vibe-bg-deep'}`}
                     >
-                        <p className="font-semibold truncate">{prompt.id}</p>
-                        <p className={`text-xs opacity-70 truncate ${activePromptId === prompt.id ? 'text-white/80' : 'text-vibe-comment'}`}>{prompt.description}</p>
-                    </button>
+                        <button 
+                            onClick={() => setActivePromptId(prompt.id)}
+                            className="flex-1 text-left"
+                        >
+                            <p className="font-semibold truncate">{prompt.id}</p>
+                            <p className={`text-xs opacity-70 truncate ${activePromptId === prompt.id ? 'text-white/80' : 'text-vibe-comment'}`}>{prompt.description}</p>
+                        </button>
+                        <button 
+                            onClick={() => handleDeletePrompt(prompt.id)}
+                            className="p-1.5 rounded-md opacity-0 group-hover:opacity-100 text-vibe-comment hover:bg-red-500/20 hover:text-red-400"
+                            title={`Delete prompt ${prompt.id}`}
+                        >
+                            <TrashIcon className="w-4 h-4"/>
+                        </button>
+                    </div>
                 </li>
             ))}
         </ul>
@@ -138,7 +162,7 @@ const PromptsView: React.FC<PromptsViewProps> = (props) => {
             </>
         ) : (
             <div className="flex-1 flex items-center justify-center text-vibe-comment">
-                Select a prompt to view or edit.
+                Select a prompt to view or edit, or create a new one.
             </div>
         )}
       </div>

@@ -41,7 +41,7 @@ export const usePrompts = () => {
     }, []);
 
     const updatePrompt = useCallback(async (id: string, content: string, author: 'user' | 'ai') => {
-        const promptToUpdate = prompts.find(p => p.id === id);
+        const promptToUpdate = await db.prompts.get(id);
         if (!promptToUpdate) {
             throw new Error(`Prompt with key "${id}" not found.`);
         }
@@ -63,10 +63,10 @@ export const usePrompts = () => {
         
         await db.prompts.put(updatedPrompt);
         setPrompts(prev => prev.map(p => p.id === id ? updatedPrompt : p));
-    }, [prompts]);
+    }, []);
     
     const revertToVersion = useCallback(async (id: string, versionId: string) => {
-        const promptToUpdate = prompts.find(p => p.id === id);
+        const promptToUpdate = await db.prompts.get(id);
         if (!promptToUpdate) {
             throw new Error(`Prompt with key "${id}" not found.`);
         }
@@ -78,7 +78,16 @@ export const usePrompts = () => {
 
         await updatePrompt(id, versionToRevert.content, 'user');
 
-    }, [prompts, updatePrompt]);
+    }, [updatePrompt]);
+    
+    const deletePrompt = useCallback(async (id: string) => {
+        const promptToDelete = await db.prompts.get(id);
+        if (!promptToDelete) {
+            throw new Error(`Prompt with key "${id}" not found.`);
+        }
+        await db.prompts.delete(id);
+        setPrompts(prev => prev.filter(p => p.id !== id));
+    }, []);
 
     return {
         prompts,
@@ -86,5 +95,6 @@ export const usePrompts = () => {
         createPrompt,
         updatePrompt,
         revertToVersion,
+        deletePrompt,
     };
 };
