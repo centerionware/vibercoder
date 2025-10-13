@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { useAppLogic } from './app/useAppLogic';
 
 import Header from './components/Header';
@@ -15,6 +16,12 @@ import DebugLogModal from './components/modals/DebugLogModal';
 
 const App = () => {
   const app = useAppLogic();
+  const [isNative, setIsNative] = useState(false);
+
+  useEffect(() => {
+    // This check runs once on mount to determine the platform.
+    setIsNative(Capacitor.isNativePlatform());
+  }, []);
 
   if (!app.activeProject) {
     return (
@@ -26,10 +33,11 @@ const App = () => {
   }
 
   const mainContentClass = app.isFullScreen ? 'fixed inset-0 z-50 bg-vibe-bg-deep' : 'relative flex flex-col h-screen';
+  const nativeTopPaddingClass = isNative ? 'pt-8' : ''; // Add padding for the native status bar
 
   return (
     <div id="app-container" className="bg-vibe-bg text-vibe-text font-sans">
-      <div className={mainContentClass}>
+      <div className={`${mainContentClass} ${nativeTopPaddingClass}`}>
         {!app.isFullScreen && (
           <Header
             isLiveVideoEnabled={app.isVideoStreamEnabled}
