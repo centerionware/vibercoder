@@ -22,7 +22,12 @@ export const bundleWithEsbuild = async (
         onLog('Bundler initialized.');
 
         onLog('Starting build...');
-        const result = await esbuild.build({
+
+        // FIX: Some module loaders/CDNs wrap the actual exports in a `default` property.
+        // This checks for that and uses the correct object to call `build`.
+        const esbuildService = (esbuild as any).default || esbuild;
+
+        const result = await esbuildService.build({
             entryPoints: [entryPoint],
             bundle: true,
             write: false,

@@ -7,8 +7,11 @@ export const initializeService = async () => {
         return;
     }
     try {
-        await esbuild.initialize({
-            wasmURL: 'https://unpkg.com/esbuild-wasm@0.21.3/esbuild.wasm',
+        // FIX: Some module loaders/CDNs wrap the actual exports in a `default` property.
+        // This checks for that and uses the correct object to call `initialize`.
+        const esbuildService = (esbuild as any).default || esbuild;
+        await esbuildService.initialize({
+            wasmURL: 'https://esm.sh/esbuild-wasm@0.23.0/esbuild.wasm',
             worker: true,
         });
         serviceInitialized = true;

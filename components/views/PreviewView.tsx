@@ -2,8 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { bundle } from '../../bundler';
 import SpinnerIcon from '../icons/SpinnerIcon';
 import XIcon from '../icons/XIcon';
-import ClipboardIcon from '../icons/ClipboardIcon';
-import CheckIcon from '../icons/CheckIcon';
+import ChevronDownIcon from '../icons/ChevronDownIcon';
+import TrashIcon from '../icons/TrashIcon';
+
 
 const previewHtml = `
 <html>
@@ -41,6 +42,53 @@ const previewHtml = `
 </html>
 `;
 
+const BuildLogDisplay: React.FC<{
+  logs: string[];
+  error: string | null;
+  onClear: () => void;
+}> = ({ logs, error, onClear }) => {
+  const [isOpen, setIsOpen] = useState(true);
+  const logsEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logs, error, isOpen]);
+
+  const hasContent = logs.length > 0 || error;
+  if (!hasContent) {
+    return null;
+  }
+
+  const headerColor = error ? 'text-red-400' : 'text-vibe-text-secondary';
+  const borderColor = error ? 'border-red-500/30' : 'border-vibe-panel';
+
+  return (
+    <div className={`flex-shrink-0 border-t ${borderColor} bg-vibe-bg-deep`}>
+      <header className="flex items-center justify-between p-2">
+        <button onClick={() => setIsOpen(!isOpen)} className="flex items-center font-semibold text-sm hover:opacity-80 transition-opacity">
+          <ChevronDownIcon className={`w-5 h-5 mr-2 transition-transform ${isOpen ? '' : '-rotate-90'}`} />
+          <span className={headerColor}>
+            {error ? 'Build Failed' : 'Build Output'}
+          </span>
+        </button>
+        <button onClick={onClear} className="p-1.5 rounded-md text-vibe-comment hover:bg-vibe-bg hover:text-red-400" title="Clear logs">
+          <TrashIcon className="w-4 h-4" />
+        </button>
+      </header>
+      {isOpen && (
+        <pre className="p-2 font-mono text-xs whitespace-pre-wrap overflow-auto max-h-48 bg-vibe-bg border-t border-vibe-panel">
+          {logs.join('\n')}
+          {error && <div className="text-red-400 mt-2">{error}</div>}
+          <div ref={logsEndRef} />
+        </pre>
+      )}
+    </div>
+  );
+};
+
+
 interface PreviewViewProps {
   files: Record<string, string>;
   entryPoint: string;
@@ -54,24 +102,18 @@ const PreviewView: React.FC<PreviewViewProps> = ({ files, entryPoint, onLog, onR
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [isBundling, setIsBundling] = useState(true);
   const [bundleError, setBundleError] = useState<string | null>(null);
-  const logsEndRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (isBundling) {
-      logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [bundleLogs, isBundling]);
-
+  
   useEffect(() => {
     if (!files || Object.keys(files).length === 0) return;
 
     const doBundle = async () => {
-      onClearLogs();
+      onClearLogs(); // Clear previous build's logs at the start of a new build.
       setIsBundling(true);
       setBundleError(null);
 
       const result = await bundle(files, entryPoint, onLog);
       if (result.code) {
+        setBundleError(null);
         iframeRef.current?.contentWindow?.postMessage({ type: 'execute', code: result.code }, '*');
       } else if (result.error) {
         setBundleError(result.error);
@@ -105,48 +147,22 @@ const PreviewView: React.FC<PreviewViewProps> = ({ files, entryPoint, onLog, onR
           sandbox="allow-scripts allow-same-origin"
           className="w-full h-full border-0"
         />
-        {(isBundling || bundleError) && (
+        {isBundling && (
           <div className="absolute inset-0 bg-vibe-bg-deep/80 backdrop-blur-sm flex items-center justify-center p-4">
-            {isBundling && (
-              <div className="bg-vibe-panel p-4 rounded-lg max-w-2xl w-full border border-vibe-accent/30">
+              <div className="bg-vibe-panel p-4 rounded-lg border border-vibe-accent/30 text-center">
                 <h3 className="text-lg font-bold text-vibe-accent flex items-center gap-2">
                     <SpinnerIcon className="w-5 h-5"/> Building...
                 </h3>
-                <pre className="mt-3 text-xs text-vibe-text-secondary whitespace-pre-wrap font-mono break-all max-h-80 overflow-y-auto bg-vibe-bg-deep p-2 rounded-md">
-                  {bundleLogs.join('\n')}
-                  <div ref={logsEndRef} />
-                </pre>
+                <p className="text-sm text-vibe-text-secondary mt-2">Check the build output below for progress.</p>
               </div>
-            )}
-            {bundleError && <BuildErrorDisplay error={bundleError} />}
           </div>
         )}
       </div>
-    </div>
-  );
-};
-
-const BuildErrorDisplay: React.FC<{ error: string }> = ({ error }) => {
-    const [copied, setCopied] = useState(false);
-    const handleErrorCopy = () => {
-        navigator.clipboard.writeText(error);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-    }
-  return (
-    <div className="bg-vibe-panel p-4 rounded-lg max-w-2xl w-full border border-red-500/30">
-      <div className="flex justify-between items-center">
-        <h3 className="text-lg font-bold text-red-400 flex items-center gap-2">
-            <XIcon className="w-5 h-5"/> Build Failed
-        </h3>
-        <button onClick={handleErrorCopy} className="text-xs flex items-center gap-1.5 bg-vibe-bg-deep px-2 py-1 rounded-md text-vibe-text-secondary hover:bg-vibe-comment transition-colors">
-            {copied ? <CheckIcon className="w-4 h-4 text-green-400"/> : <ClipboardIcon className="w-4 h-4"/>}
-            {copied ? 'Copied!' : 'Copy'}
-        </button>
-      </div>
-      <pre className="mt-3 text-xs text-vibe-text whitespace-pre-wrap font-mono break-all max-h-80 overflow-y-auto bg-vibe-bg-deep p-2 rounded-md">
-        {error}
-      </pre>
+      <BuildLogDisplay 
+        logs={bundleLogs}
+        error={bundleError}
+        onClear={onClearLogs}
+      />
     </div>
   );
 };
