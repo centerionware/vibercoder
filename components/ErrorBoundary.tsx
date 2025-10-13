@@ -1,3 +1,4 @@
+
 import React, { ErrorInfo, ReactNode } from 'react';
 import ErrorFallback from './ErrorFallback';
 
@@ -11,8 +12,7 @@ interface State {
 }
 
 class ErrorBoundary extends React.Component<Props, State> {
-  // FIX: State is initialized as a class property using modern syntax.
-  // This is a more robust way to handle state and avoids potential issues within the constructor.
+  // State is initialized as a class property.
   public state: State = {
     hasError: false,
     error: null,
@@ -40,9 +40,7 @@ class ErrorBoundary extends React.Component<Props, State> {
     window.removeEventListener('unhandledrejection', this.handleRejection);
   }
 
-  // FIX: Event handlers are converted to arrow functions.
-  // This automatically binds `this` to the component instance, removing the need for
-  // a constructor and manual `.bind(this)` calls, which resolves errors where `this.setState` was not found.
+  // FIX: Changed to arrow functions to lexically bind `this`, ensuring `this.setState` is available when the methods are called as event listeners.
   private handleError = (event: ErrorEvent) => {
     console.error("Global uncaught error:", event.error);
     this.setState({ hasError: true, error: event.error });
