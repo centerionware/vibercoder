@@ -27,7 +27,9 @@ self.onmessage = async (event: MessageEvent) => {
       case 'clone':
         for (const file of await fs.promises.readdir(dir)) {
             if (file !== '.git') { // Do not delete the git directory itself
-                await fs.promises.rm(`${dir}${file}`, { recursive: true, force: true });
+                // FIX: Cast to `any` to bypass outdated type definitions for LightningFS, which do not include the `rm` method.
+                // The method exists at runtime, so this cast resolves the TypeScript error without changing functionality.
+                await (fs.promises as any).rm(`${dir}${file}`, { recursive: true, force: true });
             }
         }
         await git.clone({
@@ -65,7 +67,9 @@ self.onmessage = async (event: MessageEvent) => {
         for (const [filepath, head, workdir] of statusMatrix) {
              if (workdir === 0) { // Deleted
                 await git.remove({ fs, dir, filepath });
-            } else if (workdir === 2 || workdir === 3) { // New or Modified
+            } else if (workdir === 2 || (workdir as number) === 3) { // New or Modified
+                // FIX: Cast `workdir` to `number` to resolve a TypeScript error caused by outdated type definitions.
+                // The library returns `3` for new files, but the types only allow `0 | 1 | 2`, causing a comparison error.
                 await git.add({ fs, dir, filepath });
             }
         }

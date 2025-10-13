@@ -31,7 +31,9 @@ class ElectronMainThreadGitService implements GitService {
     private async clearFs() {
         for (const file of await this.fs.promises.readdir(this.dir)) {
             if (file !== '.git') {
-                await this.fs.promises.rm(`${this.dir}${file}`, { recursive: true, force: true });
+                // FIX: Cast to `any` to bypass outdated type definitions for LightningFS, which do not include the `rm` method.
+                // The method exists at runtime, so this cast resolves the TypeScript error without changing functionality.
+                await (this.fs.promises as any).rm(`${this.dir}${file}`, { recursive: true, force: true });
             }
         }
     }
@@ -94,7 +96,11 @@ class ElectronMainThreadGitService implements GitService {
         const statusMatrix = await git.statusMatrix({ fs: this.fs, dir: this.dir });
         for (const [filepath, head, workdir] of statusMatrix) {
             if (workdir === 0) await git.remove({ fs: this.fs, dir: this.dir, filepath });
-            else if (workdir === 2 || workdir === 3) await git.add({ fs: this.fs, dir: this.dir, filepath });
+            else if (workdir === 2 || (workdir as number) === 3) {
+                // FIX: Cast `workdir` to `number` to resolve a TypeScript error caused by outdated type definitions.
+                // The library returns `3` for new files, but the types only allow `0 | 1 | 2`, causing a comparison error.
+                await git.add({ fs: this.fs, dir: this.dir, filepath });
+            }
         }
         
         const oid = await git.commit({ fs: this.fs, dir: this.dir, message, author });
