@@ -1,4 +1,5 @@
 
+
 import { v4 as uuidv4 } from 'uuid';
 import {
   GitService, GitStatus, GitCommit, GitAuthor,
@@ -15,7 +16,7 @@ class WorkerGitService implements GitService {
     private progressListeners: Map<string, (progress: GitProgress) => void>;
 
     constructor() {
-        this.worker = new Worker('/git.worker.js', { type: 'module' });
+        this.worker = new Worker(new URL('./git.worker.ts', import.meta.url), { type: 'module' });
         this.pendingRequests = new Map();
         this.progressListeners = new Map();
 
