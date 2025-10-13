@@ -154,13 +154,15 @@ export const useAppLogic = () => {
     });
   
     (async () => {
-      console.log("Starting AI session, initializing VFS.");
-      const headFiles = await gitService?.getHeadFiles() ?? files;
-      originalHeadFilesRef.current = headFiles;
-      aiVirtualFilesRef.current = JSON.parse(JSON.stringify(headFiles));
+      console.log("Starting AI session, initializing VFS from current workspace.");
+      // The AI's sandbox should always be a copy of the user's CURRENT editor state,
+      // not the last committed state from Git. This is the source of truth.
+      const workspaceFiles = files;
+      originalHeadFilesRef.current = workspaceFiles;
+      aiVirtualFilesRef.current = JSON.parse(JSON.stringify(workspaceFiles));
       vfsReadyResolverRef.current(); // VFS is now ready, resolve the promise
     })();
-  }, [files, gitService]);
+  }, [files]);
 
   const toolImplementations = useMemo(() => {
     const liveSessionControlsProxy = {
