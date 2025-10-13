@@ -181,11 +181,11 @@ self.onmessage = async (event: MessageEvent) => {
       
       case 'pull':
         const currentBranch = await git.currentBranch({ fs, dir });
-        // FIX: Added a check to ensure a branch is checked out before pulling, preventing a runtime error.
-        // The `ref` property requires a string, but `currentBranch` can be undefined.
         if (!currentBranch) {
           throw new Error("Not on a branch, cannot pull. Please checkout a branch first.");
         }
+        // FIX: Cast the options object to 'any' to bypass outdated type definitions in isomorphic-git,
+        // which do not include the 'rebase' property for the pull command.
         await git.pull({
             fs, http, dir, corsProxy: payload.proxyUrl,
             onAuth: () => ({ username: payload.token }),
@@ -196,7 +196,7 @@ self.onmessage = async (event: MessageEvent) => {
             onProgress: (progress) => {
                 self.postMessage({ type: 'progress', id, payload: progress });
             }
-        });
+        } as any);
         result = { success: true };
         break;
 
