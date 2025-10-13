@@ -22,13 +22,18 @@ export const declarations = [
 
 // --- Implementations Factory ---
 export const getImplementations = ({ 
-    originalHeadFiles, 
-    aiVirtualFiles,
-    onCommitAiToHead 
-}: Pick<ToolImplementationsDependencies, 'originalHeadFiles' | 'aiVirtualFiles' | 'onCommitAiToHead'>) => {
+    getOriginalHeadFiles, 
+    getAiVirtualFiles,
+    onCommitAiToHead,
+    getVfsReadyPromise
+}: Pick<ToolImplementationsDependencies, 'getOriginalHeadFiles' | 'getAiVirtualFiles' | 'onCommitAiToHead' | 'getVfsReadyPromise'>) => {
     
     return {
         diffVirtualChanges: async () => {
+            await getVfsReadyPromise();
+            const originalHeadFiles = getOriginalHeadFiles();
+            const aiVirtualFiles = getAiVirtualFiles();
+
             if (!originalHeadFiles || !aiVirtualFiles) {
                 throw new Error("No active AI session to diff. The session may have ended or was not started correctly.");
             }
@@ -57,6 +62,8 @@ export const getImplementations = ({
         },
 
         commitToHead: async () => {
+            await getVfsReadyPromise();
+            const aiVirtualFiles = getAiVirtualFiles();
             if (!aiVirtualFiles) {
                 throw new Error("No active AI session with changes to commit.");
             }

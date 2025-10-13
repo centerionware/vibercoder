@@ -118,7 +118,8 @@ export interface UseAiChatProps {
   updateMessage: (id: string, updates: Partial<AiMessage>) => void;
   updateHistory: (newHistory: GeminiContent[]) => void;
   updateThread: (threadId: string, updates: Partial<ChatThread>) => void;
-  onStartAiRequest: () => Promise<void>;
+  onStartAiRequest: () => void;
+  onEndAiRequest: () => void;
 }
 
 export interface LiveSessionControls {
@@ -138,6 +139,8 @@ export interface UseAiLiveProps {
   onPermissionError: (message: string) => void;
   activeView: View;
   setLiveFrameData: (data: string | null) => void;
+  onStartAiRequest: () => void;
+  onEndAiRequest: () => void;
 }
 
 export interface UseWakeWordProps {
@@ -155,10 +158,10 @@ export interface ToolImplementationsDependencies {
   activeFile: string | null;
   setActiveFile: (filename: string | null) => void;
   // AI Virtual File System (VFS)
-  originalHeadFiles: Record<string, string> | null;
-  // FIX: Added the missing 'aiVirtualFiles' property to provide the AI's sandboxed file state to tools.
-  aiVirtualFiles: Record<string, string> | null;
-  setAiVirtualFiles: React.Dispatch<React.SetStateAction<Record<string, string> | null>>;
+  getOriginalHeadFiles: () => Record<string, string> | null;
+  getAiVirtualFiles: () => Record<string, string> | null;
+  setAiVirtualFiles: (updater: React.SetStateAction<Record<string, string> | null>) => void;
+  getVfsReadyPromise: () => Promise<void>;
   onCommitAiToHead: () => void;
   // App Control
   activeView: View;

@@ -1,5 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
-// FIX: Add GeminiContent to imports to satisfy the type casting for updateHistory.
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { GeminiContent, UseAiChatProps } from '../types';
 import { createChatSession } from './useAiChat/chatSessionManager';
 import { processStream } from './useAiChat/streamProcessor';
@@ -8,78 +7,85 @@ import { startTurn, updateTurn, finalizeTurn } from './useAiChat/turnManager';
 import { TurnState } from './useAiChat/types';
 
 export const useAiChat = (props: UseAiChatProps) => {
-    const { aiRef, activeThread, addMessage, updateHistory, onStartAiRequest } = props;
     const [isResponding, setIsResponding] = useState(false);
-
-    // This ref now holds all the state for a single, complex model turn.
     const turnStateRef = useRef<TurnState>({
         toolCalls: [],
         modelMessageId: null,
         textContent: '',
     });
 
+    const propsRef = useRef(props);
+    useEffect(() => { propsRef.current = props; }, [props]);
+
     const handleSendMessage = useCallback(async (message: string) => {
-        const ai = aiRef.current;
-        if (!ai || isResponding || !activeThread) return;
+        const initialProps = propsRef.current;
+        const { aiRef, activeThread, onStartAiRequest, onEndAiRequest } = initialProps;
+        if (!aiRef.current || isResponding || !activeThread) return;
         
         setIsResponding(true);
-
-        // Initialize the AI's virtual file system for this request
-        await onStartAiRequest();
+        onStartAiRequest();
         
-        startTurn({ turnStateRef, addMessage, userMessage: message });
-        
-        const chat = await createChatSession(props);
-        let stream = await chat.sendMessageStream({ message });
+        try {
+            startTurn({ turnStateRef, addMessage: initialProps.addMessage, userMessage: message });
+            
+            const chat = await createChatSession(initialProps);
+            let stream = await chat.sendMessageStream({ message });
 
-        const MAX_TOOL_LOOPS = 10;
-        let loopCount = 0;
+            const MAX_TOOL_LOOPS = 10;
+            let loopCount = 0;
 
-        while (loopCount < MAX_TOOL_LOOPS) {
-            loopCount++;
+            while (loopCount < MAX_TOOL_LOOPS) {
+                loopCount++;
 
-            const { accumulatedText, functionCalls } = await processStream({
-                stream,
-                onChunk: (text, fcs) => {
-                    // Provide real-time UI updates as the stream arrives
-                    updateTurn({ turnStateRef, ...props, textUpdate: text, functionCallUpdate: fcs });
+                const { accumulatedText, functionCalls } = await processStream({
+                    stream,
+                    onChunk: (text, fcs) => {
+                        updateTurn({ turnStateRef, ...propsRef.current, textUpdate: text, functionCallUpdate: fcs });
+                    }
+                });
+
+                turnStateRef.current.textContent += accumulatedText;
+                
+                if (functionCalls.length === 0) {
+                    break;
                 }
-            });
+                
+                if (turnStateRef.current.textContent.trim().length > 0 && !turnStateRef.current.textContent.endsWith('\n\n')) {
+                    turnStateRef.current.textContent += '\n\n';
+                }
 
-            // After the stream is done, add the final text to our turn's content
-            turnStateRef.current.textContent += accumulatedText;
-            
-            if (functionCalls.length === 0) {
-                break; // No more tools to call, exit the loop.
+                const toolResponseParts = await executeTools({
+                    functionCalls,
+                    turnStateRef,
+                    ...propsRef.current
+                });
+                
+                stream = await chat.sendMessageStream({ message: toolResponseParts });
+            }
+
+            if (loopCount >= MAX_TOOL_LOOPS) {
+                turnStateRef.current.textContent += "\n\nI seem to be stuck in a loop. I'll stop for now. Please try rephrasing your request.";
             }
             
-            // Append a newline if there was text before the tool call
-            if (turnStateRef.current.textContent.trim().length > 0 && !turnStateRef.current.textContent.endsWith('\n\n')) {
-                turnStateRef.current.textContent += '\n\n';
-            }
-
-            const toolResponseParts = await executeTools({
-                functionCalls,
-                turnStateRef,
-                ...props
-            });
+            finalizeTurn({ turnStateRef, ...propsRef.current });
             
-            stream = await chat.sendMessageStream({ message: toolResponseParts });
+            propsRef.current.updateHistory((await chat.getHistory()) as GeminiContent[]);
+        } catch (error) {
+            console.error("Error during AI chat response:", error);
+            const { modelMessageId } = turnStateRef.current;
+            if (modelMessageId) {
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                propsRef.current.updateMessage(modelMessageId, {
+                    content: (turnStateRef.current.textContent || "") + `\n\n**An error occurred:** ${errorMessage}`,
+                    thinking: null,
+                });
+            }
+        } finally {
+            setIsResponding(false);
+            onEndAiRequest();
         }
 
-        if (loopCount >= MAX_TOOL_LOOPS) {
-            turnStateRef.current.textContent += "\n\nI seem to be stuck in a loop. I'll stop for now. Please try rephrasing your request.";
-        }
-        
-        finalizeTurn({ turnStateRef, ...props });
-        
-        // Persist the full conversation history for the next turn
-        // FIX: Cast the result of getHistory() to GeminiContent[] to match the stricter local type.
-        updateHistory((await chat.getHistory()) as GeminiContent[]);
-
-        setIsResponding(false);
-
-    }, [aiRef, isResponding, activeThread, addMessage, updateHistory, props, onStartAiRequest]);
+    }, [isResponding]);
 
     return { isResponding, handleSendMessage };
 };

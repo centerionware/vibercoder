@@ -26,7 +26,7 @@ export const readFileFunction: FunctionDeclaration = {
 
 export const writeFileFunction: FunctionDeclaration = {
   name: 'writeFile',
-  description: 'Write content to a file, creating it if it doesn\'t exist or overwriting it if it does.',
+  description: 'Write content to a file, creating it if it doesn\'t exist or overwriting it if it does. IMPORTANT: All file operations occur in a temporary session. You MUST call `commitToHead` at the end of your task to save your changes to the main workspace, otherwise they will be discarded when your turn ends.',
   parameters: {
     type: Type.OBJECT,
     properties: {
@@ -69,14 +69,18 @@ export const declarations = [
 
 // --- Implementations Factory ---
 
-export const getImplementations = ({ aiVirtualFiles, setAiVirtualFiles }: Pick<ToolImplementationsDependencies, 'aiVirtualFiles' | 'setAiVirtualFiles'>) => ({
+export const getImplementations = ({ getAiVirtualFiles, setAiVirtualFiles, getVfsReadyPromise }: Pick<ToolImplementationsDependencies, 'getAiVirtualFiles' | 'setAiVirtualFiles' | 'getVfsReadyPromise'>) => ({
     listFiles: async () => {
+        await getVfsReadyPromise();
+        const aiVirtualFiles = getAiVirtualFiles();
         if (aiVirtualFiles === null) {
             throw new Error("No active AI session. Cannot list files.");
         }
         return { files: Object.keys(aiVirtualFiles) };
     },
     readFile: async (args: { filename: string }) => {
+        await getVfsReadyPromise();
+        const aiVirtualFiles = getAiVirtualFiles();
         if (aiVirtualFiles === null) {
             throw new Error("No active AI session. Cannot read file.");
         }
@@ -90,6 +94,8 @@ export const getImplementations = ({ aiVirtualFiles, setAiVirtualFiles }: Pick<T
         throw new Error(`File "${filename}" not found in the AI virtual session.`);
     },
     writeFile: async (args: { filename: string; content: string }) => {
+        await getVfsReadyPromise();
+        const aiVirtualFiles = getAiVirtualFiles();
         if (aiVirtualFiles === null) {
             throw new Error("No active AI session. Cannot write file.");
         }
@@ -107,6 +113,8 @@ export const getImplementations = ({ aiVirtualFiles, setAiVirtualFiles }: Pick<T
         return { success: true };
     },
     removeFile: async (args: { filename: string }) => {
+        await getVfsReadyPromise();
+        const aiVirtualFiles = getAiVirtualFiles();
         if (aiVirtualFiles === null) {
             throw new Error("No active AI session. Cannot remove file.");
         }

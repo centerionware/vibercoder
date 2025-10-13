@@ -58,6 +58,7 @@ const ViewRenderer: React.FC<ViewRendererProps> = (app) => {
           stopLiveSession={app.stopLiveSession}
           toggleMute={app.toggleMute}
           onStartAiRequest={app.handleStartAiRequest}
+          onEndAiRequest={app.onEndAiRequest}
         />
       );
     case View.Git:

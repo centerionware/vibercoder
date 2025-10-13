@@ -52,11 +52,11 @@ export const useProjects = () => {
         return newProject;
     }, []);
 
-    const switchProject = (id: string) => {
+    const switchProject = useCallback((id: string) => {
         setActiveProjectId(id);
-    };
+    }, []);
 
-    const deleteProject = async (id: string) => {
+    const deleteProject = useCallback(async (id: string) => {
         if (projects.length <= 1) {
             alert("You cannot delete the last remaining project.");
             return;
@@ -67,12 +67,12 @@ export const useProjects = () => {
         if (activeProjectId === id) {
             setActiveProjectId(remaining[0]?.id || null);
         }
-    };
+    }, [projects, activeProjectId]);
     
-    const updateProject = async (project: Project) => {
+    const updateProject = useCallback(async (project: Project) => {
         await db.projects.put(project);
         setProjects(prev => prev.map(p => p.id === project.id ? project : p));
-    };
+    }, []);
 
     return { projects, activeProject, activeProjectId, createNewProject, switchProject, deleteProject, updateProject };
 };

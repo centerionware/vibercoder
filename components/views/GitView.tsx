@@ -161,9 +161,33 @@ const GitView: React.FC<GitViewProps> = ({ files, changedFiles, onCommit, isComm
     }
   };
   
-  const handleSelectCommitFile = (file: GitFileChange) => {
+  const handleSelectCommitFile = async (file: GitFileChange) => {
+    if (!gitService || !selectedCommit) return;
       setActiveDiffFile(file);
-      setActiveDiff(file.diff || null);
+      // If the diff was pre-calculated, show it immediately for better UX.
+      if (file.diff) {
+          setActiveDiff(file.diff);
+      }
+      setIsDiffLoading(true);
+      try {
+          const parentOid = selectedCommit.parent[0];
+          
+          const contentAfter = await gitService.readFileAtCommit(selectedCommit.oid, file.filepath);
+  
+          let contentBefore = '';
+          // Only read parent if parent exists and file was not added in this commit
+          if (parentOid && file.status !== 'added') {
+              contentBefore = await gitService.readFileAtCommit(parentOid, file.filepath) || '';
+          }
+          
+          const diff = performDiff(contentBefore, contentAfter || '');
+          setActiveDiff(diff);
+      } catch (e) {
+          console.error("Failed to generate commit diff", e);
+          setActiveDiff(null);
+      } finally {
+          setIsDiffLoading(false);
+      }
   };
 
   const displayedChanges = selectedCommit ? commitChanges : changedFiles;

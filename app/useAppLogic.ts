@@ -56,9 +56,11 @@ export const useAppLogic = () => {
   const liveSessionControlsRef = useRef<any>(null);
   
   // --- AI Virtual Filesystem (VFS) State ---
-  const [originalHeadFiles, setOriginalHeadFiles] = useState<Record<string, string> | null>(null);
-  const [aiVirtualFiles, setAiVirtualFiles] = useState<Record<string, string> | null>(null);
-  
+  const originalHeadFilesRef = useRef<Record<string, string> | null>(null);
+  const aiVirtualFilesRef = useRef<Record<string, string> | null>(null);
+  const vfsReadyPromiseRef = useRef<Promise<void>>(Promise.resolve());
+  let vfsReadyResolverRef = useRef<() => void>(() => {});
+
   // --- Memoized Callbacks ---
   const clearBundleLogs = useCallback(() => setBundleLogs([]), []);
   const handleLog = useCallback((log: string) => setBundleLogs(prev => [...prev.slice(-100), log]), []);
@@ -112,7 +114,7 @@ export const useAppLogic = () => {
     };
 
     loadProjectFiles();
-  }, [activeProject, gitService]); // Dependencies are now correct, ensuring no stale state.
+  }, [activeProject, gitService, setFiles]);
   
   // Fetch git status when the view changes to Git or files change
   useEffect(() => {
@@ -126,18 +128,39 @@ export const useAppLogic = () => {
   
   const onNavigate = (view: View) => setActiveView(view);
   
-  const handleCommitAiToHead = useCallback(() => {
-    if(aiVirtualFiles) setFiles(aiVirtualFiles);
-    setAiVirtualFiles(null);
-    setOriginalHeadFiles(null);
-  }, [aiVirtualFiles, setFiles]);
+  const onEndAiRequest = useCallback(() => {
+    if (aiVirtualFilesRef.current !== null) {
+      console.log("Ending AI session, clearing VFS.");
+      aiVirtualFilesRef.current = null;
+      originalHeadFilesRef.current = null;
+      // Reset the promise to a resolved state for the next turn.
+      vfsReadyPromiseRef.current = Promise.resolve();
+    }
+  }, []);
 
-  const handleStartAiRequest = useCallback(async () => {
-    if (aiVirtualFiles !== null) return;
-    const headFiles = await gitService?.getHeadFiles() ?? files;
-    setOriginalHeadFiles(headFiles);
-    setAiVirtualFiles(headFiles);
-  }, [aiVirtualFiles, files, gitService]);
+  const handleCommitAiToHead = useCallback(() => {
+    if(aiVirtualFilesRef.current) {
+        setFiles(aiVirtualFilesRef.current);
+        console.log("Committed AI changes to HEAD.");
+    }
+    // Committing no longer ends the session; the turn's end does.
+  }, [setFiles]);
+
+  const handleStartAiRequest = useCallback(() => {
+    if (aiVirtualFilesRef.current !== null) return;
+
+    vfsReadyPromiseRef.current = new Promise<void>((resolve) => {
+      vfsReadyResolverRef.current = resolve;
+    });
+  
+    (async () => {
+      console.log("Starting AI session, initializing VFS.");
+      const headFiles = await gitService?.getHeadFiles() ?? files;
+      originalHeadFilesRef.current = headFiles;
+      aiVirtualFilesRef.current = JSON.parse(JSON.stringify(headFiles));
+      vfsReadyResolverRef.current(); // VFS is now ready, resolve the promise
+    })();
+  }, [files, gitService]);
 
   const toolImplementations = useMemo(() => {
     const liveSessionControlsProxy = {
@@ -147,11 +170,20 @@ export const useAppLogic = () => {
         disableVideoStream: (...args: any[]) => liveSessionControlsRef.current?.disableVideoStream(...args),
     };
 
-    const gitServiceRef = { current: gitService }; // Create a ref-like object for dependencies
+    const gitServiceRef = { current: gitService };
 
     return createToolImplementations({
       files, setFiles, activeFile, setActiveFile,
-      originalHeadFiles, aiVirtualFiles, setAiVirtualFiles,
+      getOriginalHeadFiles: () => originalHeadFilesRef.current,
+      getAiVirtualFiles: () => aiVirtualFilesRef.current,
+      setAiVirtualFiles: (updater) => {
+          if (typeof updater === 'function') {
+              aiVirtualFilesRef.current = updater(aiVirtualFilesRef.current);
+          } else {
+              aiVirtualFilesRef.current = updater;
+          }
+      },
+      getVfsReadyPromise: () => vfsReadyPromiseRef.current,
       onCommitAiToHead: handleCommitAiToHead,
       activeView, setActiveView,
       bundleLogs, sandboxErrors,
@@ -163,7 +195,7 @@ export const useAppLogic = () => {
       projects, gitCredentials,
     });
   }, [
-      files, setFiles, activeFile, setActiveFile, originalHeadFiles, aiVirtualFiles, 
+      files, setFiles, activeFile, setActiveFile,
       handleCommitAiToHead, activeView, bundleLogs, sandboxErrors, settings, 
       setSettings, isScreenshotPreviewDisabled, threads, activeThread, updateThread, projects, gitCredentials, gitService
   ]);
@@ -172,6 +204,8 @@ export const useAppLogic = () => {
     aiRef, settings, activeThread, toolImplementations,
     addMessage, updateMessage, onPermissionError: setPermissionError,
     activeView, setLiveFrameData,
+    onStartAiRequest: handleStartAiRequest,
+    onEndAiRequest,
   });
   liveSessionControlsRef.current = liveSession;
 
@@ -286,6 +320,7 @@ export const useAppLogic = () => {
     aiRef, toolImplementations,
     gitServiceRef: { current: gitService }, 
     handleStartAiRequest,
+    onEndAiRequest,
     debugLogs, isDebugLogModalOpen, setIsDebugLogModalOpen, handleClearDebugLogs,
     handleBranchSwitch,
     handleOpenFileInEditor,

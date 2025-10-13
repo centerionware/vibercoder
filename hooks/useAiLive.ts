@@ -2,8 +2,8 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import html2canvas from 'html2canvas';
 import { v4 as uuidv4 } from 'uuid';
 import { Capacitor } from '@capacitor/core';
-import { UseAiLiveProps, View, ToolCall, ToolCallStatus } from '../types';
-import { playNotificationSound } from '../utils/audio';
+import { UseAiLiveProps, View, ToolCall, ToolCallStatus } from '../../types';
+import { playNotificationSound } from '../../utils/audio';
 import { createLiveSession } from './useAiLive/sessionManager';
 import { connectMicrophoneNodes, stopAudioProcessing } from './useAiLive/audioManager';
 import { AudioContextRefs, SessionRefs, LiveSession } from './useAiLive/types';
@@ -75,6 +75,16 @@ export const useAiLive = (props: UseAiLiveProps) => {
             uiUpdateTimerRef.current = null;
         }
     }, []);
+    
+    const startTurnIfNeeded = useCallback(() => {
+        if (!sessionRefs.current.liveMessageId) {
+            // This is the start of a new conversational turn
+            propsRef.current.onStartAiRequest(); // START VFS SESSION
+            sessionRefs.current.liveMessageId = uuidv4();
+            propsRef.current.addMessage({ id: sessionRefs.current.liveMessageId, role: 'user', content: '', isLive: true });
+            propsRef.current.addMessage({ id: `${sessionRefs.current.liveMessageId}-model`, role: 'model', content: '', isLive: true });
+        }
+    }, []);
 
     const processModelOutput = useCallback(async (message: any) => {
         const { addMessage, updateMessage, toolImplementations } = propsRef.current;
@@ -91,21 +101,13 @@ export const useAiLive = (props: UseAiLiveProps) => {
         
         const outputTranscription = message.serverContent?.outputTranscription?.text;
         if (outputTranscription) {
-            if (!sessionRefs.current.liveMessageId) {
-                sessionRefs.current.liveMessageId = uuidv4();
-                addMessage({ id: sessionRefs.current.liveMessageId, role: 'user', content: '', isLive: true });
-                addMessage({ id: `${sessionRefs.current.liveMessageId}-model`, role: 'model', content: '', isLive: true });
-            }
+            startTurnIfNeeded();
             sessionRefs.current.currentOutputTranscription += outputTranscription;
             requestUiUpdate();
         }
     
         if (message.toolCall) {
-            if (!sessionRefs.current.liveMessageId) {
-                sessionRefs.current.liveMessageId = uuidv4();
-                addMessage({ id: sessionRefs.current.liveMessageId, role: 'user', content: '(voice input)', isLive: false });
-                addMessage({ id: `${sessionRefs.current.liveMessageId}-model`, role: 'model', content: '', isLive: true });
-            }
+            startTurnIfNeeded();
     
             const newToolCalls: ToolCall[] = message.toolCall.functionCalls.map((fc: any) => ({
                 id: fc.id, name: fc.name, args: fc.args, status: ToolCallStatus.IN_PROGRESS,
@@ -157,17 +159,13 @@ export const useAiLive = (props: UseAiLiveProps) => {
             interruptPlayback(sessionRefs);
             setIsSpeaking(false);
         }
-    }, [requestUiUpdate]);
+    }, [requestUiUpdate, startTurnIfNeeded]);
 
     const processInputTranscription = useCallback((message: any) => {
-        if (!sessionRefs.current.liveMessageId) {
-            sessionRefs.current.liveMessageId = uuidv4();
-            propsRef.current.addMessage({ id: sessionRefs.current.liveMessageId, role: 'user', content: '', isLive: true });
-            propsRef.current.addMessage({ id: `${sessionRefs.current.liveMessageId}-model`, role: 'model', content: '', isLive: true });
-        }
+        startTurnIfNeeded();
         sessionRefs.current.currentInputTranscription += message.serverContent.inputTranscription.text;
         requestUiUpdate();
-    }, [requestUiUpdate]);
+    }, [requestUiUpdate, startTurnIfNeeded]);
 
     const finalizeTurn = useCallback(() => {
         console.log("Finalizing turn, processing message queue.");
@@ -193,7 +191,10 @@ export const useAiLive = (props: UseAiLiveProps) => {
                 isLive: false,
                 toolCalls: [...currentToolCalls]
             });
+            // End the VFS session for the completed turn
+            propsRef.current.onEndAiRequest();
         }
+
         sessionRefs.current.liveMessageId = null;
         sessionRefs.current.currentInputTranscription = '';
         sessionRefs.current.currentOutputTranscription = '';
@@ -341,6 +342,11 @@ export const useAiLive = (props: UseAiLiveProps) => {
         
         sessionRefs.current.session?.close();
         await stopAudioProcessing(audioContextRefs, sessionRefs, { keepMicActive: false });
+        
+        // Finalize any pending turn to clean up VFS
+        if (sessionRefs.current.liveMessageId) {
+            finalizeTurn();
+        }
 
         sessionRefs.current = {
             ...sessionRefs.current,
@@ -354,7 +360,7 @@ export const useAiLive = (props: UseAiLiveProps) => {
             pendingMessageQueue: [],
             isTurnFinalizing: false,
         };
-    }, [disableVideoStream]);
+    }, [disableVideoStream, finalizeTurn]);
     
     const enableVideoStream = useCallback(() => {
         if (!stateRef.current.isLive || !sessionRefs.current.sessionPromise) {
