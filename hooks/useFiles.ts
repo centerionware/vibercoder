@@ -1,7 +1,6 @@
-// Fix: Added Dispatch and SetStateAction to imports to resolve type errors.
-import { useState, useCallback, Dispatch, SetStateAction } from 'react';
+import { useState, useCallback } from 'react';
 
-const initialFiles: Record<string, string> = {
+export const initialFiles: Record<string, string> = {
     'index.html': `<!DOCTYPE html>
 <html lang="en">
   <head>
@@ -51,7 +50,6 @@ h1 {
 `,
 };
 
-// Fix: Use imported Dispatch and SetStateAction types directly.
 export const useFiles = () => {
     const [files, setFiles] = useState<Record<string, string>>(initialFiles);
     const [activeFile, setActiveFile] = useState<string | null>('index.tsx');

@@ -3,7 +3,7 @@ import { GoogleGenAI } from '@google/genai';
 import { View, GitService, ChatThread, AppSettings, Project, GitSettings, GitCredential, GitAuthor, LogEntry, GitProgress, GitStatus } from '../types';
 
 import { useSettings } from '../hooks/useSettings';
-import { useFiles } from '../hooks/useFiles';
+import { useFiles, initialFiles } from '../hooks/useFiles';
 import { useProjects } from '../hooks/useProjects';
 import { useThreads } from '../hooks/useThreads';
 import { useGitCredentials } from '../hooks/useGitCredentials';
@@ -79,14 +79,37 @@ export const useAppLogic = () => {
   }, [settings.apiKey]);
 
   useEffect(() => {
-    // The git service is now universal, but re-initialized when project changes
-    // to ensure its internal state (like FS instance) is fresh.
     setGitService(createGitService(true, activeProjectId));
   }, [activeProjectId]);
+
+  // Effect to load project files when the active project changes.
+  useEffect(() => {
+    if (!gitService || !activeProject) return;
+
+    const loadProjectFiles = async () => {
+      console.log(`Loading files for project: ${activeProject.name}`);
+      const headFiles = await gitService.getHeadFiles();
+      
+      if (activeProject.gitRemoteUrl && Object.keys(headFiles).length === 0) {
+        // This is a cloned, but empty, repository.
+        setFiles({});
+      } else if (!activeProject.gitRemoteUrl && Object.keys(headFiles).length === 0) {
+        // This is a new, local project that hasn't been committed yet.
+        setFiles(initialFiles);
+      } else {
+        // This is an existing project with files.
+        setFiles(headFiles);
+      }
+      // After loading files from the definitive source (git HEAD), the workspace is clean.
+      setChangedFiles([]);
+    };
+
+    loadProjectFiles();
+  }, [activeProjectId, gitService, setFiles]); // This effect synchronizes the workspace.
   
   // Fetch git status when the view changes to Git or files change
   useEffect(() => {
-    if (gitService?.isReal && (activeView === View.Git || changedFiles.length === 0)) {
+    if (gitService?.isReal && activeView === View.Git) {
         gitService.status(files).then(setChangedFiles).catch(err => {
             console.error("Failed to get git status:", err);
             setChangedFiles([]);
@@ -171,12 +194,9 @@ export const useAppLogic = () => {
         await tempGitService.clone(url, settings.gitCorsProxy, { name: settings.gitUserName, email: settings.gitUserEmail }, token, (progress: GitProgress) => {
             setCloningProgress(`${progress.phase} (${progress.loaded}/${progress.total})`);
         });
-        setCloningProgress('Reading project files...');
-        const headFiles = await tempGitService.getHeadFiles();
         
-        setFiles(headFiles);
-        await switchProject(newProject.id);
-        setChangedFiles([]); // A fresh clone has no modified files.
+        // Switch to the new project. The useEffect hook will now handle loading the files.
+        switchProject(newProject.id);
     } catch (error: any) {
         alert(`Cloning failed: ${error.message}`);
         console.error("CLONE FAILED:", error);
@@ -185,7 +205,7 @@ export const useAppLogic = () => {
         setCloningProgress(null);
         setIsProjectModalOpen(false);
     }
-  }, [settings, gitCredentials, createNewProject, switchProject, setFiles]);
+  }, [settings, gitCredentials, createNewProject, switchProject]);
 
   const handleCommit = useCallback(async (message: string) => {
     if (!gitService) return;

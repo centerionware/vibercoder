@@ -45,7 +45,7 @@ const DiffViewer: React.FC<{
     const canOpenFile = !isCommitFile || (isCommitFile && file.status !== 'deleted');
 
     return (
-        <div className="h-full flex flex-col bg-vibe-bg-deep rounded-md">
+        <div className="h-full flex flex-col bg-vibe-bg-deep">
             <div className="flex justify-between items-center p-2 border-b border-vibe-panel flex-shrink-0">
                 <h4 className="font-semibold text-vibe-text truncate" title={file.filepath}>{file.filepath}</h4>
                 {canOpenFile && (
@@ -160,20 +160,28 @@ const GitView: React.FC<GitViewProps> = ({ files, changedFiles, onCommit, isComm
         setIsDiffLoading(false);
     }
   };
+  
+  const handleSelectCommitFile = (file: GitFileChange) => {
+      setActiveDiffFile(file);
+      setActiveDiff(file.diff || null);
+  };
+
+  const displayedChanges = selectedCommit ? commitChanges : changedFiles;
 
   return (
-    <div className="flex flex-1 h-full bg-vibe-bg-deep rounded-lg overflow-hidden p-4 gap-4">
-      {/* Left Column: Branches & Commits */}
-      <div className="w-1/3 flex flex-col gap-4">
-        <div className="bg-vibe-panel p-2 rounded-lg">
-          <label htmlFor="branch-select" className="text-sm font-semibold text-vibe-text-secondary block mb-1">Branch</label>
-          <select id="branch-select" value={activeBranch || ''} onChange={e => handleSelectBranch(e.target.value)} disabled={isLoading} className="w-full bg-vibe-bg p-2 rounded-md text-vibe-text focus:outline-none focus:ring-2 focus:ring-vibe-accent disabled:opacity-50">
-            {branches.map(b => <option key={b} value={b}>{b}</option>)}
-          </select>
-        </div>
-        <div className="bg-vibe-panel p-2 rounded-lg flex-1 overflow-y-auto">
-          <h3 className="text-lg font-semibold mb-2 text-vibe-text-secondary">Commit History</h3>
-          <ul className="space-y-2">
+    <div className="flex flex-col flex-1 h-full bg-vibe-bg-deep rounded-lg overflow-hidden p-4 gap-4">
+      {/* Top Section */}
+      <div className="flex-1 flex gap-4 overflow-hidden">
+        {/* Left Pane: History */}
+        <div className="w-1/2 bg-vibe-panel rounded-lg p-2 flex flex-col">
+          <div className="flex-shrink-0 mb-2">
+            <label htmlFor="branch-select" className="text-sm font-semibold text-vibe-text-secondary block mb-1">Branch</label>
+            <select id="branch-select" value={activeBranch || ''} onChange={e => handleSelectBranch(e.target.value)} disabled={isLoading} className="w-full bg-vibe-bg p-2 rounded-md text-vibe-text focus:outline-none focus:ring-2 focus:ring-vibe-accent disabled:opacity-50">
+              {branches.map(b => <option key={b} value={b}>{b}</option>)}
+            </select>
+          </div>
+          <h3 className="text-lg font-semibold mb-2 text-vibe-text-secondary flex-shrink-0">History</h3>
+          <ul className="overflow-y-auto space-y-2 flex-1">
             {commits.map(commit => (
               <li key={commit.oid}>
                 <button onClick={() => handleSelectCommit(commit)} className={`w-full text-left p-2 rounded transition-colors ${selectedCommit?.oid === commit.oid ? 'bg-vibe-accent text-white' : 'hover:bg-vibe-bg-deep'}`}>
@@ -185,68 +193,49 @@ const GitView: React.FC<GitViewProps> = ({ files, changedFiles, onCommit, isComm
             ))}
           </ul>
         </div>
+        {/* Right Pane: Diff */}
+        <div className="w-1/2 bg-vibe-panel rounded-lg overflow-hidden">
+          <DiffViewer file={activeDiffFile} diff={activeDiff} isLoading={isDiffLoading} onOpenFileInEditor={onOpenFileInEditor} />
+        </div>
       </div>
 
-      {/* Middle Column: Changes & Commit Box */}
-      <div className="w-1/3 bg-vibe-panel p-2 rounded-lg flex flex-col overflow-hidden">
-        {selectedCommit ? (
-            <>
-                <div className="flex-shrink-0 p-2 border-b border-vibe-bg-deep mb-2">
+      {/* Bottom Section */}
+      <div className="flex-shrink-0 h-2/5 bg-vibe-panel rounded-lg p-2 flex gap-4 overflow-hidden">
+        {/* Changes List */}
+        <div className="w-1/2 flex flex-col">
+          <header className="flex-shrink-0 mb-2">
+             {selectedCommit ? (
+                <>
                     <button onClick={() => setSelectedCommit(null)} className="text-xs text-vibe-accent hover:underline mb-1">← View Workspace Changes</button>
                     <p className="font-semibold text-vibe-text truncate" title={selectedCommit.message}>{selectedCommit.message}</p>
-                    <p className="text-xs text-vibe-text-secondary">{selectedCommit.author.name} on {new Date(selectedCommit.author.timestamp * 1000).toLocaleDateString()}</p>
-                </div>
-                 <h3 className="text-sm font-semibold mb-2 text-vibe-text-secondary px-2 flex-shrink-0">Files Changed ({commitChanges.length})</h3>
-                <ul className="space-y-1 overflow-y-auto flex-1">
-                    {commitChanges.map(change => {
-                        const colors = commitStatusColors[change.status];
-                        return (
-                            <li key={change.filepath}>
-                                <button onClick={() => { setActiveDiffFile(change); setActiveDiff(change.diff || null); }} className={`w-full flex items-center gap-2 text-left p-1.5 rounded text-sm ${activeDiffFile?.filepath === change.filepath ? 'bg-vibe-accent text-white' : 'hover:bg-vibe-bg-deep'}`}>
-                                    <span className={`font-mono font-bold text-xs w-8 text-center py-0.5 rounded-sm ${colors.bg} ${colors.text}`}>{colors.label}</span>
-                                    <span className="truncate">{change.filepath}</span>
-                                </button>
-                            </li>
-                        );
-                    })}
-                </ul>
-            </>
-        ) : (
-            <>
-                <div className="flex-1 flex flex-col overflow-hidden">
-                    <h3 className="text-lg font-semibold mb-2 text-vibe-text-secondary flex-shrink-0 px-1">Workspace Changes ({changedFiles.length})</h3>
-                    <div className="overflow-y-auto flex-1">
-                        {changedFiles.length > 0 ? (
-                            <ul className="space-y-1">
-                                {changedFiles.map(file => {
-                                    const colors = statusColors[file.status];
-                                    return (
-                                        <li key={file.filepath}>
-                                            <button onClick={() => handleSelectWorkspaceFile(file)} className={`w-full flex items-center gap-2 text-left p-1.5 rounded text-sm ${activeDiffFile?.filepath === file.filepath ? 'bg-vibe-accent text-white' : 'hover:bg-vibe-bg-deep'}`}>
-                                                <span className={`font-mono font-bold text-xs w-8 text-center py-0.5 rounded-sm ${colors.bg} ${colors.text}`}>{colors.label}</span>
-                                                <span className="truncate">{file.filepath}</span>
-                                            </button>
-                                        </li>
-                                    )
-                                })}
-                            </ul>
-                        ) : <p className="text-vibe-comment text-xs p-2">No changes in the workspace.</p>}
-                    </div>
-                </div>
-                <div className="flex-shrink-0 pt-2 border-t border-vibe-bg-deep">
-                    <textarea value={commitMessage} onChange={(e) => setCommitMessage(e.target.value)} placeholder="Enter commit message..." rows={2} className="w-full bg-vibe-bg p-2 rounded-md text-vibe-text text-sm focus:outline-none focus:ring-2 focus:ring-vibe-accent" disabled={changedFiles.length === 0 || isCommitting} />
-                    <button onClick={handleCommit} disabled={changedFiles.length === 0 || !commitMessage.trim() || isCommitting} className="w-full mt-2 bg-vibe-accent text-white py-2 rounded-md hover:bg-vibe-accent-hover transition-colors disabled:bg-vibe-comment disabled:cursor-not-allowed flex items-center justify-center">
-                        {isCommitting ? <SpinnerIcon className="w-5 h-5 mr-2" /> : <GitIcon className="w-5 h-5 mr-2" />}
-                        {isCommitting ? 'Committing...' : `Commit ${changedFiles.length} File(s)`}
-                    </button>
-                </div>
-            </>
-        )}
-      </div>
+                </>
+            ) : <h3 className="text-lg font-semibold text-vibe-text-secondary">Workspace Changes</h3> }
+          </header>
+          <ul className="space-y-1 overflow-y-auto flex-1">
+            {displayedChanges.length > 0 ? displayedChanges.map((file, i) => {
+              const isCommitChange = 'diff' in file;
+              const status = isCommitChange ? file.status : file.status;
+              const colors = isCommitChange ? commitStatusColors[file.status] : statusColors[file.status];
 
-      {/* Right Column: Diff Viewer */}
-      <div className="w-1/3">
-        <DiffViewer file={activeDiffFile} diff={activeDiff} isLoading={isDiffLoading} onOpenFileInEditor={onOpenFileInEditor} />
+              return (
+                <li key={file.filepath + i}>
+                  <button onClick={() => isCommitChange ? handleSelectCommitFile(file) : handleSelectWorkspaceFile(file)} className={`w-full flex items-center gap-2 text-left p-1.5 rounded text-sm ${activeDiffFile?.filepath === file.filepath ? 'bg-vibe-accent text-white' : 'hover:bg-vibe-bg-deep'}`}>
+                    <span className={`font-mono font-bold text-xs w-8 text-center py-0.5 rounded-sm ${colors.bg} ${colors.text}`}>{colors.label}</span>
+                    <span className="truncate">{file.filepath}</span>
+                  </button>
+                </li>
+              )
+            }) : <p className="text-vibe-comment text-xs p-2">No changes to display.</p>}
+          </ul>
+        </div>
+        {/* Commit Box */}
+        <div className="w-1/2 flex flex-col">
+          <textarea value={commitMessage} onChange={(e) => setCommitMessage(e.target.value)} placeholder="Enter commit message..." rows={3} className="w-full bg-vibe-bg p-2 rounded-md text-vibe-text text-sm focus:outline-none focus:ring-2 focus:ring-vibe-accent disabled:opacity-50 flex-1" disabled={!!selectedCommit || changedFiles.length === 0 || isCommitting} />
+          <button onClick={handleCommit} disabled={!!selectedCommit || changedFiles.length === 0 || !commitMessage.trim() || isCommitting} className="w-full mt-2 bg-vibe-accent text-white py-2 rounded-md hover:bg-vibe-accent-hover transition-colors disabled:bg-vibe-comment disabled:cursor-not-allowed flex items-center justify-center">
+            {isCommitting ? <SpinnerIcon className="w-5 h-5 mr-2" /> : <GitIcon className="w-5 h-5 mr-2" />}
+            {isCommitting ? 'Committing...' : `Commit ${changedFiles.length} File(s)`}
+          </button>
+        </div>
       </div>
     </div>
   );
