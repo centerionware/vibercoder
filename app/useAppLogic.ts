@@ -200,14 +200,15 @@ export const useAppLogic = () => {
 
   const handleCommit = useCallback(async (message: string) => {
     if (!gitService) return;
-    const { userName, userEmail } = settings;
-    if (!userName || !userEmail) {
+    // FIX: Destructured the correct property names `gitUserName` and `gitUserEmail` from the settings object.
+    const { gitUserName, gitUserEmail } = settings;
+    if (!gitUserName || !gitUserEmail) {
         alert("Please set your Git user name and email in the global settings.");
         return;
     }
     setIsCommitting(true);
     try {
-        await gitService.commit(message, { name: userName, email: userEmail }, files);
+        await gitService.commit(message, { name: gitUserName, email: gitUserEmail }, files);
         // Refresh status after commit
         const newStatus = await gitService.status(files);
         setChangedFiles(newStatus);
