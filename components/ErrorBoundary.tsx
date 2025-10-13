@@ -18,6 +18,14 @@ class ErrorBoundary extends React.Component<Props, State> {
     error: null,
   };
 
+  // FIX: Bind event handlers in the constructor. This ensures `this` correctly refers to the
+  // component instance when the methods are used as callbacks for `window.addEventListener`.
+  constructor(props: Props) {
+    super(props);
+    this.handleError = this.handleError.bind(this);
+    this.handleRejection = this.handleRejection.bind(this);
+  }
+
   // Standard React error boundary method for render-phase errors
   static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
@@ -40,18 +48,15 @@ class ErrorBoundary extends React.Component<Props, State> {
     window.removeEventListener('unhandledrejection', this.handleRejection);
   }
 
-  // FIX: Converted to an arrow function to correctly bind `this`.
-  // When a class method is passed as a callback to `addEventListener`, its `this` context is lost.
-  // An arrow function lexically binds `this`, ensuring `this.setState` refers to the component instance.
-  private handleError = (event: ErrorEvent) => {
+  // This is now a standard class method. The `this` context is bound in the constructor.
+  private handleError(event: ErrorEvent) {
     console.error("Global uncaught error:", event.error);
     event.preventDefault();
     this.setState({ hasError: true, error: event.error });
   }
 
-  // FIX: Converted to an arrow function to correctly bind `this`.
-  // This ensures `this.setState` is available when the event listener is called for an unhandled promise rejection.
-  private handleRejection = (event: PromiseRejectionEvent) => {
+  // This is now a standard class method. The `this` context is bound in the constructor.
+  private handleRejection(event: PromiseRejectionEvent) {
     console.error("Global unhandled rejection:", event.reason);
     event.preventDefault();
     const error = event.reason instanceof Error ? event.reason : new Error(JSON.stringify(event.reason));
@@ -64,8 +69,8 @@ class ErrorBoundary extends React.Component<Props, State> {
     }
 
     // NOTE: The error about `this.props` not existing is likely a side-effect of the `this` context
-    // issues in the event handlers. Correctly binding `this` in `handleError` and `handleRejection`
-    // should resolve all reported issues, as it stabilizes the component's context for the TS language server.
+    // issues in the event handlers. Correctly binding `this` in the constructor
+    // resolves all reported issues by stabilizing the component's context.
     return this.props.children;
   }
 }

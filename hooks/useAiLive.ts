@@ -2,15 +2,16 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import html2canvas from 'html2canvas';
 import { v4 as uuidv4 } from 'uuid';
 import { Capacitor } from '@capacitor/core';
-import { UseAiLiveProps, View, ToolCall, ToolCallStatus } from '../types';
-import { playNotificationSound } from '../utils/audio';
+import { UseAiLiveProps, View, ToolCall, ToolCallStatus } from '../../types';
+import { playNotificationSound } from '../../utils/audio';
 import { createLiveSession } from './useAiLive/sessionManager';
 import { connectMicrophoneNodes, stopAudioProcessing } from './useAiLive/audioManager';
 import { AudioContextRefs, SessionRefs, LiveSession } from './useAiLive/types';
-import { getPreviewState, blobToBase64 } from '../utils/preview';
+import { getPreviewState, blobToBase64 } from '../../utils/preview';
 import { interruptPlayback, playAudioChunk } from './useAiLive/playbackQueue';
-import { requestMediaPermissions } from '../utils/permissions';
+import { requestMediaPermissions } from '../../utils/permissions';
 
+const INACTIVITY_TIMEOUT = 20000; // 20 seconds
 
 export const useAiLive = (props: UseAiLiveProps) => {
     // --- State and Refs ---
@@ -48,6 +49,7 @@ export const useAiLive = (props: UseAiLiveProps) => {
     const streamIntervalRef = useRef<number | null>(null);
     const autoDisableVideoTimeoutRef = useRef<number | null>(null);
     const endOfTurnTimerRef = useRef<number | null>(null);
+    const inactivityTimerRef = useRef<number | null>(null);
 
 
     // --- Core Logic Implementations ---
@@ -162,10 +164,18 @@ export const useAiLive = (props: UseAiLiveProps) => {
     }, [requestUiUpdate, startTurnIfNeeded]);
 
     const processInputTranscription = useCallback((message: any) => {
+        // Any user input cancels the inactivity reset timer.
+        if (inactivityTimerRef.current) {
+            clearTimeout(inactivityTimerRef.current);
+            inactivityTimerRef.current = null;
+        }
         startTurnIfNeeded();
         sessionRefs.current.currentInputTranscription += message.serverContent.inputTranscription.text;
         requestUiUpdate();
     }, [requestUiUpdate, startTurnIfNeeded]);
+
+    // Forward declaration for mutual recursion with finalizeTurn
+    const handleInactivityReset = useCallback(() => {}, []);
 
     const finalizeTurn = useCallback(() => {
         console.log("Finalizing turn, processing message queue.");
@@ -199,7 +209,12 @@ export const useAiLive = (props: UseAiLiveProps) => {
         sessionRefs.current.currentInputTranscription = '';
         sessionRefs.current.currentOutputTranscription = '';
         sessionRefs.current.currentToolCalls = [];
-    }, [processModelOutput, cancelUiUpdate, setIsAiTurn]);
+
+        // Start the inactivity timer to perform a silent reset if the user doesn't speak.
+        if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
+        inactivityTimerRef.current = window.setTimeout(handleInactivityReset, INACTIVITY_TIMEOUT);
+
+    }, [processModelOutput, cancelUiUpdate, setIsAiTurn, handleInactivityReset]);
 
 
     const onMessage = useCallback((message: any) => {
@@ -328,6 +343,11 @@ export const useAiLive = (props: UseAiLiveProps) => {
         if (!stateRef.current.isLive) return;
         
         const { isUnmount = false } = options;
+
+        if (inactivityTimerRef.current) {
+            clearTimeout(inactivityTimerRef.current);
+            inactivityTimerRef.current = null;
+        }
         
         setIsLive(false);
         disableVideoStream();
@@ -451,10 +471,43 @@ export const useAiLive = (props: UseAiLiveProps) => {
         }
     }, [performPause]);
 
+    const initiateSession = useCallback(() => {
+        const { aiRef, settings, activeThread } = propsRef.current;
+        const onOpen = () => connectMicrophoneNodes(audioContextRefs, sessionRefs, stateRef);
+        const sessionPromise = createLiveSession({
+            aiRef, settings, activeThread, callbacks: { onopen: onOpen, onmessage: onMessage, onerror: onError, onclose: () => {} },
+        });
+        sessionRefs.current.sessionPromise = sessionPromise;
+        sessionPromise.then(session => {
+            sessionRefs.current.session = session;
+        }).catch(err => {
+            console.error("Failed to establish live session:", err);
+            propsRef.current.onPermissionError("Could not connect to the live AI service.");
+            performStop();
+        });
+    }, [onMessage, onError, performStop]);
+
+    // Update the forward-declared reset handler with its actual implementation.
+    Object.assign(handleInactivityReset, {
+      callback: useCallback(() => {
+        if (!stateRef.current.isLive) return;
+        console.log("Inactivity detected. Performing silent session reset.");
+        
+        sessionRefs.current.session?.close();
+        if (audioContextRefs.current.scriptProcessor) {
+            audioContextRefs.current.scriptProcessor.disconnect();
+            audioContextRefs.current.scriptProcessor = null;
+        }
+        
+        initiateSession();
+      }, [initiateSession])
+    }.callback);
+
+
     const startLiveSession = useCallback(async (): Promise<boolean> => {
         if (stateRef.current.isLive) return false;
 
-        const { onPermissionError, aiRef, settings, activeThread } = propsRef.current;
+        const { onPermissionError } = propsRef.current;
         const { input, output } = audioContextRefs.current;
         
         if (input?.state === 'suspended') await input.resume();
@@ -480,27 +533,9 @@ export const useAiLive = (props: UseAiLiveProps) => {
 
         await playNotificationSound('start', audioContextRefs.current.output);
         setIsLive(true);
-        
-        const onOpen = () => {
-            connectMicrophoneNodes(audioContextRefs, sessionRefs, stateRef);
-        };
-
-        const sessionPromise = createLiveSession({
-            aiRef, settings, activeThread, callbacks: { onopen: onOpen, onmessage: onMessage, onerror: onError, onclose: () => {} },
-        });
-
-        sessionRefs.current.sessionPromise = sessionPromise;
-
-        sessionPromise.then(session => {
-            sessionRefs.current.session = session;
-        }).catch(err => {
-            console.error("Failed to establish live session:", err);
-            propsRef.current.onPermissionError("Could not connect to the live AI service.");
-            performStop();
-        });
-
+        initiateSession();
         return true;
-    }, [onMessage, onError, performStop]);
+    }, [initiateSession]);
 
     const toggleMute = useCallback(() => {
         setIsMuted(prev => !prev);
@@ -514,24 +549,10 @@ export const useAiLive = (props: UseAiLiveProps) => {
             audioContextRefs.current.scriptProcessor = null;
         }
 
-        const { aiRef, settings, activeThread } = propsRef.current;
-        const onOpen = () => {
-            connectMicrophoneNodes(audioContextRefs, sessionRefs, stateRef);
-        };
-        const newSessionPromise = createLiveSession({
-            aiRef, settings, activeThread, callbacks: { onopen: onOpen, onmessage: onMessage, onerror: onError, onclose: () => {} },
-        });
+        initiateSession();
+        console.log("Hot-swap complete. New session is live.");
 
-        sessionRefs.current.sessionPromise = newSessionPromise;
-        newSessionPromise.then(session => {
-            sessionRefs.current.session = session;
-            console.log("Hot-swap complete. New session is live.");
-        }).catch(err => {
-            console.error("Failed to establish new session during hot-swap:", err);
-            propsRef.current.onPermissionError("Could not update the live AI session.");
-            performStop();
-        });
-    }, [onMessage, onError, performStop]);
+    }, [initiateSession]);
 
     useEffect(() => {
         const input = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
@@ -542,6 +563,7 @@ export const useAiLive = (props: UseAiLiveProps) => {
         console.log("AudioContexts created.");
 
         return () => {
+            if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
             if (stateRef.current.isLive) {
                 stopLiveSession({ isUnmount: true, immediate: true });
             }

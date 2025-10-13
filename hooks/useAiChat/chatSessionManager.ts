@@ -1,4 +1,4 @@
-import { Chat, GenerationConfig } from '@google/genai';
+import { Chat, GenerationConfig, GeminiContent } from '@google/genai';
 import { UseAiChatProps } from '../../types';
 import { allTools, systemInstruction } from '../../services/toolOrchestrator';
 
@@ -29,14 +29,12 @@ export const createChatSession = async ({
     config.maxOutputTokens = settings.thinkingBudget + 4096;
   }
 
-  // The new 'agent_core_protocol' instructs the AI to manage its own memory.
-  // We no longer manually inject memory context. We provide the real chat history,
-  // and the AI follows its protocol, which includes ignoring history in favor of
-  // its short-term memory tools.
-  const history = activeThread.history || [];
+  // The history is now managed exclusively by the AI using its tools.
+  // We start every turn with a blank history slate to force the AI to rely on its protocol.
+  const history: GeminiContent[] = [];
 
 
-  // Create the chat instance with the real history and new configuration.
+  // Create the chat instance with a blank history and the new configuration.
   const chat: Chat = ai.chats.create({
     model: settings.aiModel,
     history: history,
