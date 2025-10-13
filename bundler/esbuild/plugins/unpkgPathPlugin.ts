@@ -46,15 +46,14 @@ export const unpkgPathPlugin = (files: Record<string, string>, onLog: OnLog): es
           }
         }
         
-        // 3. Handle bare imports and absolute-like paths.
-        // First, check if the import is from a CDN file (e.g., import 'react' from a CDN module)
-        if (args.importer.startsWith('http')) {
-             const resolvedUrl = new URL(args.path, args.importer).href;
-             log(`Resolved CDN bare/absolute path: ${args.path} from ${args.importer} -> ${resolvedUrl}`);
-             return { path: resolvedUrl, namespace: 'a' };
+        // 3. Handle absolute paths that might come from CDN modules (e.g., /v135/...)
+        if (args.path.startsWith('/') && args.importer.startsWith('http')) {
+          const resolvedUrl = new URL(args.path, args.importer).href;
+          log(`Resolved CDN absolute path: ${args.path} -> ${resolvedUrl}`);
+          return { path: resolvedUrl, namespace: 'a' };
         }
         
-        // If not from a CDN, it's a bare import from a local file.
+        // 4. Handle bare imports.
         // Try to resolve as a local file first. This allows for absolute-like paths in the project.
         const localCandidates = [
             args.path, `${args.path}.ts`, `${args.path}.tsx`, `${args.path}.js`, `${args.path}.jsx`, `${args.path}.css`,
@@ -67,7 +66,7 @@ export const unpkgPathPlugin = (files: Record<string, string>, onLog: OnLog): es
             }
         }
 
-        // 4. If it's not a local file, assume it's an external package and fetch from the CDN.
+        // 5. If it's not a local file, assume it's an external package and fetch from the CDN.
         log(`Assuming external package for bare import: ${args.path}`);
         const resolvedUrl = new URL(args.path, 'https://esm.sh/').href;
         return {

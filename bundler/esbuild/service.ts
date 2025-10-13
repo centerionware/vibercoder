@@ -11,7 +11,7 @@ export const initializeService = async () => {
         // This checks for that and uses the correct object to call `initialize`.
         const esbuildService = (esbuild as any).default || esbuild;
         await esbuildService.initialize({
-            wasmURL: 'https://esm.sh/esbuild-wasm@0.23.0/esbuild.wasm',
+            wasmURL: 'https://esm.sh/esbuild-wasm@0.25.10/esbuild.wasm',
             worker: true,
         });
         serviceInitialized = true;
