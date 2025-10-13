@@ -22,43 +22,48 @@ export const declarations = [
 
 // --- Implementations Factory ---
 export const getImplementations = ({ 
-    getOriginalHeadFiles, 
     getAiVirtualFiles,
     onCommitAiToHead,
     getVfsReadyPromise
-}: Pick<ToolImplementationsDependencies, 'getOriginalHeadFiles' | 'getAiVirtualFiles' | 'onCommitAiToHead' | 'getVfsReadyPromise'>) => {
+}: Pick<ToolImplementationsDependencies, 'getAiVirtualFiles' | 'onCommitAiToHead' | 'getVfsReadyPromise'>) => {
     
     return {
         diffVirtualChanges: async () => {
             await getVfsReadyPromise();
-            const originalHeadFiles = getOriginalHeadFiles();
-            const aiVirtualFiles = getAiVirtualFiles();
+            const vfs = getAiVirtualFiles();
 
-            if (!originalHeadFiles || !aiVirtualFiles) {
+            if (!vfs) {
                 throw new Error("No active AI session to diff. The session may have ended or was not started correctly.");
             }
-
-            const originalFilesSet = new Set(Object.keys(originalHeadFiles));
-            const currentFilesSet = new Set(Object.keys(aiVirtualFiles));
             
-            const added = [...currentFilesSet].filter(f => !originalFilesSet.has(f));
-            const deleted = [...originalFilesSet].filter(f => !currentFilesSet.has(f));
-            const modified = [...originalFilesSet]
-                .filter(f => currentFilesSet.has(f) && originalHeadFiles[f] !== aiVirtualFiles[f])
-                .map(filepath => ({
-                    filepath,
-                    // For brevity, don't return the full diff content to the AI, just the fact that it changed.
-                    // The AI can read the file to see the full content if needed.
-                    // diff: performDiff(originalHeadFiles[filepath], aiVirtualFiles[filepath])
-                }));
-
-            const modified_files = modified.map(m => m.filepath);
+            const added: string[] = [];
+            const deleted: string[] = [];
+            const modified: string[] = [];
+            
+            for (const [filepath, mutation] of Object.entries(vfs.mutations)) {
+                const existsInOriginal = vfs.originalFiles[filepath] !== undefined;
+                
+                if (typeof mutation === 'string') { // writeFile was called
+                    if (existsInOriginal) {
+                        if (vfs.originalFiles[filepath] !== mutation) {
+                            modified.push(filepath);
+                        }
+                    } else {
+                        added.push(filepath);
+                    }
+                } else { // DELETED_FILE_SENTINEL
+                    if (existsInOriginal) {
+                        deleted.push(filepath);
+                    }
+                    // If it was added and then deleted in the same session, it's a no-op, so we don't list it.
+                }
+            }
 
             if (added.length === 0 && deleted.length === 0 && modified.length === 0) {
                 return { status: "No changes detected in the virtual filesystem." }
             }
             
-            return { added, deleted, modified: modified_files };
+            return { added, deleted, modified };
         },
 
         commitToHead: async () => {

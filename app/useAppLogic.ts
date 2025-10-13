@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { View, GitService, ChatThread, AppSettings, Project, GitSettings, GitCredential, GitAuthor, LogEntry, GitProgress, GitStatus } from '../types';
+import { View, GitService, ChatThread, AppSettings, Project, GitSettings, GitCredential, GitAuthor, LogEntry, GitProgress, GitStatus, CopyOnWriteVFS } from '../types';
 
 import { useSettings } from '../hooks/useSettings';
 import { useFiles, initialFiles } from '../hooks/useFiles';
@@ -57,7 +57,7 @@ export const useAppLogic = () => {
   
   // --- AI Virtual Filesystem (VFS) State ---
   const originalHeadFilesRef = useRef<Record<string, string> | null>(null);
-  const aiVirtualFilesRef = useRef<Record<string, string> | null>(null);
+  const aiVirtualFilesRef = useRef<CopyOnWriteVFS | null>(null);
   const vfsReadyPromiseRef = useRef<Promise<void>>(Promise.resolve());
   let vfsReadyResolverRef = useRef<() => void>(() => {});
 
@@ -139,8 +139,18 @@ export const useAppLogic = () => {
   }, []);
 
   const handleCommitAiToHead = useCallback(() => {
-    if(aiVirtualFilesRef.current) {
-        setFiles(aiVirtualFilesRef.current);
+    const vfs = aiVirtualFilesRef.current;
+    if(vfs) {
+        // Apply mutations to create the new state
+        const newFiles = { ...vfs.originalFiles };
+        for (const [filepath, mutation] of Object.entries(vfs.mutations)) {
+            if (typeof mutation === 'string') {
+                newFiles[filepath] = mutation; // Add or update
+            } else { // DELETED_FILE_SENTINEL
+                delete newFiles[filepath]; // Delete
+            }
+        }
+        setFiles(newFiles);
         console.log("Committed AI changes to HEAD.");
     }
     // Committing no longer ends the session; the turn's end does.
@@ -153,15 +163,15 @@ export const useAppLogic = () => {
       vfsReadyResolverRef.current = resolve;
     });
   
-    (async () => {
-      console.log("Starting AI session, initializing VFS from current workspace.");
-      // The AI's sandbox should always be a copy of the user's CURRENT editor state,
-      // not the last committed state from Git. This is the source of truth.
-      const workspaceFiles = files;
-      originalHeadFilesRef.current = workspaceFiles;
-      aiVirtualFilesRef.current = JSON.parse(JSON.stringify(workspaceFiles));
-      vfsReadyResolverRef.current(); // VFS is now ready, resolve the promise
-    })();
+    // This is now synchronous and fast.
+    console.log("Starting AI session, initializing CoW VFS from current workspace.");
+    const workspaceFiles = files;
+    originalHeadFilesRef.current = workspaceFiles; // Keep for diffing
+    aiVirtualFilesRef.current = {
+        originalFiles: workspaceFiles, // Read-only reference
+        mutations: {}, // Start with no changes
+    };
+    vfsReadyResolverRef.current(); // VFS is now ready, resolve the promise
   }, [files]);
 
   const toolImplementations = useMemo(() => {

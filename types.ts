@@ -150,6 +150,16 @@ export interface UseWakeWordProps {
     onPermissionError: (message: string) => void;
 }
 
+// AI Virtual File System (VFS)
+export const DELETED_FILE_SENTINEL = { DELETED: true as const };
+export type VFSMutation = string | typeof DELETED_FILE_SENTINEL;
+
+export interface CopyOnWriteVFS {
+  originalFiles: Readonly<Record<string, string>>;
+  mutations: Record<string, VFSMutation>;
+}
+
+
 // Tool Orchestrator
 export interface ToolImplementationsDependencies {
   // File System
@@ -159,8 +169,8 @@ export interface ToolImplementationsDependencies {
   setActiveFile: (filename: string | null) => void;
   // AI Virtual File System (VFS)
   getOriginalHeadFiles: () => Record<string, string> | null;
-  getAiVirtualFiles: () => Record<string, string> | null;
-  setAiVirtualFiles: (updater: React.SetStateAction<Record<string, string> | null>) => void;
+  getAiVirtualFiles: () => CopyOnWriteVFS | null;
+  setAiVirtualFiles: (updater: React.SetStateAction<CopyOnWriteVFS | null>) => void;
   getVfsReadyPromise: () => Promise<void>;
   onCommitAiToHead: () => void;
   // App Control

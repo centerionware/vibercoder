@@ -1,5 +1,5 @@
 import { FunctionDeclaration, Type } from '@google/genai';
-import { ToolImplementationsDependencies } from '../types';
+import { ToolImplementationsDependencies, DELETED_FILE_SENTINEL } from '../types';
 import { normalizePath } from '../utils/path';
 
 // --- Function Declarations ---
@@ -72,31 +72,50 @@ export const declarations = [
 export const getImplementations = ({ getAiVirtualFiles, setAiVirtualFiles, getVfsReadyPromise }: Pick<ToolImplementationsDependencies, 'getAiVirtualFiles' | 'setAiVirtualFiles' | 'getVfsReadyPromise'>) => ({
     listFiles: async () => {
         await getVfsReadyPromise();
-        const aiVirtualFiles = getAiVirtualFiles();
-        if (aiVirtualFiles === null) {
+        const vfs = getAiVirtualFiles();
+        if (vfs === null) {
             throw new Error("No active AI session. Cannot list files.");
         }
-        return { files: Object.keys(aiVirtualFiles) };
+        
+        const fileSet = new Set(Object.keys(vfs.originalFiles));
+        for (const [filepath, mutation] of Object.entries(vfs.mutations)) {
+            if (typeof mutation === 'string') {
+                fileSet.add(filepath);
+            } else { // DELETED_FILE_SENTINEL
+                fileSet.delete(filepath);
+            }
+        }
+        return { files: Array.from(fileSet).sort() };
     },
     readFile: async (args: { filename: string }) => {
         await getVfsReadyPromise();
-        const aiVirtualFiles = getAiVirtualFiles();
-        if (aiVirtualFiles === null) {
+        const vfs = getAiVirtualFiles();
+        if (vfs === null) {
             throw new Error("No active AI session. Cannot read file.");
         }
         if (typeof args.filename !== 'string' || !args.filename) {
             throw new Error("readFile tool call is missing the required 'filename' argument.");
         }
         const filename = normalizePath(args.filename);
-        if (aiVirtualFiles[filename] !== undefined) {
-            return { content: aiVirtualFiles[filename] };
+        
+        const mutation = vfs.mutations[filename];
+        if (mutation) {
+            if (typeof mutation === 'string') {
+                return { content: mutation };
+            } else { // DELETED_FILE_SENTINEL
+                throw new Error(`File "${filename}" not found in the AI virtual session (it was deleted).`);
+            }
         }
+
+        if (vfs.originalFiles[filename] !== undefined) {
+            return { content: vfs.originalFiles[filename] };
+        }
+        
         throw new Error(`File "${filename}" not found in the AI virtual session.`);
     },
     writeFile: async (args: { filename: string; content: string }) => {
         await getVfsReadyPromise();
-        const aiVirtualFiles = getAiVirtualFiles();
-        if (aiVirtualFiles === null) {
+        if (getAiVirtualFiles() === null) {
             throw new Error("No active AI session. Cannot write file.");
         }
         if (typeof args.filename !== 'string' || !args.filename) {
@@ -106,30 +125,50 @@ export const getImplementations = ({ getAiVirtualFiles, setAiVirtualFiles, getVf
             throw new Error("writeFile tool call is missing the required 'content' argument.");
         }
         const filename = normalizePath(args.filename);
-        setAiVirtualFiles(prevFiles => ({
-            ...(prevFiles || {}),
-            [filename]: args.content,
-        }));
+        
+        setAiVirtualFiles(prevVfs => {
+            if (!prevVfs) return prevVfs; // Should not happen
+            return {
+                ...prevVfs,
+                mutations: {
+                    ...prevVfs.mutations,
+                    [filename]: args.content,
+                }
+            };
+        });
+        
         return { success: true };
     },
     removeFile: async (args: { filename: string }) => {
         await getVfsReadyPromise();
-        const aiVirtualFiles = getAiVirtualFiles();
-        if (aiVirtualFiles === null) {
+        const vfs = getAiVirtualFiles();
+        if (vfs === null) {
             throw new Error("No active AI session. Cannot remove file.");
         }
         if (typeof args.filename !== 'string' || !args.filename) {
             throw new Error("removeFile tool call is missing the required 'filename' argument.");
         }
         const filename = normalizePath(args.filename);
-        if (aiVirtualFiles[filename] === undefined) {
+
+        // Check if file actually exists before allowing deletion
+        const mutation = vfs.mutations[filename];
+        const existsInOriginal = vfs.originalFiles[filename] !== undefined;
+
+        if (mutation === DELETED_FILE_SENTINEL || (!existsInOriginal && typeof mutation !== 'string')) {
             throw new Error(`File "${filename}" not found in the AI virtual session.`);
         }
-        setAiVirtualFiles(prevFiles => {
-            const newFiles = { ...(prevFiles || {}) };
-            delete newFiles[filename];
-            return newFiles;
+        
+        setAiVirtualFiles(prevVfs => {
+            if (!prevVfs) return prevVfs;
+            return {
+                ...prevVfs,
+                mutations: {
+                    ...prevVfs.mutations,
+                    [filename]: DELETED_FILE_SENTINEL,
+                }
+            };
         });
+
         return { success: true };
     }
 });
