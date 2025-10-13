@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { View, GitService, ChatThread, AppSettings, Project, GitSettings, GitCredential, GitAuthor, LogEntry, GitProgress } from '../types';
+import { View, GitService, ChatThread, AppSettings, Project, GitSettings, GitCredential, GitAuthor, LogEntry, GitProgress, GitStatus } from '../types';
 
 import { useSettings } from '../hooks/useSettings';
 import { useFiles } from '../hooks/useFiles';
@@ -46,37 +46,28 @@ export const useAppLogic = () => {
   const [isDebugLogModalOpen, setIsDebugLogModalOpen] = useState(false);
   const [debugLogs, setDebugLogs] = useState<LogEntry[]>([]);
 
-
   const [liveFrameData, setLiveFrameData] = useState<string | null>(null);
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [changedFiles, setChangedFiles] = useState<GitStatus[]>([]);
 
-  // --- Refs ---
+  // --- Refs & Services ---
   const aiRef = useRef<GoogleGenAI | null>(null);
-  const gitServiceRef = useRef<GitService | null>(null);
-  const liveSessionControlsRef = useRef<any>(null); // Ref to break circular dependency
+  const [gitService, setGitService] = useState<GitService | null>(null);
+  const liveSessionControlsRef = useRef<any>(null);
   
   // --- AI Virtual Filesystem (VFS) State ---
   const [originalHeadFiles, setOriginalHeadFiles] = useState<Record<string, string> | null>(null);
   const [aiVirtualFiles, setAiVirtualFiles] = useState<Record<string, string> | null>(null);
   
   // --- Memoized Callbacks ---
-  const clearBundleLogs = useCallback(() => {
-    setBundleLogs([]);
-  }, []);
-
-  const handleLog = useCallback((log: string) => {
-    // Keep the log array from growing indefinitely
-    setBundleLogs(prev => [...prev.slice(-100), log]);
-  }, []);
-
-  const handleRuntimeError = useCallback((error: string) => {
-    setSandboxErrors(prev => [...prev, error]);
-  }, []);
+  const clearBundleLogs = useCallback(() => setBundleLogs([]), []);
+  const handleLog = useCallback((log: string) => setBundleLogs(prev => [...prev.slice(-100), log]), []);
+  const handleRuntimeError = useCallback((error: string) => setSandboxErrors(prev => [...prev, error]), []);
 
   // --- Initializers ---
   useEffect(() => {
     startCapturingLogs((newLog) => {
-        setDebugLogs(prev => [...prev.slice(-500), newLog]); // Keep max 500 logs in state
+        setDebugLogs(prev => [...prev.slice(-500), newLog]);
     });
   }, []);
 
@@ -87,9 +78,22 @@ export const useAppLogic = () => {
     } else { aiRef.current = null; }
   }, [settings.apiKey]);
 
-  useEffect(() => { gitServiceRef.current = createGitService(true); }, []);
+  useEffect(() => {
+    // The git service is now universal, but re-initialized when project changes
+    // to ensure its internal state (like FS instance) is fresh.
+    setGitService(createGitService(true, activeProjectId));
+  }, [activeProjectId]);
   
-  // --- Callbacks ---
+  // Fetch git status when the view changes to Git or files change
+  useEffect(() => {
+    if (gitService?.isReal && activeView === View.Git) {
+        gitService.status(files).then(setChangedFiles).catch(err => {
+            console.error("Failed to get git status:", err);
+            setChangedFiles([]);
+        });
+    }
+  }, [activeView, gitService, files]);
+  
   const onNavigate = (view: View) => setActiveView(view);
   
   const handleCommitAiToHead = useCallback(() => {
@@ -99,22 +103,21 @@ export const useAppLogic = () => {
   }, [aiVirtualFiles, setFiles]);
 
   const handleStartAiRequest = useCallback(async () => {
-    if (aiVirtualFiles !== null) return; 
-    const headFiles = await gitServiceRef.current?.getHeadFiles() ?? files;
+    if (aiVirtualFiles !== null) return;
+    const headFiles = await gitService?.getHeadFiles() ?? files;
     setOriginalHeadFiles(headFiles);
     setAiVirtualFiles(headFiles);
-  }, [aiVirtualFiles, files]);
+  }, [aiVirtualFiles, files, gitService]);
 
-  // --- Tooling ---
   const toolImplementations = useMemo(() => {
-    // A proxy allows the live session to have a stable reference to the controls,
-    // while allowing the controls to be defined later, breaking the dependency cycle.
     const liveSessionControlsProxy = {
         pauseListening: (...args: any[]) => liveSessionControlsRef.current?.pauseListening(...args),
         stopLiveSession: (...args: any[]) => liveSessionControlsRef.current?.stopLiveSession(...args),
         enableVideoStream: (...args: any[]) => liveSessionControlsRef.current?.enableVideoStream(...args),
         disableVideoStream: (...args: any[]) => liveSessionControlsRef.current?.disableVideoStream(...args),
     };
+
+    const gitServiceRef = { current: gitService }; // Create a ref-like object for dependencies
 
     return createToolImplementations({
       files, setFiles, activeFile, setActiveFile,
@@ -132,10 +135,9 @@ export const useAppLogic = () => {
   }, [
       files, setFiles, activeFile, setActiveFile, originalHeadFiles, aiVirtualFiles, 
       handleCommitAiToHead, activeView, bundleLogs, sandboxErrors, settings, 
-      setSettings, isScreenshotPreviewDisabled, threads, activeThread, updateThread, projects, gitCredentials
+      setSettings, isScreenshotPreviewDisabled, threads, activeThread, updateThread, projects, gitCredentials, gitService
   ]);
 
-  // --- Live Session & Wake Word ---
   const liveSession = useAiLive({
     aiRef, settings, activeThread, toolImplementations,
     addMessage, updateMessage, onPermissionError: setPermissionError,
@@ -159,73 +161,32 @@ export const useAppLogic = () => {
     }
   }, [activeView, settings.autoEnableLiveMode, liveSession.isLive, liveSession.startLiveSession]);
   
-  const resolveGitSettings = useCallback(() => {
-    const projectSettings = activeProject?.gitSettings;
-    const defaultCredential = gitCredentials.find(c => c.isDefault);
-
-    const remoteUrl = activeProject?.gitRemoteUrl || settings.gitRemoteUrl;
-
-    let userName = settings.gitUserName;
-    let userEmail = settings.gitUserEmail;
-    let authToken = settings.gitAuthToken;
-    let corsProxy: string | undefined = settings.gitCorsProxy;
-
-    if (projectSettings?.source === 'default' && defaultCredential) {
-        authToken = defaultCredential.token;
-    } else if (projectSettings?.source === 'specific' && projectSettings.credentialId) {
-        const specificCred = gitCredentials.find(c => c.id === projectSettings.credentialId);
-        if (specificCred) authToken = specificCred.token;
-    } else if (projectSettings?.source === 'custom' && projectSettings.custom) {
-        userName = projectSettings.custom.userName;
-        userEmail = projectSettings.custom.userEmail;
-        authToken = projectSettings.custom.authToken;
-        corsProxy = projectSettings.custom.corsProxy;
-    }
-    
-    return { remoteUrl, userName, userEmail, authToken, corsProxy };
-  }, [activeProject, settings, gitCredentials]);
-  
   const handleClone = useCallback(async (url: string, name: string) => {
-    if (!gitServiceRef.current) return;
-
-    if (!url || !url.trim() || !name || !name.trim()) {
-      alert("Please provide both a Git repository URL and a local project name.");
-      return;
+    if (!gitService?.isReal) {
+        alert("Git service is not available. This may be because it's running in a mock environment.");
+        return;
     }
-    if (!url.trim().startsWith('https://')) {
-      alert("Invalid Git URL. Only HTTPS URLs (e.g., 'https://github.com/user/repo.git') are supported.");
-      return;
-    }
-    
-    const cloneConfig = {
-      url: url,
-      proxy: isNativeEnvironment() ? undefined : (settings.gitCorsProxy || DEFAULT_SETTINGS.gitCorsProxy),
-      author: { name: settings.gitUserName, email: settings.gitUserEmail },
-      token: gitCredentials.find(c => c.isDefault)?.token || settings.gitAuthToken,
-    };
     
     setIsCloning(true);
-    setCloningProgress('Preparing to clone...');
+    setCloningProgress('Creating project...');
     try {
-      const onProgress = (progress: GitProgress) => {
-        const percent = progress.total ? Math.round((progress.loaded / progress.total) * 100) : 0;
-        setCloningProgress(`Phase: ${progress.phase} (${percent}%)`);
-      };
-
-      await gitServiceRef.current.clone(
-        cloneConfig.url,
-        cloneConfig.proxy,
-        cloneConfig.author,
-        cloneConfig.token,
-        onProgress
-      );
-      
-      setCloningProgress('Reading project files...');
       const newProject = await createNewProject(name, false, url);
+      // Switch to the new project so the gitService gets re-initialized for it
+      switchProject(newProject.id);
+
+      // We need to wait for the new gitService instance to be ready
+      const newGitService = createGitService(true, newProject.id);
       
-      const headFiles = await gitServiceRef.current.getHeadFiles();
+      const token = gitCredentials.find(c => c.isDefault)?.token || settings.gitAuthToken;
+
+      await newGitService.clone(url, settings.gitCorsProxy, { name: settings.gitUserName, email: settings.gitUserEmail }, token, (progress: GitProgress) => {
+        setCloningProgress(`${progress.phase} (${progress.loaded}/${progress.total})`);
+      });
+
+      setCloningProgress('Reading project files...');
+      const headFiles = await newGitService.getHeadFiles();
       setFiles(headFiles);
-      switchProject(newProject.id); // Switch after files are ready
+      setGitService(newGitService); // Set the new service as active
 
     } catch (error: any) {
         alert(`Cloning failed: ${error.message}`);
@@ -235,15 +196,28 @@ export const useAppLogic = () => {
       setCloningProgress(null);
       setIsProjectModalOpen(false);
     }
-  }, [settings, gitCredentials, createNewProject, setFiles, switchProject]);
+  }, [settings, gitCredentials, createNewProject, setFiles, switchProject, gitService]);
 
   const handleCommit = useCallback(async (message: string) => {
-    if (!gitServiceRef.current) return;
-    const { userName, userEmail } = resolveGitSettings();
+    if (!gitService) return;
+    const { userName, userEmail } = settings;
+    if (!userName || !userEmail) {
+        alert("Please set your Git user name and email in the global settings.");
+        return;
+    }
     setIsCommitting(true);
-    await gitServiceRef.current.commit(message, { name: userName, email: userEmail }, files);
-    setIsCommitting(false);
-  }, [files, resolveGitSettings]);
+    try {
+        await gitService.commit(message, { name: userName, email: userEmail }, files);
+        // Refresh status after commit
+        const newStatus = await gitService.status(files);
+        setChangedFiles(newStatus);
+    } catch (error: any) {
+        alert(`Commit failed: ${error.message}`);
+        console.error("COMMIT FAILED:", error);
+    } finally {
+        setIsCommitting(false);
+    }
+  }, [files, settings, gitService]);
 
   const handleClearDebugLogs = useCallback(() => {
     clearGlobalLogs();
@@ -258,7 +232,7 @@ export const useAppLogic = () => {
     gitCredentials, createGitCredential, deleteGitCredential, setDefaultGitCredential,
     activeView, onNavigate,
     bundleLogs, handleLog, clearBundleLogs, sandboxErrors, handleRuntimeError,
-    isCommitting, handleCommit, isCloning, handleClone, cloningProgress,
+    isCommitting, handleCommit, isCloning, handleClone, cloningProgress, changedFiles,
     permissionError, setPermissionError,
     screenshotPreview, setScreenshotPreview, setIsScreenshotPreviewDisabled, isScreenshotPreviewDisabled,
     isProjectModalOpen, setIsProjectModalOpen,
@@ -268,7 +242,8 @@ export const useAppLogic = () => {
     liveFrameData, isLiveVideoModalOpen, setIsLiveVideoModalOpen,
 
     isFullScreen, onToggleFullScreen: () => setIsFullScreen(p => !p),
-    aiRef, toolImplementations, gitServiceRef,
+    aiRef, toolImplementations,
+    gitServiceRef: { current: gitService }, 
     handleStartAiRequest,
     debugLogs, isDebugLogModalOpen, setIsDebugLogModalOpen, handleClearDebugLogs,
     ...liveSession,

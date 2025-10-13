@@ -1,11 +1,15 @@
 import { Capacitor } from '@capacitor/core';
+import { GitHttpRequest, GitHttpResponse } from '../types';
 
 // Extend the Window interface to include the property exposed by Electron's preload script.
 declare global {
   interface Window {
     electron?: {
       isElectron: boolean;
-      gitHttpRequest: (options: any) => Promise<any>;
+      // Expose a custom http client that matches the interface required by isomorphic-git
+      git: {
+        request: (request: GitHttpRequest) => Promise<GitHttpResponse>;
+      }
     };
   }
 }

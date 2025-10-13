@@ -1,69 +1,62 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
-const gitHttp = require('isomorphic-git/http/node'); // Use the node client in main process
+const { fetch } = require('undici'); // A modern fetch API for Node.js
 
 function createWindow() {
   const win = new BrowserWindow({
-    width: 800,
-    height: 600,
+    width: 1200,
+    height: 800,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
-      // It's recommended to keep contextIsolation enabled for security
       contextIsolation: true,
-      // sandbox: true, // You might need to disable sandbox for certain node features
     },
   });
-
-  // Load the production build of your web app.
-  // The path should point to your 'www' directory.
   win.loadFile(path.join(__dirname, '..', 'www', 'index.html'));
-
-  // Open the DevTools.
-  // win.webContents.openDevTools();
 }
 
 app.whenReady().then(() => {
-  // Add an IPC handler to proxy git HTTP requests from the renderer.
-  // This uses the Node.js-based http client from isomorphic-git, which is not subject to CORS.
-  ipcMain.handle('git-http-request', async (event, options) => {
+  // This IPC handler acts as a secure CORS proxy for isomorphic-git.
+  // The renderer process sends an HTTP request object here, and this handler
+  // executes it in the unrestricted Node.js environment.
+  ipcMain.handle('git-http-request', async (event, request) => {
     try {
-      // The body from the renderer is an array of Uint8Array parts.
-      // We must reconstruct it into an async iterable for the node http client.
-      const body = options.body ? (async function*() {
-        for (const chunk of options.body) {
-          yield chunk;
-        }
-      })() : undefined;
-
-      const response = await gitHttp.request({ ...options, body });
-      
-      // The body is a stream/iterator; it must be consumed into a Buffer to be sent over IPC.
-      const chunks = [];
-      for await (const chunk of response.body) {
-        chunks.push(chunk);
+      // Security: Only proxy requests to GitHub to prevent abuse.
+      if (!request.url.startsWith('https://github.com')) {
+        throw new Error('Proxy is limited to github.com requests only.');
       }
-      const bodyBuffer = Buffer.concat(chunks);
+
+      const response = await fetch(request.url, {
+        method: request.method,
+        headers: request.headers,
+        // The body from the renderer is base64 encoded.
+        body: request.body ? Buffer.from(request.body, 'base64') : undefined,
+        redirect: 'manual', // isomorphic-git handles redirects itself.
+      });
+
+      const body = await response.arrayBuffer();
       
-      // Return a serializable response object to the renderer.
+      const headers = {};
+      response.headers.forEach((value, key) => (headers[key] = value));
+
+      // Return a response object that matches isomorphic-git's expected format.
       return {
         url: response.url,
-        method: response.method,
-        statusCode: response.statusCode,
-        statusMessage: response.statusMessage,
-        body: bodyBuffer, // The buffer will be correctly handled by Electron's IPC.
-        headers: response.headers,
+        statusCode: response.status,
+        statusMessage: response.statusText,
+        headers,
+        // Send the body back as base64 to ensure it's serializable.
+        body: Buffer.from(body).toString('base64'),
       };
     } catch (error) {
-      // Ensure the error is serializable before throwing it back to the renderer.
-      const serializableError = {
-        message: error.message || 'An unknown error occurred in the main process.',
-        name: error.name || 'Error',
-        stack: error.stack,
-        ...error
+      console.error('Git HTTP request failed in main process:', error);
+      // Re-throw a serializable error so the renderer can handle it.
+      throw {
+        message: error.message,
+        name: error.name,
       };
-      throw serializableError;
     }
   });
+
 
   createWindow();
 

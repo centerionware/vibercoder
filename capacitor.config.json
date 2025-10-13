@@ -1,4 +1,3 @@
-
 {
   "appId": "com.vibecode.app",
   "appName": "VibeCode",
@@ -9,9 +8,6 @@
   "plugins": {
     "SplashScreen": {
       "launchShowDuration": 0
-    },
-    "CapacitorHttp": {
-      "enabled": true
     }
   }
 }

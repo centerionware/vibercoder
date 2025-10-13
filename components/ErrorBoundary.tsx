@@ -11,27 +11,25 @@ interface State {
 }
 
 class ErrorBoundary extends React.Component<Props, State> {
-  public state: State;
+  // FIX: Reverted to using class fields for state and arrow functions for handlers.
+  // The previous constructor-based approach was causing type errors where component properties like 'state' and 'props' were not found.
+  // This is a more standard and robust pattern for React class components.
+  state: State = {
+    hasError: false,
+    error: null,
+  };
 
-  constructor(props: Props) {
-    super(props);
-    this.state = {
-      hasError: false,
-      error: null,
-    };
-  }
-
-  // This is the standard React error boundary method for render-phase errors
+  // Standard React error boundary method for render-phase errors
   static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
   }
 
-  // This is for logging errors that were caught by getDerivedStateFromError
+  // For logging errors that were caught by getDerivedStateFromError
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("React ErrorBoundary caught:", error, errorInfo);
   }
-  
-  // Add global listeners when the component mounts to act as a final safety net
+
+  // Add global listeners when the component mounts
   componentDidMount() {
     window.addEventListener('error', this.handleError);
     window.addEventListener('unhandledrejection', this.handleRejection);
@@ -43,16 +41,15 @@ class ErrorBoundary extends React.Component<Props, State> {
     window.removeEventListener('unhandledrejection', this.handleRejection);
   }
 
-  // FIX: Converted `handleError` to an arrow function to ensure `this` is correctly bound. When used as a window event listener, a regular class method loses its `this` context, causing `this.setState` to be undefined. Arrow functions lexically bind `this`, resolving the error.
   private handleError = (event: ErrorEvent) => {
     console.error("Global uncaught error:", event.error);
+    event.preventDefault();
     this.setState({ hasError: true, error: event.error });
   }
 
-  // FIX: Converted `handleRejection` to an arrow function to ensure `this` is correctly bound. Similar to `handleError`, this prevents the loss of `this` context when used as a window event listener, resolving the error where `this.setState` is not found.
   private handleRejection = (event: PromiseRejectionEvent) => {
     console.error("Global unhandled rejection:", event.reason);
-    // Coerce the reason to an Error object if it's not one already
+    event.preventDefault();
     const error = event.reason instanceof Error ? event.reason : new Error(JSON.stringify(event.reason));
     this.setState({ hasError: true, error });
   }

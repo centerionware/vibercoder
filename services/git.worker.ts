@@ -1,7 +1,3 @@
-
-
-
-
 import git from 'isomorphic-git';
 import http from 'isomorphic-git/http/web';
 import LightningFS from '@isomorphic-git/lightning-fs';
@@ -13,9 +9,8 @@ if (typeof self !== 'undefined' && !(self as any).Buffer) {
   (self as any).Buffer = Buffer;
 }
 
-// FIX: Changed `typeof global` to `!('global' in self)` to be type-safe and avoid the "Cannot find name 'global'" error in TypeScript.
-// This polyfills 'global' for libraries that expect it in a worker context.
 // Vite's top-level `define` config sets `global` to `window`, which is incorrect for workers.
+// This polyfills 'global' for libraries that expect it in a worker context.
 if (typeof self !== 'undefined' && !('global' in self)) {
   (self as any).global = self;
 }
@@ -31,7 +26,9 @@ self.onmessage = async (event: MessageEvent) => {
     switch (type) {
       case 'clone':
         for (const file of await fs.promises.readdir(dir)) {
-            await fs.promises.unlink(`${dir}${file}`);
+            if (file !== '.git') { // Do not delete the git directory itself
+                await fs.promises.rm(`${dir}${file}`, { recursive: true, force: true });
+            }
         }
         await git.clone({
           fs, http, dir, corsProxy: payload.proxyUrl, url: payload.url,
@@ -63,12 +60,13 @@ self.onmessage = async (event: MessageEvent) => {
       
       case 'commit':
         await writeAppFilesToFs(payload.appFiles);
+        // Add all changed files to the index before committing
         const statusMatrix = await git.statusMatrix({ fs, dir });
         for (const [filepath, head, workdir] of statusMatrix) {
-            if (head !== workdir) { // 1 for unchanged, 2 for added, 3 for modified
+             if (workdir === 0) { // Deleted
+                await git.remove({ fs, dir, filepath });
+            } else if (workdir === 2 || workdir === 3) { // New or Modified
                 await git.add({ fs, dir, filepath });
-            } else if (head === 1 && workdir === 0) { // 0 means deleted
-                await git.remove({fs, dir, filepath});
             }
         }
         const oid = await git.commit({ fs, dir, message: payload.message, author: payload.author });
@@ -93,7 +91,7 @@ self.onmessage = async (event: MessageEvent) => {
         const commit = await git.readCommit({ fs, dir, oid: payload.oid });
         const parentOid = commit.commit.parent[0];
         const changes: any[] = [];
-        if (!parentOid) {
+        if (!parentOid) { // This is the initial commit
             const filepaths = await git.listFiles({fs, dir, ref: payload.oid});
             for(const filepath of filepaths) {
                 const content = await readFileAtCommitFromFs(payload.oid, filepath) || '';
@@ -104,7 +102,7 @@ self.onmessage = async (event: MessageEvent) => {
                 map: async function(filepath: string, [A, B]) {
                     if (filepath === '.') return;
                     const aOid = await A?.oid(); const bOid = await B?.oid();
-                    if (aOid === bOid) return;
+                    if (aOid === bOid) return; // Unchanged
                     let status: 'added' | 'deleted' | 'modified' = 'modified';
                     if (!aOid) status = 'added'; if (!bOid) status = 'deleted';
                     const contentA = status === 'added' ? '' : Buffer.from((await git.readBlob({ fs, dir, oid: aOid! })).blob).toString();
@@ -140,7 +138,7 @@ async function getHeadFilesFromFs(): Promise<Record<string, string>> {
             try {
                 const content = await fs.promises.readFile(`${dir}${filepath}`, 'utf8');
                 files[filepath] = content as string;
-            } catch(e) { /* ignore read errors for non-files */ }
+            } catch(e) { /* ignore read errors for non-files like submodules */ }
         }
     } catch (e) {
       console.warn("Worker could not read files. Repository may be empty.");
@@ -150,14 +148,16 @@ async function getHeadFilesFromFs(): Promise<Record<string, string>> {
 
 async function writeAppFilesToFs(appFiles: Record<string, string>) {
     const promises: Promise<void>[] = [];
-    const trackedFiles = await git.listFiles({ fs, dir });
+    const trackedFiles = await git.listFiles({ fs, dir }).catch(() => []);
 
+    // Delete files that are in git but not in the app state
     for (const trackedFile of trackedFiles) {
         if (appFiles[trackedFile] === undefined) {
             promises.push(fs.promises.unlink(`${dir}${trackedFile}`));
         }
     }
 
+    // Write all app files to the virtual file system
     for (const [filepath, content] of Object.entries(appFiles)) {
         promises.push(fs.promises.writeFile(`${dir}${filepath}`, content));
     }
@@ -169,6 +169,7 @@ async function readFileAtCommitFromFs(oid: string, filepath: string): Promise<st
         const { blob } = await git.readBlob({ fs, dir, oid, filepath });
         return Buffer.from(blob).toString('utf8');
     } catch (e) {
+        // This can happen if the file doesn't exist at that commit, which is normal.
         return null;
     }
 }

@@ -18,7 +18,6 @@ const ViewRenderer: React.FC<ViewRendererProps> = (app) => {
           activeFile={app.activeFile}
           onFileChange={app.onFileChange}
           onFileSelect={app.onFileSelect}
-          // Fix: The 'onFileAdd' prop expects one argument, but the handler 'app.onFileAdd' (which is 'onWriteFile') expects two. This lambda adapts the call by providing an empty string for the content.
           onFileAdd={(filename) => app.onFileAdd(filename, '')}
           onFileRemove={app.onFileRemove}
           isFullScreen={app.isFullScreen}
@@ -69,7 +68,7 @@ const ViewRenderer: React.FC<ViewRendererProps> = (app) => {
         };
       return (
         <GitView
-          changedFiles={[]} // This needs to be calculated and passed in
+          changedFiles={app.changedFiles}
           onCommit={app.handleCommit}
           isCommitting={app.isCommitting}
           gitService={app.gitServiceRef.current} // Pass the actual service

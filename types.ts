@@ -156,6 +156,7 @@ export interface ToolImplementationsDependencies {
   setActiveFile: (filename: string | null) => void;
   // AI Virtual File System (VFS)
   originalHeadFiles: Record<string, string> | null;
+  // FIX: Added the missing 'aiVirtualFiles' property to provide the AI's sandboxed file state to tools.
   aiVirtualFiles: Record<string, string> | null;
   setAiVirtualFiles: React.Dispatch<React.SetStateAction<Record<string, string> | null>>;
   onCommitAiToHead: () => void;
@@ -251,4 +252,19 @@ export interface LogEntry {
   timestamp: number;
   level: 'log' | 'warn' | 'error' | 'info';
   message: string;
+}
+
+// Isomorphic Git HTTP client types for Electron proxy
+export interface GitHttpRequest {
+    url: string;
+    method?: string;
+    headers?: Record<string, string>;
+    body?: AsyncIterable<Uint8Array>;
+}
+export interface GitHttpResponse {
+    url: string;
+    statusCode: number;
+    statusMessage: string;
+    headers: Record<string, string>;
+    body: AsyncIterable<Uint8Array>;
 }
