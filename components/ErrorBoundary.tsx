@@ -21,10 +21,6 @@ class ErrorBoundary extends React.Component<Props, State> {
       hasError: false,
       error: null,
     };
-    // FIX: Bind event handlers to the component instance to ensure 'this' context is correct.
-    // This resolves errors where 'this.setState' would be called on an incorrect context (e.g., 'window').
-    this.handleError = this.handleError.bind(this);
-    this.handleRejection = this.handleRejection.bind(this);
   }
 
   // This is the standard React error boundary method for render-phase errors
@@ -49,12 +45,13 @@ class ErrorBoundary extends React.Component<Props, State> {
     window.removeEventListener('unhandledrejection', this.handleRejection);
   }
 
-  private handleError(event: ErrorEvent) {
+  // FIX: Converted to arrow functions to automatically bind 'this', resolving errors where 'this.setState' would be called on an incorrect context.
+  private handleError = (event: ErrorEvent) => {
     console.error("Global uncaught error:", event.error);
     this.setState({ hasError: true, error: event.error });
   }
 
-  private handleRejection(event: PromiseRejectionEvent) {
+  private handleRejection = (event: PromiseRejectionEvent) => {
     console.error("Global unhandled rejection:", event.reason);
     // Coerce the reason to an Error object if it's not one already
     const error = event.reason instanceof Error ? event.reason : new Error(JSON.stringify(event.reason));
@@ -62,7 +59,6 @@ class ErrorBoundary extends React.Component<Props, State> {
   }
 
   render() {
-    // FIX: Accessing this.state and this.props is now correctly typed.
     if (this.state.hasError && this.state.error) {
       return <ErrorFallback error={this.state.error} />;
     }
