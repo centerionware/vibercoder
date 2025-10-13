@@ -20,8 +20,7 @@ export default defineConfig({
     // a 'window' object. Overriding the top-level 'global: "window"' prevents
     // a runtime error in the bundled git worker. 'self' is the correct
     // global scope for a web worker.
-    define: {
-      'global': 'self',
-    },
+    // The `define` property is not valid here and causes a TypeScript error.
+    // This is now handled by a polyfill in `services/git.worker.ts`.
   },
 });

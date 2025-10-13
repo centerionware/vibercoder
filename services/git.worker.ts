@@ -9,6 +9,12 @@ if (typeof self !== 'undefined' && !(self as any).Buffer) {
   (self as any).Buffer = Buffer;
 }
 
+// FIX: Polyfill 'global' for libraries that expect it in a worker context.
+// Vite's top-level `define` config sets `global` to `window`, which is incorrect for workers.
+if (typeof global === 'undefined' && typeof self !== 'undefined') {
+  (self as any).global = self;
+}
+
 const fs = new LightningFS('vibecode-fs');
 const dir = '/';
 let http = webHttp; // Default to the standard web fetch client
