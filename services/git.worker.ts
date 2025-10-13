@@ -168,6 +168,41 @@ self.onmessage = async (event: MessageEvent) => {
       case 'readFileAtCommit':
         result = await readFileAtCommitFromFs(payload.oid, payload.filepath);
         break;
+        
+      case 'push':
+        result = await git.push({
+            fs, http, dir, corsProxy: payload.proxyUrl,
+            onAuth: () => ({ username: payload.token }),
+            onProgress: (progress) => {
+                self.postMessage({ type: 'progress', id, payload: progress });
+            }
+        });
+        break;
+      
+      case 'pull':
+        const currentBranch = await git.currentBranch({ fs, dir });
+        await git.pull({
+            fs, http, dir, corsProxy: payload.proxyUrl,
+            onAuth: () => ({ username: payload.token }),
+            author: payload.author,
+            ref: currentBranch,
+            singleBranch: true,
+            rebase: payload.rebase,
+            onProgress: (progress) => {
+                self.postMessage({ type: 'progress', id, payload: progress });
+            }
+        });
+        result = { success: true };
+        break;
+
+      case 'rebase':
+        await git.rebase({
+            fs, dir,
+            branch: payload.branch,
+            author: payload.author
+        });
+        result = { success: true };
+        break;
 
       default:
         throw new Error(`Unknown command: ${type}`);

@@ -36,6 +36,9 @@ export const useAppLogic = () => {
   const [permissionError, setPermissionError] = useState<string | null>(null);
   const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null);
   const [isScreenshotPreviewDisabled, setIsScreenshotPreviewDisabled] = useState(false);
+  const [isGitNetworkActivity, setIsGitNetworkActivity] = useState(false);
+  const [gitNetworkProgress, setGitNetworkProgress] = useState<string | null>(null);
+  const [commitMessage, setCommitMessage] = useState('');
   
   // Modal States
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
@@ -173,6 +176,149 @@ export const useAppLogic = () => {
     };
     vfsReadyResolverRef.current(); // VFS is now ready, resolve the promise
   }, [files]);
+  
+  const getGitAuth = useCallback(() => {
+    const token = gitCredentials.find(c => c.isDefault)?.token || settings.gitAuthToken;
+    const author = { name: settings.gitUserName, email: settings.gitUserEmail };
+    const proxyUrl = settings.gitCorsProxy;
+
+    if (!token || !author.name || !author.email) {
+        alert("Git authentication or user details are not configured. Please check your settings.");
+        return null;
+    }
+    return { token, author, proxyUrl };
+  }, [gitCredentials, settings]);
+
+  const handlePush = useCallback(async () => {
+    if (!gitService) return;
+    const auth = getGitAuth();
+    if (!auth) return;
+
+    setIsGitNetworkActivity(true);
+    setGitNetworkProgress('Pushing...');
+    try {
+        const result = await gitService.push(auth.author, auth.token, auth.proxyUrl, (progress) => {
+            setGitNetworkProgress(`${progress.phase} (${progress.loaded}/${progress.total})`);
+        });
+        if (!result.ok) {
+            throw new Error(result.error || 'Push failed. Check credentials and remote repository permissions.');
+        }
+        alert('Push successful!');
+    } catch (e: any) {
+        alert(`Push failed: ${e.message}`);
+        console.error("PUSH FAILED:", e);
+    } finally {
+        setIsGitNetworkActivity(false);
+        setGitNetworkProgress(null);
+    }
+  }, [gitService, getGitAuth]);
+
+  const handlePull = useCallback(async (rebase: boolean) => {
+      if (!gitService) return;
+      const auth = getGitAuth();
+      if (!auth) return;
+
+      setIsGitNetworkActivity(true);
+      setGitNetworkProgress('Pulling...');
+      try {
+          await gitService.pull(auth.author, auth.token, auth.proxyUrl, rebase, (progress) => {
+              setGitNetworkProgress(`${progress.phase} (${progress.loaded}/${progress.total})`);
+          });
+          const newFiles = await gitService.getHeadFiles();
+          setFiles(newFiles);
+          const newStatus = await gitService.status(newFiles);
+          setChangedFiles(newStatus);
+          alert('Pull successful!');
+      } catch (e: any) {
+          alert(`Pull failed: ${e.message}`);
+          console.error("PULL FAILED:", e);
+      } finally {
+          setIsGitNetworkActivity(false);
+          setGitNetworkProgress(null);
+      }
+  }, [gitService, getGitAuth, setFiles]);
+
+  const handleRebase = useCallback(async (branch: string) => {
+      if (!gitService) return;
+      const auth = getGitAuth();
+      if (!auth) return;
+
+      setIsGitNetworkActivity(true);
+      setGitNetworkProgress(`Rebasing onto ${branch}...`);
+      try {
+          await gitService.rebase(branch, auth.author);
+          const newFiles = await gitService.getHeadFiles();
+          setFiles(newFiles);
+          const newStatus = await gitService.status(newFiles);
+          setChangedFiles(newStatus);
+          alert('Rebase successful!');
+      } catch (e: any) {
+          alert(`Rebase failed: ${e.message}`);
+          console.error("REBASE FAILED:", e);
+      } finally {
+          setIsGitNetworkActivity(false);
+          setGitNetworkProgress(null);
+      }
+  }, [gitService, getGitAuth, setFiles]);
+
+  const internalHandleCommit = useCallback(async (message: string) => {
+    if (!gitService) throw new Error("Git service not available.");
+    const { gitUserName, gitUserEmail } = settings;
+    if (!gitUserName || !gitUserEmail) {
+        throw new Error("Please set your Git user name and email in the global settings.");
+    }
+    setIsCommitting(true);
+    try {
+        await gitService.commit(message, { name: gitUserName, email: gitUserEmail }, files);
+        setCommitMessage(''); // Clear message after successful commit
+        const newStatus = await gitService.status(files);
+        setChangedFiles(newStatus);
+    } catch (error: any) {
+        console.error("COMMIT FAILED:", error);
+        throw new Error(`Commit failed: ${error.message}`);
+    } finally {
+        setIsCommitting(false);
+    }
+  }, [files, settings, gitService]);
+
+  const handleCommit = useCallback(async (message: string) => {
+    try {
+        await internalHandleCommit(message);
+    } catch (e: any) {
+        alert(e.message);
+    }
+  }, [internalHandleCommit]);
+
+  const handleCommitAndPush = useCallback(async (message: string) => {
+    try {
+        await internalHandleCommit(message);
+        await handlePush(); // handlePush has its own internal alerting for success/failure
+    } catch (e: any) {
+        // This will only catch errors from the commit part
+        alert(e.message);
+    }
+  }, [internalHandleCommit, handlePush]);
+
+  const handleDiscardChanges = useCallback(async () => {
+    if (!gitService) {
+        alert("Git service is not available.");
+        return;
+    }
+    setIsCommitting(true); // Reuse loading state
+    try {
+        const headFiles = await gitService.getHeadFiles();
+        setFiles(headFiles);
+        // After resetting files, the status should be clean.
+        const newStatus = await gitService.status(headFiles);
+        setChangedFiles(newStatus);
+        alert("Workspace changes have been discarded.");
+    } catch (e: any) {
+        alert(`Failed to discard changes: ${e.message}`);
+        console.error("DISCARD FAILED:", e);
+    } finally {
+        setIsCommitting(false);
+    }
+  }, [gitService, setFiles]);
 
   const toolImplementations = useMemo(() => {
     const liveSessionControlsProxy = {
@@ -204,12 +350,18 @@ export const useAppLogic = () => {
       setScreenshotPreview, isScreenshotPreviewDisabled, setIsScreenshotPreviewDisabled,
       threads, activeThread, updateThread,
       aiRef, gitServiceRef,
+      onGitPush: handlePush,
+      onGitPull: handlePull,
+      onGitRebase: handleRebase,
+      onDiscardChanges: handleDiscardChanges,
+      setCommitMessage,
       projects, gitCredentials,
     });
   }, [
       files, setFiles, activeFile, setActiveFile,
       handleCommitAiToHead, activeView, bundleLogs, sandboxErrors, settings, 
-      setSettings, isScreenshotPreviewDisabled, threads, activeThread, updateThread, projects, gitCredentials, gitService
+      setSettings, isScreenshotPreviewDisabled, threads, activeThread, updateThread, projects, gitCredentials, gitService,
+      handlePush, handlePull, handleRebase, handleDiscardChanges, setCommitMessage
   ]);
 
   const liveSession = useAiLive({
@@ -261,27 +413,6 @@ export const useAppLogic = () => {
     }
   }, [settings, gitCredentials, createNewProject, switchProject]);
 
-  const handleCommit = useCallback(async (message: string) => {
-    if (!gitService) return;
-    const { gitUserName, gitUserEmail } = settings;
-    if (!gitUserName || !gitUserEmail) {
-        alert("Please set your Git user name and email in the global settings.");
-        return;
-    }
-    setIsCommitting(true);
-    try {
-        await gitService.commit(message, { name: gitUserName, email: gitUserEmail }, files);
-        // Refresh status after commit
-        const newStatus = await gitService.status(files);
-        setChangedFiles(newStatus);
-    } catch (error: any) {
-        alert(`Commit failed: ${error.message}`);
-        console.error("COMMIT FAILED:", error);
-    } finally {
-        setIsCommitting(false);
-    }
-  }, [files, settings, gitService]);
-
   const handleClearDebugLogs = useCallback(() => {
     clearGlobalLogs();
     setDebugLogs([]);
@@ -319,7 +450,7 @@ export const useAppLogic = () => {
     gitCredentials, createGitCredential, deleteGitCredential, setDefaultGitCredential,
     activeView, onNavigate,
     bundleLogs, handleLog, clearBundleLogs, sandboxErrors, handleRuntimeError,
-    isCommitting, handleCommit, isCloning, handleClone, cloningProgress, changedFiles,
+    isCommitting, handleCommit, handleCommitAndPush, isCloning, handleClone, cloningProgress, changedFiles,
     permissionError, setPermissionError,
     screenshotPreview, setScreenshotPreview, setIsScreenshotPreviewDisabled, isScreenshotPreviewDisabled,
     isProjectModalOpen, setIsProjectModalOpen,
@@ -336,6 +467,9 @@ export const useAppLogic = () => {
     debugLogs, isDebugLogModalOpen, setIsDebugLogModalOpen, handleClearDebugLogs,
     handleBranchSwitch,
     handleOpenFileInEditor,
+    isGitNetworkActivity, gitNetworkProgress, handlePush, handlePull, handleRebase,
+    handleDiscardChanges,
+    commitMessage, setCommitMessage,
     ...liveSession,
   };
 };

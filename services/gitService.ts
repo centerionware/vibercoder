@@ -154,6 +154,41 @@ class ElectronMainThreadGitService implements GitService {
             return null;
         }
     }
+    
+    async push(author: GitAuthor, token: string, proxyUrl: string, onProgress?: (progress: GitProgress) => void): Promise<{ ok: boolean, error?: string }> {
+        return git.push({
+            fs: this.fs,
+            http: this.http,
+            dir: this.dir,
+            onAuth: () => ({ username: token }),
+            onProgress,
+        });
+    }
+
+    async pull(author: GitAuthor, token: string, proxyUrl: string, rebase: boolean, onProgress?: (progress: GitProgress) => void): Promise<void> {
+        const branch = await git.currentBranch({ fs: this.fs, dir: this.dir });
+        if (!branch) throw new Error("Not on a branch, cannot pull.");
+        await git.pull({
+            fs: this.fs,
+            http: this.http,
+            dir: this.dir,
+            author,
+            ref: branch,
+            singleBranch: true,
+            rebase,
+            onAuth: () => ({ username: token }),
+            onProgress,
+        });
+    }
+
+    async rebase(branch: string, author: GitAuthor): Promise<void> {
+        await git.rebase({
+            fs: this.fs,
+            dir: this.dir,
+            branch,
+            author
+        });
+    }
 }
 
 
@@ -222,7 +257,7 @@ class WorkerGitService implements GitService {
             this.requests.set(id, { resolve, reject });
 
             let progressHandler: ((event: MessageEvent) => void) | null = null;
-            if (type === 'clone' && onProgress) {
+            if ((type === 'clone' || type === 'push' || type === 'pull') && onProgress) {
                 progressHandler = (event: MessageEvent) => {
                     if (event.data.type === 'progress' && event.data.id === id) {
                         onProgress(event.data.payload);
@@ -278,6 +313,18 @@ class WorkerGitService implements GitService {
         if (!this.worker) return this.mockService.readFileAtCommit(oid, filepath);
         return this.sendCommand('readFileAtCommit', { oid, filepath }); 
     }
+    push(author: GitAuthor, token: string, proxyUrl: string, onProgress?: (progress: GitProgress) => void): Promise<{ ok: boolean, error?: string }> {
+        if (!this.worker) return this.mockService.push(author, token, proxyUrl, onProgress);
+        return this.sendCommand('push', { token, proxyUrl }, onProgress);
+    }
+    pull(author: GitAuthor, token: string, proxyUrl: string, rebase: boolean, onProgress?: (progress: GitProgress) => void): Promise<void> {
+        if (!this.worker) return this.mockService.pull(author, token, proxyUrl, rebase, onProgress);
+        return this.sendCommand('pull', { author, token, proxyUrl, rebase }, onProgress);
+    }
+    rebase(branch: string, author: GitAuthor): Promise<void> {
+        if (!this.worker) return this.mockService.rebase(branch, author);
+        return this.sendCommand('rebase', { branch, author });
+    }
 }
 
 
@@ -293,6 +340,9 @@ class MockGitService implements GitService {
     async getCommitChanges(oid: string): Promise<GitFileChange[]> { console.warn("MockGitService: getCommitChanges called"); return []; }
     async readFileAtCommit(oid: string, filepath: string): Promise<string | null> { console.warn("MockGitService: readFileAtCommit called"); return null; }
     async getHeadFiles(): Promise<Record<string, string>> { console.warn("MockGitService: getHeadFiles called"); return {}; }
+    async push(author: GitAuthor, token: string, proxyUrl: string, onProgress?: (progress: GitProgress) => void): Promise<{ ok: boolean, error?: string }> { console.warn("MockGitService: push called"); return { ok: true }; }
+    async pull(author: GitAuthor, token: string, proxyUrl: string, rebase: boolean, onProgress?: (progress: GitProgress) => void): Promise<void> { console.warn("MockGitService: pull called"); }
+    async rebase(branch: string, author: GitAuthor): Promise<void> { console.warn("MockGitService: rebase called"); }
 }
 
 // --- Service Factory ---

@@ -1,18 +1,32 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import ReactDOM from 'react-dom';
 import SpinnerIcon from '../icons/SpinnerIcon';
 import { GitStatus, GitFileStatus, GitService, GitCommit, GitFileChange, DiffLine } from '../../types';
 import GitIcon from '../icons/GitIcon';
 import CodeIcon from '../icons/CodeIcon';
 import { performDiff } from '../../utils/diff';
+import ArrowUpIcon from '../icons/ArrowUpIcon';
+import ArrowDownIcon from '../icons/ArrowDownIcon';
+import ChevronDownIcon from '../icons/ChevronDownIcon';
+import RotateCcwIcon from '../icons/RotateCcwIcon';
 
 interface GitViewProps {
   files: Record<string, string>;
   changedFiles: GitStatus[];
   onCommit: (message: string) => Promise<void>;
+  onCommitAndPush: (message: string) => Promise<void>;
   isCommitting: boolean;
   gitService: GitService | null;
   onBranchSwitch: (branchName: string) => Promise<void>;
   onOpenFileInEditor: (filepath: string) => void;
+  onPush: () => Promise<void>;
+  onPull: (rebase: boolean) => Promise<void>;
+  onRebase: (branch: string) => Promise<void>;
+  isGitNetworkActivity: boolean;
+  gitNetworkProgress: string | null;
+  onDiscardChanges: () => Promise<void>;
+  commitMessage: string;
+  onCommitMessageChange: (message: string) => void;
 }
 
 const statusColors: Record<GitFileStatus, { text: string; bg: string; label: string }> = {
@@ -78,8 +92,12 @@ const DiffViewer: React.FC<{
 };
 
 
-const GitView: React.FC<GitViewProps> = ({ files, changedFiles, onCommit, isCommitting, gitService, onBranchSwitch, onOpenFileInEditor }) => {
-  const [commitMessage, setCommitMessage] = useState('');
+const GitView: React.FC<GitViewProps> = (props) => {
+  const { 
+    files, changedFiles, onCommit, onCommitAndPush, isCommitting, gitService, onBranchSwitch, 
+    onOpenFileInEditor, onPush, onPull, onRebase, isGitNetworkActivity, gitNetworkProgress, onDiscardChanges,
+    commitMessage, onCommitMessageChange
+  } = props;
   const [isLoading, setIsLoading] = useState(false);
   const [branches, setBranches] = useState<string[]>([]);
   const [activeBranch, setActiveBranch] = useState<string | null>(null);
@@ -90,6 +108,13 @@ const GitView: React.FC<GitViewProps> = ({ files, changedFiles, onCommit, isComm
   const [activeDiffFile, setActiveDiffFile] = useState<GitStatus | GitFileChange | null>(null);
   const [activeDiff, setActiveDiff] = useState<DiffLine[] | null>(null);
   const [isDiffLoading, setIsDiffLoading] = useState(false);
+  
+  const [isCommitMenuOpen, setIsCommitMenuOpen] = useState(false);
+  const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({});
+  const commitButtonRef = useRef<HTMLDivElement>(null);
+  
+  const isBusy = isCommitting || isGitNetworkActivity;
+  const baseButtonClass = "flex-1 flex items-center justify-center gap-2 text-sm bg-vibe-bg text-vibe-text-secondary px-3 py-2 rounded-md hover:bg-vibe-comment transition-colors disabled:opacity-50 disabled:cursor-wait";
 
   const loadHistory = useCallback(async (branch?: string) => {
     if (!gitService) return;
@@ -108,14 +133,57 @@ const GitView: React.FC<GitViewProps> = ({ files, changedFiles, onCommit, isComm
   }, [gitService]);
 
   useEffect(() => { loadHistory(); }, [loadHistory]);
+  
+  // Effect to handle closing the commit menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (isCommitMenuOpen && commitButtonRef.current && !commitButtonRef.current.contains(event.target as Node)) {
+        setIsCommitMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isCommitMenuOpen]);
 
   const handleCommit = async () => {
     if (!commitMessage.trim()) return;
     await onCommit(commitMessage.trim());
-    setCommitMessage('');
     setActiveDiffFile(null);
     setActiveDiff(null);
     await loadHistory(activeBranch || undefined);
+  };
+
+  const handleCommitAndPush = async () => {
+    if (!commitMessage.trim()) return;
+    setIsCommitMenuOpen(false); // Close menu first
+    await onCommitAndPush(commitMessage.trim());
+    setActiveDiffFile(null);
+    setActiveDiff(null);
+    await loadHistory(activeBranch || undefined);
+  };
+
+  const toggleCommitMenu = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (commitButtonRef.current) {
+        const rect = commitButtonRef.current.getBoundingClientRect();
+        const menuHeight = 44; // Height of one button with padding
+        
+        const style: React.CSSProperties = {
+            width: `${rect.width}px`,
+            left: `${rect.left}px`,
+            zIndex: 50,
+        };
+
+        // Prefer opening upwards
+        if (rect.top > menuHeight + 8) {
+            style.top = `${rect.top - menuHeight - 4}px`;
+        } else {
+            // Fallback to opening downwards
+            style.top = `${rect.bottom + 4}px`;
+        }
+        setMenuStyle(style);
+    }
+    setIsCommitMenuOpen(prev => !prev);
   };
 
   const handleSelectBranch = async (branchName: string) => {
@@ -164,22 +232,17 @@ const GitView: React.FC<GitViewProps> = ({ files, changedFiles, onCommit, isComm
   const handleSelectCommitFile = async (file: GitFileChange) => {
     if (!gitService || !selectedCommit) return;
       setActiveDiffFile(file);
-      // If the diff was pre-calculated, show it immediately for better UX.
       if (file.diff) {
           setActiveDiff(file.diff);
       }
       setIsDiffLoading(true);
       try {
           const parentOid = selectedCommit.parent[0];
-          
           const contentAfter = await gitService.readFileAtCommit(selectedCommit.oid, file.filepath);
-  
           let contentBefore = '';
-          // Only read parent if parent exists and file was not added in this commit
           if (parentOid && file.status !== 'added') {
               contentBefore = await gitService.readFileAtCommit(parentOid, file.filepath) || '';
           }
-          
           const diff = performDiff(contentBefore, contentAfter || '');
           setActiveDiff(diff);
       } catch (e) {
@@ -189,20 +252,66 @@ const GitView: React.FC<GitViewProps> = ({ files, changedFiles, onCommit, isComm
           setIsDiffLoading(false);
       }
   };
+  
+  const handlePull = async (rebase: boolean) => {
+      await onPull(rebase);
+      await loadHistory(activeBranch || undefined);
+  };
+
+  const handleRebase = async () => {
+    const upstreamBranch = branches.find(b => b.startsWith('origin/')) || branches.find(b => b !== activeBranch && !b.startsWith('HEAD')) || 'main';
+    const targetBranch = prompt("Enter the branch to rebase onto:", upstreamBranch);
+    if (targetBranch) {
+        await onRebase(targetBranch);
+        await loadHistory(activeBranch || undefined);
+    }
+  };
+
+  const handleDiscard = () => {
+    if (window.confirm("Are you sure you want to discard all uncommitted changes in your workspace? This action cannot be undone.")) {
+        onDiscardChanges();
+    }
+  };
+
 
   const displayedChanges = selectedCommit ? commitChanges : changedFiles;
 
   return (
     <div className="flex flex-col flex-1 h-full bg-vibe-bg-deep rounded-lg overflow-hidden p-4 gap-4">
-      {/* Top Section */}
       <div className="flex-1 flex gap-4 overflow-hidden">
-        {/* Left Pane: History */}
         <div className="w-1/2 bg-vibe-panel rounded-lg p-2 flex flex-col">
           <div className="flex-shrink-0 mb-2">
             <label htmlFor="branch-select" className="text-sm font-semibold text-vibe-text-secondary block mb-1">Branch</label>
-            <select id="branch-select" value={activeBranch || ''} onChange={e => handleSelectBranch(e.target.value)} disabled={isLoading} className="w-full bg-vibe-bg p-2 rounded-md text-vibe-text focus:outline-none focus:ring-2 focus:ring-vibe-accent disabled:opacity-50">
+            <select id="branch-select" value={activeBranch || ''} onChange={e => handleSelectBranch(e.target.value)} disabled={isLoading || isBusy} className="w-full bg-vibe-bg p-2 rounded-md text-vibe-text focus:outline-none focus:ring-2 focus:ring-vibe-accent disabled:opacity-50">
               {branches.map(b => <option key={b} value={b}>{b}</option>)}
             </select>
+          </div>
+          <div className="flex-shrink-0 mb-2 p-2 bg-vibe-bg-deep rounded-md">
+            <div className="flex gap-2">
+                <button onClick={onPush} disabled={isBusy} className={baseButtonClass}>
+                    {isGitNetworkActivity ? <SpinnerIcon className="w-4 h-4" /> : <ArrowUpIcon className="w-4 h-4"/>} Push
+                </button>
+                <button onClick={() => handlePull(false)} disabled={isBusy} className={baseButtonClass}>
+                    {isGitNetworkActivity ? <SpinnerIcon className="w-4 h-4" /> : <ArrowDownIcon className="w-4 h-4"/>} Pull
+                </button>
+            </div>
+            <div className="flex gap-2 mt-2">
+                <button onClick={() => handlePull(true)} disabled={isBusy} className={`${baseButtonClass} text-xs`}>Pull with Rebase</button>
+                <button onClick={handleRebase} disabled={isBusy} className={`${baseButtonClass} text-xs`}>Rebase...</button>
+            </div>
+            <div className="border-t border-vibe-panel my-2"></div>
+            <div className="flex gap-2">
+                <button 
+                    onClick={handleDiscard} 
+                    disabled={isBusy || changedFiles.length === 0} 
+                    className={`${baseButtonClass} text-yellow-400 hover:bg-yellow-500/10 border border-yellow-500/20`}
+                >
+                    <RotateCcwIcon className="w-4 h-4"/> Discard Changes
+                </button>
+            </div>
+             {isGitNetworkActivity && gitNetworkProgress && (
+                <div className="text-xs text-vibe-comment mt-2 text-center animate-pulse">{gitNetworkProgress}</div>
+            )}
           </div>
           <h3 className="text-lg font-semibold mb-2 text-vibe-text-secondary flex-shrink-0">History</h3>
           <ul className="overflow-y-auto space-y-2 flex-1">
@@ -217,15 +326,12 @@ const GitView: React.FC<GitViewProps> = ({ files, changedFiles, onCommit, isComm
             ))}
           </ul>
         </div>
-        {/* Right Pane: Diff */}
         <div className="w-1/2 bg-vibe-panel rounded-lg overflow-hidden">
           <DiffViewer file={activeDiffFile} diff={activeDiff} isLoading={isDiffLoading} onOpenFileInEditor={onOpenFileInEditor} />
         </div>
       </div>
 
-      {/* Bottom Section */}
       <div className="flex-shrink-0 h-2/5 bg-vibe-panel rounded-lg p-2 flex gap-4 overflow-hidden">
-        {/* Changes List */}
         <div className="w-1/2 flex flex-col">
           <header className="flex-shrink-0 mb-2">
              {selectedCommit ? (
@@ -252,13 +358,42 @@ const GitView: React.FC<GitViewProps> = ({ files, changedFiles, onCommit, isComm
             }) : <p className="text-vibe-comment text-xs p-2">No changes to display.</p>}
           </ul>
         </div>
-        {/* Commit Box */}
         <div className="w-1/2 flex flex-col">
-          <textarea value={commitMessage} onChange={(e) => setCommitMessage(e.target.value)} placeholder="Enter commit message..." rows={3} className="w-full bg-vibe-bg p-2 rounded-md text-vibe-text text-sm focus:outline-none focus:ring-2 focus:ring-vibe-accent disabled:opacity-50 flex-1" disabled={!!selectedCommit || changedFiles.length === 0 || isCommitting} />
-          <button onClick={handleCommit} disabled={!!selectedCommit || changedFiles.length === 0 || !commitMessage.trim() || isCommitting} className="w-full mt-2 bg-vibe-accent text-white py-2 rounded-md hover:bg-vibe-accent-hover transition-colors disabled:bg-vibe-comment disabled:cursor-not-allowed flex items-center justify-center">
-            {isCommitting ? <SpinnerIcon className="w-5 h-5 mr-2" /> : <GitIcon className="w-5 h-5 mr-2" />}
-            {isCommitting ? 'Committing...' : `Commit ${changedFiles.length} File(s)`}
-          </button>
+          <textarea value={commitMessage} onChange={(e) => onCommitMessageChange(e.target.value)} placeholder="Enter commit message... or ask the AI to generate one!" rows={3} className="w-full bg-vibe-bg p-2 rounded-md text-vibe-text text-sm focus:outline-none focus:ring-2 focus:ring-vibe-accent disabled:opacity-50 flex-1" disabled={!!selectedCommit || changedFiles.length === 0 || isBusy} />
+          
+          <div ref={commitButtonRef} className="relative mt-2 flex">
+            <button
+              onClick={handleCommit}
+              disabled={!!selectedCommit || changedFiles.length === 0 || !commitMessage.trim() || isBusy}
+              className="flex-grow bg-vibe-accent text-white py-2 rounded-l-md hover:bg-vibe-accent-hover transition-colors disabled:bg-vibe-comment disabled:cursor-not-allowed flex items-center justify-center"
+            >
+              {isCommitting ? <SpinnerIcon className="w-5 h-5 mr-2" /> : <GitIcon className="w-5 h-5 mr-2" />}
+              {isCommitting ? 'Committing...' : `Commit ${changedFiles.length} File(s)`}
+            </button>
+            <button
+              onClick={toggleCommitMenu}
+              disabled={!!selectedCommit || changedFiles.length === 0 || isBusy}
+              className="flex-shrink-0 w-10 bg-vibe-accent hover:bg-vibe-accent-hover rounded-r-md border-l border-white/20 flex items-center justify-center disabled:bg-vibe-comment disabled:cursor-not-allowed"
+              aria-haspopup="true"
+              aria-expanded={isCommitMenuOpen}
+              aria-label="Commit options"
+            >
+                <ChevronDownIcon className="w-4 h-4 text-white" />
+            </button>
+          </div>
+
+          {isCommitMenuOpen && ReactDOM.createPortal(
+            <div style={menuStyle} className="absolute bg-vibe-bg-deep rounded-md shadow-lg border border-vibe-panel p-1">
+                <button
+                    onClick={handleCommitAndPush}
+                    disabled={!commitMessage.trim() || isBusy}
+                    className="w-full text-left px-3 py-2 text-sm rounded-md text-vibe-text-secondary hover:bg-vibe-panel disabled:opacity-50 flex items-center gap-2"
+                >
+                    Commit & Push
+                </button>
+            </div>,
+            document.body
+          )}
         </div>
       </div>
     </div>

@@ -67,10 +67,19 @@ const ViewRenderer: React.FC<ViewRendererProps> = (app) => {
           files={app.files}
           changedFiles={app.changedFiles}
           onCommit={app.handleCommit}
+          onCommitAndPush={app.handleCommitAndPush}
           isCommitting={app.isCommitting}
           gitService={app.gitServiceRef.current} // Pass the actual service
           onBranchSwitch={app.handleBranchSwitch}
           onOpenFileInEditor={app.handleOpenFileInEditor}
+          onPush={app.handlePush}
+          onPull={app.handlePull}
+          onRebase={app.handleRebase}
+          isGitNetworkActivity={app.isGitNetworkActivity}
+          gitNetworkProgress={app.gitNetworkProgress}
+          onDiscardChanges={app.handleDiscardChanges}
+          commitMessage={app.commitMessage}
+          onCommitMessageChange={app.setCommitMessage}
         />
       );
     case View.Settings:

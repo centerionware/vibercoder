@@ -192,6 +192,11 @@ export interface ToolImplementationsDependencies {
   aiRef: React.RefObject<GoogleGenAI | null>;
   // Git
   gitServiceRef: React.RefObject<GitService | null>;
+  onGitPush: () => Promise<void>;
+  onGitPull: (rebase: boolean) => Promise<void>;
+  onGitRebase: (branch: string) => Promise<void>;
+  onDiscardChanges: () => Promise<void>;
+  setCommitMessage: React.Dispatch<React.SetStateAction<string>>;
   // Project Management
   projects: Project[];
   gitCredentials: GitCredential[];
@@ -201,7 +206,7 @@ export interface ToolImplementationsDependencies {
 // Git Service
 export interface GitService {
     isReal: boolean;
-    clone(url: string, proxyUrl: string | undefined, author: GitAuthor, token: string, onProgress?: (progress: GitProgress) => void): Promise<void>;
+    clone(url: string, proxyUrl: string, author: GitAuthor, token: string, onProgress?: (progress: GitProgress) => void): Promise<void>;
     status(appFiles: Record<string, string>, changedFilePaths?: string[]): Promise<GitStatus[]>;
     commit(message: string, author: GitAuthor, appFiles: Record<string, string>): Promise<{ oid: string }>;
     log(ref?: string): Promise<GitCommit[]>;
@@ -210,6 +215,9 @@ export interface GitService {
     getCommitChanges(oid: string): Promise<GitFileChange[]>;
     readFileAtCommit(oid: string, filepath: string): Promise<string | null>;
     getHeadFiles(): Promise<Record<string, string>>;
+    push(author: GitAuthor, token: string, proxyUrl: string, onProgress?: (progress: GitProgress) => void): Promise<{ ok: boolean, error?: string }>;
+    pull(author: GitAuthor, token:string, proxyUrl: string, rebase: boolean, onProgress?: (progress: GitProgress) => void): Promise<void>;
+    rebase(branch: string, author: GitAuthor): Promise<void>;
 }
 
 export enum GitFileStatus {
