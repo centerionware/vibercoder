@@ -14,7 +14,7 @@ interface ProjectManagementModalProps {
   onSwitchProject: (id: string) => void;
   onDeleteProject: (id: string) => void;
   onOpenProjectSettings: (project: Project) => void;
-  onCloneProject: (url: string, name: string) => void;
+  onCloneProject: (url: string, name: string) => Promise<void>;
   isCloning?: boolean;
   cloningProgress?: string | null;
 }
@@ -34,11 +34,9 @@ const ProjectManagementModal: React.FC<ProjectManagementModalProps> = (props) =>
     }
   };
 
-  const handleClone = () => {
+  const handleClone = async () => {
       if (cloneUrl.trim() && cloneProjectName.trim()) {
-          onCloneProject(cloneUrl, cloneProjectName);
-          setCloneUrl('');
-          setCloneProjectName('');
+          await onCloneProject(cloneUrl, cloneProjectName);
       }
   }
 

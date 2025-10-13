@@ -82,30 +82,37 @@ export const useAppLogic = () => {
     setGitService(createGitService(true, activeProjectId));
   }, [activeProjectId]);
 
-  // Effect to load project files when the active project changes.
+  // Effect to load project files when the active project changes. This is the primary sync point.
   useEffect(() => {
-    if (!gitService || !activeProject) return;
+    if (!gitService || !activeProject) {
+        // If there's no project yet (e.g., initial load), don't do anything.
+        return;
+    };
 
     const loadProjectFiles = async () => {
-      console.log(`Loading files for project: ${activeProject.name}`);
+      console.log(`Syncing workspace for project: "${activeProject.name}"`);
       const headFiles = await gitService.getHeadFiles();
       
-      if (activeProject.gitRemoteUrl && Object.keys(headFiles).length === 0) {
-        // This is a cloned, but empty, repository.
-        setFiles({});
-      } else if (!activeProject.gitRemoteUrl && Object.keys(headFiles).length === 0) {
-        // This is a new, local project that hasn't been committed yet.
-        setFiles(initialFiles);
-      } else {
-        // This is an existing project with files.
+      if (Object.keys(headFiles).length > 0) {
+        // If the repository has files, always use them as the source of truth.
+        console.log(`Found ${Object.keys(headFiles).length} files in git HEAD. Updating workspace.`);
         setFiles(headFiles);
+      } else if (activeProject.gitRemoteUrl) {
+        // If the repository has no files but is linked to a remote, it's a cloned, empty repo.
+        console.log("Project is remote but has no files. Setting workspace to empty.");
+        setFiles({});
+      } else {
+        // If there are no files and no remote, it's a new, local project. Populate with the template.
+        console.log("Project is local and has no files. Populating with initial template.");
+        setFiles(initialFiles);
       }
-      // After loading files from the definitive source (git HEAD), the workspace is clean.
+      
+      // The workspace is now in sync with its source (either git HEAD or a template), so there are no pending changes.
       setChangedFiles([]);
     };
 
     loadProjectFiles();
-  }, [activeProjectId, gitService]); // This effect synchronizes the workspace.
+  }, [activeProject, gitService]); // Dependencies are now correct, ensuring no stale state.
   
   // Fetch git status when the view changes to Git or files change
   useEffect(() => {
