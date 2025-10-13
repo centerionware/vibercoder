@@ -10,7 +10,7 @@ export const viewShortTermMemoryFunction: FunctionDeclaration = {
 
 export const updateShortTermMemoryFunction: FunctionDeclaration = {
   name: 'updateShortTermMemory',
-  description: "Add or update an item in your short-term memory. Use this to remember key information like the current task, important file paths, or user preferences. Use keys like 'current_task', 'relevant_files', 'user_goal'.",
+  description: "Add or update an item in your short-term memory. Use this to remember key information like the current task, important file paths, or user preferences. Use keys like 'current_task', 'relevant_files', 'user_goal', 'active_protocols'.",
   parameters: {
     type: Type.OBJECT,
     properties: {
@@ -28,13 +28,17 @@ export const updateShortTermMemoryFunction: FunctionDeclaration = {
 
 export const removeFromShortTermMemoryFunction: FunctionDeclaration = {
   name: 'removeFromShortTermMemory',
-  description: 'Remove an item from your short-term memory when it is no longer relevant.',
+  description: 'Remove one or more items from your short-term memory when they are no longer relevant, such as at the end of a task.',
   parameters: {
     type: Type.OBJECT,
     properties: {
-      key: { type: Type.STRING, description: 'The key of the memory item to remove.' },
+      keys: { 
+        type: Type.ARRAY,
+        items: { type: Type.STRING },
+        description: 'An array of keys for the memory items to remove.' 
+      },
     },
-    required: ['key'],
+    required: ['keys'],
   },
 };
 
@@ -89,19 +93,30 @@ export const getImplementations = ({ activeThread, updateThread }: Pick<ToolImpl
             updateThread(thread.id, { shortTermMemory: newMemory });
             return { success: true, key, value };
         },
-        removeFromShortTermMemory: async (args: { key: string }) => {
+        removeFromShortTermMemory: async (args: { keys: string[] }) => {
             const thread = ensureThread();
-            const { key } = args;
+            const { keys } = args;
 
-            if (!thread.shortTermMemory || !thread.shortTermMemory[key]) {
-                throw new Error(`Key "${key}" not found in short-term memory.`);
+            if (!Array.isArray(keys)) {
+                throw new Error("The 'keys' parameter must be an array of strings.");
+            }
+
+            if (!thread.shortTermMemory) {
+                return { success: true, removedKeys: [] };
             }
 
             const newMemory = { ...thread.shortTermMemory };
-            delete newMemory[key];
+            const removedKeys: string[] = [];
+
+            for (const key of keys) {
+                if (newMemory[key]) {
+                    delete newMemory[key];
+                    removedKeys.push(key);
+                }
+            }
 
             updateThread(thread.id, { shortTermMemory: newMemory });
-            return { success: true, key };
+            return { success: true, removedKeys };
         },
     };
 };

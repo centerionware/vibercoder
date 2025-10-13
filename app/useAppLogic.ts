@@ -7,6 +7,7 @@ import { useFiles, initialFiles } from '../hooks/useFiles';
 import { useProjects } from '../hooks/useProjects';
 import { useThreads } from '../hooks/useThreads';
 import { useGitCredentials } from '../hooks/useGitCredentials';
+import { usePrompts } from '../hooks/usePrompts';
 import { useAiLive } from '../hooks/useAiLive';
 import { useWakeWord } from '../hooks/useWakeWord';
 import { isNativeEnvironment } from '../utils/environment';
@@ -25,6 +26,7 @@ export const useAppLogic = () => {
   const { files, setFiles, activeFile, setActiveFile, onWriteFile, onRemoveFile } = useFiles();
   const { threads, activeThread, activeThreadId, createNewThread, switchThread, deleteThread, addMessage, updateMessage, updateHistory, updateThread } = useThreads(activeProjectId);
   const { gitCredentials, createGitCredential, deleteGitCredential, setDefaultGitCredential } = useGitCredentials();
+  const { prompts, createPrompt, updatePrompt, revertToVersion } = usePrompts();
   
   // --- State ---
   const [activeView, setActiveView] = useState<View>(View.Ai);
@@ -356,12 +358,14 @@ export const useAppLogic = () => {
       onDiscardChanges: handleDiscardChanges,
       setCommitMessage,
       projects, gitCredentials,
+      prompts, updatePrompt,
     });
   }, [
       files, setFiles, activeFile, setActiveFile,
       handleCommitAiToHead, activeView, bundleLogs, sandboxErrors, settings, 
       setSettings, isScreenshotPreviewDisabled, threads, activeThread, updateThread, projects, gitCredentials, gitService,
-      handlePush, handlePull, handleRebase, handleDiscardChanges, setCommitMessage
+      handlePush, handlePull, handleRebase, handleDiscardChanges, setCommitMessage,
+      prompts, updatePrompt
   ]);
 
   const liveSession = useAiLive({
@@ -448,6 +452,7 @@ export const useAppLogic = () => {
     files, activeFile, onFileChange: onWriteFile, onFileSelect: setActiveFile, onFileAdd: onWriteFile, onFileRemove: onRemoveFile,
     threads, activeThread, activeThreadId, createNewThread, switchThread, deleteThread, addMessage, updateMessage, updateHistory, updateThread,
     gitCredentials, createGitCredential, deleteGitCredential, setDefaultGitCredential,
+    prompts, createPrompt, updatePrompt, revertToVersion,
     activeView, onNavigate,
     bundleLogs, handleLog, clearBundleLogs, sandboxErrors, handleRuntimeError,
     isCommitting, handleCommit, handleCommitAndPush, isCloning, handleClone, cloningProgress, changedFiles,

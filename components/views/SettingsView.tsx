@@ -1,9 +1,10 @@
 import React from 'react';
-import { AppSettings, GitCredential } from '../../types';
+import { AppSettings, GitCredential, View } from '../../types';
 import ApiConfig from '../modals/settings/ApiConfig';
 import AiModelConfig from '../modals/settings/AiModelConfig';
 import VoiceAssistantConfig from '../modals/settings/VoiceAssistantConfig';
 import GitConfig from '../modals/settings/GitConfig';
+import AiPromptConfig from '../modals/settings/AiPromptConfig';
 
 interface SettingsViewProps {
   settings: AppSettings;
@@ -11,10 +12,11 @@ interface SettingsViewProps {
   gitCredentials: GitCredential[];
   onManageCredentials: () => void;
   onOpenDebugLog: () => void;
+  onNavigate: (view: View) => void;
 }
 
 const SettingsView: React.FC<SettingsViewProps> = (props) => {
-  const { settings, onSettingsChange, gitCredentials, onManageCredentials, onOpenDebugLog } = props;
+  const { settings, onSettingsChange, gitCredentials, onManageCredentials, onOpenDebugLog, onNavigate } = props;
   return (
     <div className="flex-1 h-full bg-vibe-bg-deep rounded-lg overflow-y-auto p-4 md:p-6">
       <div className="max-w-4xl mx-auto space-y-8">
@@ -27,6 +29,7 @@ const SettingsView: React.FC<SettingsViewProps> = (props) => {
         
         <ApiConfig settings={settings} onSettingsChange={onSettingsChange} />
         <AiModelConfig settings={settings} onSettingsChange={onSettingsChange} />
+        <AiPromptConfig onNavigate={onNavigate} />
         <VoiceAssistantConfig settings={settings} onSettingsChange={onSettingsChange} />
         <GitConfig 
           settings={settings} 

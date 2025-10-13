@@ -5,6 +5,7 @@ import PreviewView from '../components/views/PreviewView';
 import AiView from '../components/views/AiView';
 import GitView from '../components/views/GitView';
 import SettingsView from '../components/views/SettingsView';
+import PromptsView from '../components/views/PromptsView';
 import { View } from '../types';
 
 type ViewRendererProps = ReturnType<typeof useAppLogic>;
@@ -90,6 +91,16 @@ const ViewRenderer: React.FC<ViewRendererProps> = (app) => {
           gitCredentials={app.gitCredentials}
           onManageCredentials={() => app.setIsGitCredentialsModalOpen(true)}
           onOpenDebugLog={() => app.setIsDebugLogModalOpen(true)}
+          onNavigate={app.onNavigate}
+        />
+      );
+    case View.Prompts:
+      return (
+        <PromptsView
+            prompts={app.prompts}
+            createPrompt={app.createPrompt}
+            updatePrompt={app.updatePrompt}
+            revertToVersion={app.revertToVersion}
         />
       );
     default:

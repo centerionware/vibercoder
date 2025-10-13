@@ -8,6 +8,7 @@ export enum View {
   Ai = 'ai',
   Git = 'git',
   Settings = 'settings',
+  Prompts = 'prompts',
 }
 
 export interface AppSettings {
@@ -200,6 +201,25 @@ export interface ToolImplementationsDependencies {
   // Project Management
   projects: Project[];
   gitCredentials: GitCredential[];
+  // Prompt Management
+  prompts: Prompt[];
+  updatePrompt: (id: string, content: string, author: 'user' | 'ai') => Promise<void>;
+}
+
+// Prompt Management
+export interface PromptVersion {
+  versionId: string;
+  content: string;
+  createdAt: number;
+  author: 'user' | 'ai';
+}
+
+export interface Prompt {
+  id: string; // The "key" or unique name of the prompt
+  description: string;
+  versions: PromptVersion[];
+  currentVersionId: string;
+  createdAt: number;
 }
 
 
