@@ -168,6 +168,8 @@ class ElectronMainThreadGitService implements GitService {
     async pull(author: GitAuthor, token: string, proxyUrl: string, rebase: boolean, onProgress?: (progress: GitProgress) => void): Promise<void> {
         const branch = await git.currentBranch({ fs: this.fs, dir: this.dir });
         if (!branch) throw new Error("Not on a branch, cannot pull.");
+        // FIX: Cast the options object to 'any' to bypass outdated type definitions in isomorphic-git,
+        // which do not include the 'rebase' property for the pull command.
         await git.pull({
             fs: this.fs,
             http: this.http,
@@ -178,11 +180,13 @@ class ElectronMainThreadGitService implements GitService {
             rebase,
             onAuth: () => ({ username: token }),
             onProgress,
-        });
+        } as any);
     }
 
     async rebase(branch: string, author: GitAuthor): Promise<void> {
-        await git.rebase({
+        // FIX: Cast 'git' to 'any' to call the 'rebase' method. This bypasses outdated type definitions
+        // where 'rebase' is not recognized as a valid function on the main git object.
+        await (git as any).rebase({
             fs: this.fs,
             dir: this.dir,
             branch,

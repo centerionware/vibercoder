@@ -181,6 +181,11 @@ self.onmessage = async (event: MessageEvent) => {
       
       case 'pull':
         const currentBranch = await git.currentBranch({ fs, dir });
+        // FIX: Added a check to ensure a branch is checked out before pulling, preventing a runtime error.
+        // The `ref` property requires a string, but `currentBranch` can be undefined.
+        if (!currentBranch) {
+          throw new Error("Not on a branch, cannot pull. Please checkout a branch first.");
+        }
         await git.pull({
             fs, http, dir, corsProxy: payload.proxyUrl,
             onAuth: () => ({ username: payload.token }),
@@ -196,7 +201,9 @@ self.onmessage = async (event: MessageEvent) => {
         break;
 
       case 'rebase':
-        await git.rebase({
+        // FIX: Cast 'git' to 'any' to call the 'rebase' method. This bypasses outdated type definitions
+        // where 'rebase' is not recognized as a valid function on the main git object.
+        await (git as any).rebase({
             fs, dir,
             branch: payload.branch,
             author: payload.author
