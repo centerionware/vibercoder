@@ -30,7 +30,7 @@ interface AiViewProps {
   startLiveSession: () => Promise<boolean>;
   stopLiveSession: () => void;
   toggleMute: () => void;
-  onStartAiRequest: () => Promise<void>;
+  onStartAiRequest: () => void;
   onEndAiRequest: () => void;
 }
 
