@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { View, GitService, ChatThread, AppSettings, Project, GitSettings, GitCredential, GitAuthor, LogEntry, GitProgress, GitStatus, CopyOnWriteVFS } from '../types';
+import { View, GitService, ChatThread, AppSettings, Project, GitSettings, GitCredential, GitAuthor, LogEntry, GitProgress, GitStatus, CopyOnWriteVFS, DELETED_FILE_SENTINEL } from '../types';
 
 import { useSettings } from '../hooks/useSettings';
 import { useFiles, initialFiles } from '../hooks/useFiles';
@@ -23,7 +23,7 @@ export const useAppLogic = () => {
   // --- Core Hooks ---
   const { settings, setSettings, isSettingsLoaded } = useSettings();
   const { projects, activeProject, activeProjectId, createNewProject, switchProject, deleteProject, updateProject } = useProjects();
-  const { files, setFiles, activeFile, setActiveFile, onWriteFile, onRemoveFile } = useFiles();
+  const { files, setFiles, activeFile, setActiveFile } = useFiles();
   const { threads, activeThread, activeThreadId, createNewThread, switchThread, deleteThread, addMessage, updateMessage, updateHistory, updateThread } = useThreads(activeProjectId);
   const { gitCredentials, createGitCredential, deleteGitCredential, setDefaultGitCredential } = useGitCredentials();
   const { prompts, createPrompt, updatePrompt, revertToVersion, deletePrompt } = usePrompts();
@@ -84,102 +84,8 @@ export const useAppLogic = () => {
       catch (error) { console.error("Failed to initialize GoogleGenAI:", error); aiRef.current = null; }
     } else { aiRef.current = null; }
   }, [settings.apiKey]);
-
-  useEffect(() => {
-    setGitService(createGitService(true, activeProjectId));
-  }, [activeProjectId]);
-
-  // Effect to load project files when the active project changes. This is the primary sync point.
-  useEffect(() => {
-    if (!gitService || !activeProject) {
-        // If there's no project yet (e.g., initial load), don't do anything.
-        return;
-    };
-
-    const loadProjectFiles = async () => {
-      console.log(`Syncing workspace for project: "${activeProject.name}"`);
-      const headFiles = await gitService.getHeadFiles();
-      
-      if (Object.keys(headFiles).length > 0) {
-        // If the repository has files, always use them as the source of truth.
-        console.log(`Found ${Object.keys(headFiles).length} files in git HEAD. Updating workspace.`);
-        setFiles(headFiles);
-      } else if (activeProject.gitRemoteUrl) {
-        // If the repository has no files but is linked to a remote, it's a cloned, empty repo.
-        console.log("Project is remote but has no files. Setting workspace to empty.");
-        setFiles({});
-      } else {
-        // If there are no files and no remote, it's a new, local project. Populate with the template.
-        console.log("Project is local and has no files. Populating with initial template.");
-        setFiles(initialFiles);
-      }
-      
-      // The workspace is now in sync with its source (either git HEAD or a template), so there are no pending changes.
-      setChangedFiles([]);
-    };
-
-    loadProjectFiles();
-  }, [activeProject, gitService, setFiles]);
   
-  // Fetch git status when the view changes to Git or files change
-  useEffect(() => {
-    if (gitService?.isReal && activeView === View.Git) {
-        gitService.status(files).then(setChangedFiles).catch(err => {
-            console.error("Failed to get git status:", err);
-            setChangedFiles([]);
-        });
-    }
-  }, [activeView, gitService, files]);
-  
-  const onNavigate = (view: View) => setActiveView(view);
-  
-  const onEndAiRequest = useCallback(() => {
-    if (aiVirtualFilesRef.current !== null) {
-      console.log("Ending AI session, clearing VFS.");
-      aiVirtualFilesRef.current = null;
-      originalHeadFilesRef.current = null;
-      // Reset the promise to a resolved state for the next turn.
-      vfsReadyPromiseRef.current = Promise.resolve();
-    }
-  }, []);
-
-  const handleCommitAiToHead = useCallback(() => {
-    const vfs = aiVirtualFilesRef.current;
-    if(vfs) {
-        // Apply mutations to create the new state
-        const newFiles = { ...vfs.originalFiles };
-        for (const [filepath, mutation] of Object.entries(vfs.mutations)) {
-            if (typeof mutation === 'string') {
-                newFiles[filepath] = mutation; // Add or update
-            } else { // DELETED_FILE_SENTINEL
-                delete newFiles[filepath]; // Delete
-            }
-        }
-        setFiles(newFiles);
-        console.log("Committed AI changes to HEAD.");
-    }
-    // Committing no longer ends the session; the turn's end does.
-  }, [setFiles]);
-
-  const handleStartAiRequest = useCallback(() => {
-    if (aiVirtualFilesRef.current !== null) return;
-
-    vfsReadyPromiseRef.current = new Promise<void>((resolve) => {
-      vfsReadyResolverRef.current = resolve;
-    });
-  
-    // This is now synchronous and fast.
-    console.log("Starting AI session, initializing CoW VFS from current workspace.");
-    const workspaceFiles = files;
-    originalHeadFilesRef.current = workspaceFiles; // Keep for diffing
-    aiVirtualFilesRef.current = {
-        originalFiles: workspaceFiles, // Read-only reference
-        mutations: {}, // Start with no changes
-    };
-    vfsReadyResolverRef.current(); // VFS is now ready, resolve the promise
-  }, [files]);
-  
-  const getGitAuth = useCallback((): { token: string, author: GitAuthor, proxyUrl: string } | null => {
+  const getGitAuth = useCallback((operation: 'read' | 'write'): { token: string | undefined; author: GitAuthor; proxyUrl: string } | null => {
     if (!activeProject) return null;
 
     const { gitSettings: projectGitSettings } = activeProject;
@@ -206,29 +112,156 @@ export const useAppLogic = () => {
         case 'default':
         case 'global':
         default:
-            // For both 'default' and 'global' settings, we prioritize the default credential.
-            // The global token is the ultimate fallback.
             token = gitCredentials.find(c => c.isDefault)?.token || settings.gitAuthToken;
             break;
     }
+    
+    if (!token && operation === 'read') {
+        return { token: undefined, author, proxyUrl };
+    }
 
-    if (!token || !author.name || !author.email) {
-        alert("Git authentication or user details are not configured. Please check project settings or global settings.");
+    if (!token && operation === 'write') {
+        alert("Git write operation failed: No default or project-specific credential found. Please create a credential and set it as default, or configure one for this project in its settings.");
         return null;
     }
 
-    return { token, author, proxyUrl };
+    if (!author.name || !author.email) {
+        alert("Git user name or email is not configured. Please check your project or global settings.");
+        return null;
+    }
+
+    return { token: token!, author, proxyUrl };
   }, [activeProject, gitCredentials, settings]);
+  
+  useEffect(() => {
+    // Pass the `getGitAuth` callback directly to the service factory.
+    // This ensures the service can access the LATEST credentials on every call.
+    setGitService(createGitService(true, activeProjectId, getGitAuth));
+  }, [activeProjectId, getGitAuth]);
+
+  // Effect to load project files when the active project changes. This is the primary sync point.
+  useEffect(() => {
+    if (!gitService || !activeProject) {
+        return;
+    };
+
+    const loadProjectFiles = async () => {
+      console.log(`Syncing workspace for project: "${activeProject.name}"`);
+      const workingDirFiles = await gitService.getWorkingDirFiles();
+      
+      if (Object.keys(workingDirFiles).length > 0) {
+        console.log(`Found ${Object.keys(workingDirFiles).length} files in git working directory. Updating workspace.`);
+        setFiles(workingDirFiles);
+      } else if (activeProject.gitRemoteUrl) {
+        console.log("Project is remote but has no files. Setting workspace to empty.");
+        setFiles({});
+      } else {
+        console.log("Project is local and has no files. Populating with initial template.");
+        setFiles(initialFiles);
+        for (const [filename, content] of Object.entries(initialFiles)) {
+            await gitService.writeFile(filename, content);
+        }
+      }
+      
+      setChangedFiles([]);
+    };
+
+    loadProjectFiles();
+  }, [activeProject, gitService, setFiles]);
+  
+  // Fetch git status when the view changes to Git or files change
+  useEffect(() => {
+    if (gitService?.isReal && activeView === View.Git) {
+        gitService.status(files).then(setChangedFiles).catch(err => {
+            console.error("Failed to get git status:", err);
+            setChangedFiles([]);
+        });
+    }
+  }, [activeView, gitService, files]);
+
+  const handleFileChange = useCallback((filename: string, content: string) => {
+    setFiles(prev => ({ ...prev, [filename]: content }));
+    gitService?.writeFile(filename, content).catch(e => console.error(`Failed to write file ${filename}:`, e));
+  }, [gitService]);
+
+  const handleFileAdd = useCallback((filename: string, content: string) => {
+    setFiles(prev => ({ ...prev, [filename]: content }));
+    setActiveFile(filename);
+    gitService?.writeFile(filename, content).catch(e => console.error(`Failed to add file ${filename}:`, e));
+  }, [gitService, setActiveFile]);
+
+  const handleFileRemove = useCallback((filename: string) => {
+    setFiles(prev => {
+        const newFiles = { ...prev };
+        delete newFiles[filename];
+        return newFiles;
+    });
+    if (activeFile === filename) {
+        setActiveFile(null);
+    }
+    gitService?.removeFile(filename).catch(e => console.error(`Failed to remove file ${filename}:`, e));
+  }, [gitService, activeFile]);
+  
+  const onNavigate = (view: View) => setActiveView(view);
+  
+  const onEndAiRequest = useCallback(() => {
+    if (aiVirtualFilesRef.current !== null) {
+      console.log("Ending AI session, clearing VFS.");
+      aiVirtualFilesRef.current = null;
+      originalHeadFilesRef.current = null;
+      vfsReadyPromiseRef.current = Promise.resolve();
+    }
+  }, []);
+
+  const handleCommitAiToHead = useCallback(() => {
+    const vfs = aiVirtualFilesRef.current;
+    if(vfs) {
+        const newFiles = { ...vfs.originalFiles };
+        const promises: Promise<void>[] = [];
+
+        for (const [filepath, mutation] of Object.entries(vfs.mutations)) {
+            if (typeof mutation === 'string') {
+                newFiles[filepath] = mutation;
+                promises.push(gitService?.writeFile(filepath, mutation) ?? Promise.resolve());
+            } else { // DELETED_FILE_SENTINEL
+                delete newFiles[filepath];
+                promises.push(gitService?.removeFile(filepath) ?? Promise.resolve());
+            }
+        }
+        
+        Promise.all(promises).then(() => {
+            setFiles(newFiles);
+            console.log("Committed AI changes to HEAD and persisted to working directory.");
+        }).catch(err => {
+            console.error("Failed to persist AI changes:", err);
+            alert("Error saving AI changes.");
+        });
+    }
+  }, [setFiles, gitService]);
+
+  const handleStartAiRequest = useCallback(() => {
+    if (aiVirtualFilesRef.current !== null) return;
+
+    vfsReadyPromiseRef.current = new Promise<void>((resolve) => {
+      vfsReadyResolverRef.current = resolve;
+    });
+  
+    console.log("Starting AI session, initializing CoW VFS from current workspace.");
+    const workspaceFiles = files;
+    originalHeadFilesRef.current = workspaceFiles;
+    aiVirtualFilesRef.current = {
+        originalFiles: workspaceFiles,
+        mutations: {},
+    };
+    vfsReadyResolverRef.current();
+  }, [files]);
 
   const handlePush = useCallback(async () => {
     if (!gitService) return;
-    const auth = getGitAuth();
-    if (!auth) return;
-
     setIsGitNetworkActivity(true);
     setGitNetworkProgress('Pushing...');
     try {
-        const result = await gitService.push(auth.author, auth.token, auth.proxyUrl, (progress) => {
+        const result = await gitService.push((progress) => {
             setGitNetworkProgress(`${progress.phase} (${progress.loaded}/${progress.total})`);
         });
         if (!result.ok) {
@@ -242,17 +275,14 @@ export const useAppLogic = () => {
         setIsGitNetworkActivity(false);
         setGitNetworkProgress(null);
     }
-  }, [gitService, getGitAuth]);
+  }, [gitService]);
 
   const handlePull = useCallback(async (rebase: boolean) => {
       if (!gitService) return;
-      const auth = getGitAuth();
-      if (!auth) return;
-
       setIsGitNetworkActivity(true);
       setGitNetworkProgress('Pulling...');
       try {
-          await gitService.pull(auth.author, auth.token, auth.proxyUrl, rebase, (progress) => {
+          await gitService.pull(rebase, (progress) => {
               setGitNetworkProgress(`${progress.phase} (${progress.loaded}/${progress.total})`);
           });
           const newFiles = await gitService.getHeadFiles();
@@ -267,17 +297,14 @@ export const useAppLogic = () => {
           setIsGitNetworkActivity(false);
           setGitNetworkProgress(null);
       }
-  }, [gitService, getGitAuth, setFiles]);
+  }, [gitService, setFiles]);
 
   const handleRebase = useCallback(async (branch: string) => {
       if (!gitService) return;
-      const auth = getGitAuth();
-      if (!auth) return;
-
       setIsGitNetworkActivity(true);
       setGitNetworkProgress(`Rebasing onto ${branch}...`);
       try {
-          await gitService.rebase(branch, auth.author);
+          await gitService.rebase(branch);
           const newFiles = await gitService.getHeadFiles();
           setFiles(newFiles);
           const newStatus = await gitService.status(newFiles);
@@ -290,16 +317,13 @@ export const useAppLogic = () => {
           setIsGitNetworkActivity(false);
           setGitNetworkProgress(null);
       }
-  }, [gitService, getGitAuth, setFiles]);
+  }, [gitService, setFiles]);
 
   const internalHandleCommit = useCallback(async (message: string) => {
     if (!gitService) throw new Error("Git service not available.");
-    const auth = getGitAuth();
-    if (!auth) throw new Error("Could not resolve Git author information for commit.");
-
     setIsCommitting(true);
     try {
-        await gitService.commit(message, auth.author, files);
+        await gitService.commit(message, files);
         setCommitMessage(''); // Clear message after successful commit
         const newStatus = await gitService.status(files);
         setChangedFiles(newStatus);
@@ -309,7 +333,7 @@ export const useAppLogic = () => {
     } finally {
         setIsCommitting(false);
     }
-  }, [files, gitService, getGitAuth]);
+  }, [files, gitService]);
 
   const handleCommit = useCallback(async (message: string) => {
     try {
@@ -322,9 +346,8 @@ export const useAppLogic = () => {
   const handleCommitAndPush = useCallback(async (message: string) => {
     try {
         await internalHandleCommit(message);
-        await handlePush(); // handlePush has its own internal alerting for success/failure
+        await handlePush();
     } catch (e: any) {
-        // This will only catch errors from the commit part
         alert(e.message);
     }
   }, [internalHandleCommit, handlePush]);
@@ -424,30 +447,34 @@ export const useAppLogic = () => {
   const handleClone = useCallback(async (url: string, name: string) => {
     setIsCloning(true);
     setCloningProgress('Creating project...');
+    let newProjectId: string | null = null;
     try {
         const newProject = await createNewProject(name, false, url);
-        // A temporary git service for the new project ID before it's active
-        const tempGitService = createGitService(true, newProject.id);
-        const auth = getGitAuth();
-        if (!auth) {
-            // getGitAuth shows its own alert
-            throw new Error("Git authentication details not found.");
-        }
-        await tempGitService.clone(url, auth.proxyUrl, auth.author, auth.token, (progress: GitProgress) => {
+        newProjectId = newProject.id;
+        // The gitService will be re-created by the useEffect for the new activeProjectId,
+        // so we create a temporary one here for the clone operation itself.
+        const tempGitService = createGitService(true, newProject.id, getGitAuth);
+        
+        await tempGitService.clone(url, (progress: GitProgress) => {
             setCloningProgress(`${progress.phase} (${progress.loaded}/${progress.total})`);
         });
-        
-        // Switch to the new project. The useEffect hook will now handle loading the files.
-        switchProject(newProject.id);
     } catch (error: any) {
         alert(`Cloning failed: ${error.message}`);
         console.error("CLONE FAILED:", error);
+        // If cloning fails, we should clean up the created project entry
+        if (newProjectId) {
+            deleteProject(newProjectId);
+        }
+        newProjectId = null;
     } finally {
         setIsCloning(false);
         setCloningProgress(null);
         setIsProjectModalOpen(false);
+        if (newProjectId) {
+            switchProject(newProjectId);
+        }
     }
-  }, [createNewProject, switchProject, getGitAuth]);
+  }, [createNewProject, switchProject, getGitAuth, deleteProject]);
 
   const handleClearDebugLogs = useCallback(() => {
     clearGlobalLogs();
@@ -481,7 +508,7 @@ export const useAppLogic = () => {
   return {
     settings, onSettingsChange: setSettings,
     projects, activeProject, createNewProject, switchProject, deleteProject, updateProject,
-    files, activeFile, onFileChange: onWriteFile, onFileSelect: setActiveFile, onFileAdd: onWriteFile, onFileRemove: onRemoveFile,
+    files, activeFile, onFileChange: handleFileChange, onFileSelect: setActiveFile, onFileAdd: handleFileAdd, onFileRemove: handleFileRemove,
     threads, activeThread, activeThreadId, createNewThread, switchThread, deleteThread, addMessage, updateMessage, updateHistory, updateThread,
     gitCredentials, createGitCredential, deleteGitCredential, setDefaultGitCredential,
     prompts, createPrompt, updatePrompt, revertToVersion, deletePrompt,

@@ -3,20 +3,27 @@ import http from 'isomorphic-git/http/web';
 import LightningFS from '@isomorphic-git/lightning-fs';
 import { Buffer } from 'buffer';
 import { performDiff } from '../utils/diff';
-import { GitFileStatus, GitFileChange } from '../types';
+import { GitFileStatus, GitFileChange, GitAuthor } from '../types';
 
 if (typeof self !== 'undefined' && !(self as any).Buffer) {
   (self as any).Buffer = Buffer;
 }
 
-// Vite's top-level `define` config sets `global` to `window`, which is incorrect for workers.
-// This polyfills 'global' for libraries that expect it in a worker context.
 if (typeof self !== 'undefined' && !('global' in self)) {
   (self as any).global = self;
 }
 
 let fs: any = null;
 const dir = '/';
+
+// This is a proxy function. The actual `getGitAuth` lives on the main thread.
+// The main thread will pass the *result* of its `getGitAuth` call with each command.
+const getAuthFromPayload = (payload: any, operation: 'read' | 'write'): { token: string | undefined; author: GitAuthor; proxyUrl: string; } => {
+    if (!payload.auth) {
+        throw new Error(`Authentication details not provided for Git ${operation} operation.`);
+    }
+    return payload.auth;
+}
 
 self.onmessage = async (event: MessageEvent) => {
   const { id, type, payload } = event.data;
@@ -27,7 +34,7 @@ self.onmessage = async (event: MessageEvent) => {
         if (!projectId) {
             throw new Error("Initialization error: projectId is missing.");
         }
-        fs = new LightningFS(`vibecode-fs-${projectId}`);
+        fs = new LightningFS(`vibecode-fs-worker-${projectId}`);
         self.postMessage({ type: 'result', id, payload: { success: true } });
         return;
     }
@@ -39,15 +46,15 @@ self.onmessage = async (event: MessageEvent) => {
     let result: any;
     switch (type) {
       case 'clone':
-        // Nuke the entire FS for this project before cloning
+        const cloneAuth = getAuthFromPayload(payload, 'read');
         const filesInRoot = await fs.promises.readdir(dir);
         for (const file of filesInRoot) {
             await (fs.promises as any).rm(`${dir}${file}`, { recursive: true, force: true });
         }
 
         await git.clone({
-          fs, http, dir, corsProxy: payload.proxyUrl, url: payload.url,
-          onAuth: () => ({ username: payload.token }),
+          fs, http, dir, corsProxy: cloneAuth.proxyUrl, url: payload.url,
+          onAuth: () => ({ username: cloneAuth.token }),
           onProgress: (progress) => {
             self.postMessage({ type: 'progress', id, payload: progress });
           },
@@ -74,19 +81,17 @@ self.onmessage = async (event: MessageEvent) => {
         break;
       
       case 'commit':
+        const commitAuth = getAuthFromPayload(payload, 'write');
         await writeAppFilesToFs(payload.appFiles);
-        // Add all changed files to the index before committing
         const statusMatrix = await git.statusMatrix({ fs, dir });
         for (const [filepath, head, workdir] of statusMatrix) {
-             if (workdir === 0) { // Deleted
+             if (workdir === 0) {
                 await git.remove({ fs, dir, filepath });
-            } else if (workdir === 2 || (workdir as number) === 3) { // New or Modified
-                // FIX: Cast `workdir` to `number` to resolve a TypeScript error caused by outdated type definitions.
-                // The library returns `3` for new files, but the types only allow `0 | 1 | 2`, causing a comparison error.
+            } else if (workdir === 2 || (workdir as number) === 3) {
                 await git.add({ fs, dir, filepath });
             }
         }
-        const oid = await git.commit({ fs, dir, message: payload.message, author: payload.author });
+        const oid = await git.commit({ fs, dir, message: payload.message, author: commitAuth.author });
         result = { oid };
         break;
       
@@ -170,9 +175,10 @@ self.onmessage = async (event: MessageEvent) => {
         break;
         
       case 'push':
+        const pushAuth = getAuthFromPayload(payload, 'write');
         result = await git.push({
-            fs, http, dir, corsProxy: payload.proxyUrl,
-            onAuth: () => ({ username: payload.token }),
+            fs, http, dir, corsProxy: pushAuth.proxyUrl,
+            onAuth: () => ({ username: pushAuth.token }),
             onProgress: (progress) => {
                 self.postMessage({ type: 'progress', id, payload: progress });
             }
@@ -180,16 +186,16 @@ self.onmessage = async (event: MessageEvent) => {
         break;
       
       case 'pull':
+        const pullReadAuth = getAuthFromPayload(payload, 'read');
+        const pullWriteAuth = getAuthFromPayload(payload, 'write');
         const currentBranch = await git.currentBranch({ fs, dir });
         if (!currentBranch) {
           throw new Error("Not on a branch, cannot pull. Please checkout a branch first.");
         }
-        // FIX: Cast the options object to 'any' to bypass outdated type definitions in isomorphic-git,
-        // which do not include the 'rebase' property for the pull command.
         await git.pull({
-            fs, http, dir, corsProxy: payload.proxyUrl,
-            onAuth: () => ({ username: payload.token }),
-            author: payload.author,
+            fs, http, dir, corsProxy: pullReadAuth.proxyUrl,
+            onAuth: () => ({ username: pullReadAuth.token }),
+            author: pullWriteAuth.author,
             ref: currentBranch,
             singleBranch: true,
             rebase: payload.rebase,
@@ -201,13 +207,26 @@ self.onmessage = async (event: MessageEvent) => {
         break;
 
       case 'rebase':
-        // FIX: Cast 'git' to 'any' to call the 'rebase' method. This bypasses outdated type definitions
-        // where 'rebase' is not recognized as a valid function on the main git object.
+        const rebaseAuth = getAuthFromPayload(payload, 'write');
         await (git as any).rebase({
             fs, dir,
             branch: payload.branch,
-            author: payload.author
+            author: rebaseAuth.author
         });
+        result = { success: true };
+        break;
+
+      case 'getWorkingDirFiles':
+        result = await getWorkingDirFilesFromFs();
+        break;
+
+      case 'writeFile':
+        await fs.promises.writeFile(`${dir}${payload.filepath}`, payload.content);
+        result = { success: true };
+        break;
+
+      case 'removeFile':
+        await fs.promises.unlink(`${dir}${payload.filepath}`);
         result = { success: true };
         break;
 
@@ -222,6 +241,22 @@ self.onmessage = async (event: MessageEvent) => {
 };
 
 // --- Helper functions ---
+
+async function recursiveReadDir(currentPath: string): Promise<string[]> {
+    let files: string[] = [];
+    const entries = await fs.promises.readdir(currentPath);
+    for (const entry of entries) {
+        const entryPath = `${currentPath === '/' ? '' : currentPath}/${entry}`;
+        const stat = await fs.promises.stat(entryPath);
+        if (stat.isDirectory()) {
+            files = files.concat(await recursiveReadDir(entryPath));
+        } else {
+            files.push(entryPath.startsWith('/') ? entryPath.substring(1) : entryPath);
+        }
+    }
+    return files;
+}
+
 async function getHeadFilesFromFs(): Promise<Record<string, string>> {
     const files: Record<string, string> = {};
     try {
@@ -239,18 +274,32 @@ async function getHeadFilesFromFs(): Promise<Record<string, string>> {
     return files;
 }
 
+async function getWorkingDirFilesFromFs(): Promise<Record<string, string>> {
+    const files: Record<string, string> = {};
+    try {
+        const filepaths = await recursiveReadDir(dir);
+        for (const filepath of filepaths) {
+            try {
+                const content = await fs.promises.readFile(`/${filepath}`, 'utf8');
+                files[filepath] = content as string;
+            } catch (e) { /* ignore read errors for non-files like submodules */ }
+        }
+    } catch (e) {
+        console.warn("Worker could not read working directory files. Repository may be empty.");
+    }
+    return files;
+}
+
 async function writeAppFilesToFs(appFiles: Record<string, string>) {
     const promises: Promise<void>[] = [];
     const trackedFiles = await git.listFiles({ fs, dir }).catch(() => []);
 
-    // Delete files that are in git but not in the app state
     for (const trackedFile of trackedFiles) {
         if (appFiles[trackedFile] === undefined) {
             promises.push(fs.promises.unlink(`${dir}${trackedFile}`));
         }
     }
 
-    // Write all app files to the virtual file system
     for (const [filepath, content] of Object.entries(appFiles)) {
         promises.push(fs.promises.writeFile(`${dir}${filepath}`, content));
     }
@@ -262,7 +311,6 @@ async function readFileAtCommitFromFs(oid: string, filepath: string): Promise<st
         const { blob } = await git.readBlob({ fs, dir, oid, filepath });
         return Buffer.from(blob).toString('utf8');
     } catch (e) {
-        // This can happen if the file doesn't exist at that commit, which is normal.
         return null;
     }
 }

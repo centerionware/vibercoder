@@ -37,7 +37,7 @@ const App = () => {
 
   return (
     <div id="app-container" className="bg-vibe-bg text-vibe-text font-sans">
-      <div className={`${mainContentClass} ${nativeTopPaddingClass}`}>
+      <div key={app.activeProject.id} className={`${mainContentClass} ${nativeTopPaddingClass}`}>
         {!app.isFullScreen && (
           <Header
             isLiveVideoEnabled={app.isVideoStreamEnabled}

@@ -23,8 +23,6 @@ export const bundleWithEsbuild = async (
 
         onLog('Starting build...');
 
-        // FIX: Some module loaders/CDNs wrap the actual exports in a `default` property.
-        // This checks for that and uses the correct object to call `build`.
         const esbuildService = (esbuild as any).default || esbuild;
 
         const result = await esbuildService.build({
@@ -40,9 +38,23 @@ export const bundleWithEsbuild = async (
             jsxFactory: 'React.createElement',
             jsxFragment: 'React.Fragment',
         });
+        
+        // Polyfill Buffer for libraries like isomorphic-git that need it in the browser.
+        const bufferPolyfill = `
+            if (typeof window.Buffer === 'undefined') {
+                const bufferModule = await import('buffer');
+                window.Buffer = bufferModule.Buffer;
+            }
+        `;
+        
+        const finalCode = `(async () => {
+            ${bufferPolyfill}
+            ${result.outputFiles[0].text}
+        })();`;
+
         onLog('Build successful!');
         return {
-            code: result.outputFiles[0].text,
+            code: finalCode,
             error: null
         };
     } catch(e) {

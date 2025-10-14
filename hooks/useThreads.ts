@@ -17,7 +17,8 @@ export const useThreads = (activeProjectId: string | null) => {
             return;
         };
 
-        db.threads.where('projectId').equals(activeProjectId).toArray().then(dbThreads => {
+        const loadThreads = async () => {
+            const dbThreads = await db.threads.where('projectId').equals(activeProjectId).toArray();
             if (dbThreads.length > 0) {
                 setThreads(dbThreads);
                 // Try to load last active thread FOR THIS PROJECT, otherwise load the most recent one
@@ -30,11 +31,24 @@ export const useThreads = (activeProjectId: string | null) => {
             } else {
                 // No threads for this project, create a new one
                 setThreads([]); // Clear old threads from previous project
-                createNewThread();
+                
+                const newThread: ChatThread = {
+                    id: uuidv4(),
+                    projectId: activeProjectId,
+                    title: 'New Chat',
+                    createdAt: Date.now(),
+                    messages: [],
+                    history: [],
+                    shortTermMemory: {},
+                };
+                await db.threads.put(newThread);
+                setThreads([newThread]);
+                setActiveThreadId(newThread.id);
             }
-        });
-    }, [activeProjectId]); // eslint-disable-line react-hooks/exhaustive-deps
-    // Disabling lint because createNewThread is not memoized and would cause a loop if added.
+        };
+
+        loadThreads();
+    }, [activeProjectId]);
 
     // Persist active thread ID for the specific project
     useEffect(() => {

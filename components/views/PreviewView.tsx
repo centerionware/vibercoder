@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { bundle } from '../../bundler';
 import SpinnerIcon from '../icons/SpinnerIcon';
@@ -10,6 +9,25 @@ import TrashIcon from '../icons/TrashIcon';
 const previewHtml = `
 <html>
   <head>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              'vibe-bg': '#1a1b26',
+              'vibe-bg-deep': '#16161e',
+              'vibe-panel': '#24283b',
+              'vibe-accent': '#7aa2f7',
+              'vibe-accent-hover': '#9ece6a',
+              'vibe-text': '#c0caf5',
+              'vibe-text-secondary': '#a9b1d6',
+              'vibe-comment': '#565f89',
+            }
+          }
+        }
+      }
+    </script>
     <style>
       body { margin: 0; background-color: #1a1b26; }
       #root-error { color: white; font-family: sans-serif; padding: 1rem; }

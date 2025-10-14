@@ -7,43 +7,68 @@ import {
   GitService, GitStatus, GitCommit, GitAuthor,
   GitFileChange, GitProgress, GitFileStatus
 } from '../types';
-// FIX: Add import for Buffer to resolve type errors in the browser environment.
 import { Buffer } from 'buffer';
 
-// --- Electron Git Service (runs on Renderer Thread) ---
-// This service runs isomorphic-git directly on the main thread because it needs
-// access to the `window.electron` IPC bridge, which is not available in workers.
-// The performance is acceptable for most operations except for very large clones.
-class ElectronMainThreadGitService implements GitService {
+// Helper for recursive reading in LightningFS
+async function recursiveReadDir(fs: any, currentPath: string): Promise<string[]> {
+    let files: string[] = [];
+    const entries = await fs.promises.readdir(currentPath);
+    for (const entry of entries) {
+        // LightningFS doesn't have a robust path join, so we handle it manually
+        const entryPath = `${currentPath === '/' ? '' : currentPath}/${entry}`;
+        const stat = await fs.promises.stat(entryPath);
+        if (stat.isDirectory()) {
+            files = files.concat(await recursiveReadDir(fs, entryPath));
+        } else {
+            // Strip leading slash for consistency
+            files.push(entryPath.startsWith('/') ? entryPath.substring(1) : entryPath);
+        }
+    }
+    return files;
+}
+
+// --- Main Thread Git Service (Non-Worker) ---
+// This service runs isomorphic-git directly on the main thread.
+// It's used for the Electron renderer process (to access the IPC bridge)
+// and as a fallback inside the preview iframe where workers cannot be spawned.
+class MainThreadGitService implements GitService {
     isReal = true;
     private fs: any;
     private dir = '/';
     private http: any;
+    private getAuth: (operation: 'read' | 'write') => ({ token: string | undefined; author: GitAuthor; proxyUrl: string; }) | null;
 
-    constructor(projectId: string) {
-        this.fs = new LightningFS(`vibecode-fs-electron-${projectId}`);
-        if (!window.electron?.git) {
-            throw new Error("Electron Git IPC bridge is not available.");
+    constructor(projectId: string, getAuthCallback: (operation: 'read' | 'write') => ({ token: string | undefined; author: GitAuthor; proxyUrl: string; }) | null) {
+        // Use a unique FS name to avoid collisions, especially when running inside the preview iframe.
+        const fsName = `vibecode-fs-main-${window.self !== window.top ? 'iframe-' : ''}${projectId}`;
+        this.fs = new LightningFS(fsName);
+        this.getAuth = getAuthCallback;
+
+        if (window.electron?.git) {
+            console.log("Using Electron IPC for Git HTTP requests.");
+            this.http = window.electron.git;
+        } else {
+            console.log("Using standard web fetch for Git HTTP requests.");
+            this.http = http;
         }
-        this.http = window.electron.git;
     }
     
     private async clearFs() {
         for (const file of await this.fs.promises.readdir(this.dir)) {
-            // FIX: Cast to `any` to bypass outdated type definitions for LightningFS, which do not include the `rm` method.
-            // The method exists at runtime, so this cast resolves the TypeScript error without changing functionality.
             await (this.fs.promises as any).rm(`${this.dir}${file}`, { recursive: true, force: true });
         }
     }
 
-    async clone(url: string, proxyUrl: string, author: GitAuthor, token: string, onProgress?: (progress: GitProgress) => void): Promise<void> {
+    async clone(url: string, onProgress?: (progress: GitProgress) => void): Promise<void> {
+        const auth = this.getAuth('read');
         await this.clearFs();
         await git.clone({
             fs: this.fs,
             http: this.http,
             dir: this.dir,
+            corsProxy: this.http === http ? auth?.proxyUrl : undefined,
             url,
-            onAuth: () => ({ username: token }),
+            onAuth: () => ({ username: auth?.token }),
             onProgress,
         });
     }
@@ -80,7 +105,9 @@ class ElectronMainThreadGitService implements GitService {
         return statusResult;
     }
 
-    async commit(message: string, author: GitAuthor, appFiles: Record<string, string>): Promise<{ oid: string }> {
+    async commit(message: string, appFiles: Record<string, string>): Promise<{ oid: string }> {
+        const auth = this.getAuth('write');
+        if (!auth) throw new Error("Cannot commit: Git author information not configured.");
         // Write app files to the virtual FS
         const trackedFiles = await git.listFiles({ fs: this.fs, dir: this.dir }).catch(() => []);
         for (const trackedFile of trackedFiles) {
@@ -95,13 +122,11 @@ class ElectronMainThreadGitService implements GitService {
         for (const [filepath, head, workdir] of statusMatrix) {
             if (workdir === 0) await git.remove({ fs: this.fs, dir: this.dir, filepath });
             else if (workdir === 2 || (workdir as number) === 3) {
-                // FIX: Cast `workdir` to `number` to resolve a TypeScript error caused by outdated type definitions.
-                // The library returns `3` for new files, but the types only allow `0 | 1 | 2`, causing a comparison error.
                 await git.add({ fs: this.fs, dir: this.dir, filepath });
             }
         }
         
-        const oid = await git.commit({ fs: this.fs, dir: this.dir, message, author });
+        const oid = await git.commit({ fs: this.fs, dir: this.dir, message, author: auth.author });
         return { oid };
     }
 
@@ -155,43 +180,72 @@ class ElectronMainThreadGitService implements GitService {
         }
     }
     
-    async push(author: GitAuthor, token: string, proxyUrl: string, onProgress?: (progress: GitProgress) => void): Promise<{ ok: boolean, error?: string }> {
+    async push(onProgress?: (progress: GitProgress) => void): Promise<{ ok: boolean, error?: string }> {
+        const auth = this.getAuth('write');
+        if (!auth) throw new Error("Push failed: No credentials available.");
         return git.push({
             fs: this.fs,
             http: this.http,
             dir: this.dir,
-            onAuth: () => ({ username: token }),
+            corsProxy: this.http === http ? auth.proxyUrl : undefined,
+            onAuth: () => ({ username: auth.token }),
             onProgress,
         });
     }
 
-    async pull(author: GitAuthor, token: string, proxyUrl: string, rebase: boolean, onProgress?: (progress: GitProgress) => void): Promise<void> {
+    async pull(rebase: boolean, onProgress?: (progress: GitProgress) => void): Promise<void> {
+        const auth = this.getAuth('read'); // Pull can be anonymous for public repos
+        const author = this.getAuth('write')?.author; // But merge commits need an author
+        if (!author) throw new Error("Cannot pull: Git author information is not configured.");
         const branch = await git.currentBranch({ fs: this.fs, dir: this.dir });
         if (!branch) throw new Error("Not on a branch, cannot pull.");
-        // FIX: Cast the options object to 'any' to bypass outdated type definitions in isomorphic-git,
-        // which do not include the 'rebase' property for the pull command.
         await git.pull({
             fs: this.fs,
             http: this.http,
             dir: this.dir,
+            corsProxy: this.http === http ? auth?.proxyUrl : undefined,
             author,
             ref: branch,
             singleBranch: true,
             rebase,
-            onAuth: () => ({ username: token }),
+            onAuth: () => ({ username: auth?.token }),
             onProgress,
         } as any);
     }
 
-    async rebase(branch: string, author: GitAuthor): Promise<void> {
-        // FIX: Cast 'git' to 'any' to call the 'rebase' method. This bypasses outdated type definitions
-        // where 'rebase' is not recognized as a valid function on the main git object.
+    async rebase(branch: string): Promise<void> {
+        const auth = this.getAuth('write');
+        if (!auth) throw new Error("Cannot rebase: Git author information is not configured.");
         await (git as any).rebase({
             fs: this.fs,
             dir: this.dir,
             branch,
-            author
+            author: auth.author,
         });
+    }
+
+    async getWorkingDirFiles(): Promise<Record<string, string>> {
+        const files: Record<string, string> = {};
+        try {
+            const filepaths = await recursiveReadDir(this.fs, this.dir);
+            for (const filepath of filepaths) {
+                try {
+                    const content = await this.fs.promises.readFile(`/${filepath}`, 'utf8');
+                    files[filepath] = content as string;
+                } catch (e) { /* ignore read errors for non-files like submodules */ }
+            }
+        } catch (e) {
+            console.warn("Could not read working directory files. Repository may be empty.");
+        }
+        return files;
+    }
+
+    async writeFile(filepath: string, content: string): Promise<void> {
+        await this.fs.promises.writeFile(`${this.dir}${filepath}`, content);
+    }
+
+    async removeFile(filepath: string): Promise<void> {
+        await this.fs.promises.unlink(`${this.dir}${filepath}`);
     }
 }
 
@@ -206,14 +260,12 @@ class WorkerGitService implements GitService {
 
     constructor(projectId: string) {
         try {
-            // The URL resolution for the worker can fail in some sandboxed environments.
-            // This gracefully disables Git functionality instead of crashing the app.
             this.worker = new Worker(new URL('./git.worker.ts', import.meta.url), { type: 'module' });
             this.worker.onmessage = this.handleWorkerMessage.bind(this);
             this.worker.onerror = (e) => {
                 console.warn("Git worker encountered an error. Git functionality will be disabled.", e);
                 this.isReal = false;
-                this.worker = null; // Disable the worker
+                this.worker = null;
             };
 
             this.initPromise = new Promise((resolve, reject) => {
@@ -281,9 +333,9 @@ class WorkerGitService implements GitService {
         });
     }
 
-    clone(url: string, proxyUrl: string, author: GitAuthor, token: string, onProgress?: (progress: GitProgress) => void): Promise<void> {
-        if (!this.worker) return this.mockService.clone(url, proxyUrl, author, token, onProgress);
-        return this.sendCommand('clone', { url, proxyUrl, token }, onProgress);
+    clone(url: string, onProgress?: (progress: GitProgress) => void): Promise<void> {
+        if (!this.worker) return this.mockService.clone(url, onProgress);
+        return this.sendCommand('clone', { url }, onProgress);
     }
     getHeadFiles(): Promise<Record<string, string>> { 
         if (!this.worker) return this.mockService.getHeadFiles();
@@ -293,9 +345,9 @@ class WorkerGitService implements GitService {
         if (!this.worker) return this.mockService.status(appFiles);
         return this.sendCommand('status', { appFiles }); 
     }
-    commit(message: string, author: GitAuthor, appFiles: Record<string, string>): Promise<{ oid: string }> { 
-        if (!this.worker) return this.mockService.commit(message, author, appFiles);
-        return this.sendCommand('commit', { message, author, appFiles }); 
+    commit(message: string, appFiles: Record<string, string>): Promise<{ oid: string }> { 
+        if (!this.worker) return this.mockService.commit(message, appFiles);
+        return this.sendCommand('commit', { message, appFiles }); 
     }
     log(ref?: string): Promise<GitCommit[]> { 
         if (!this.worker) return this.mockService.log(ref);
@@ -317,17 +369,29 @@ class WorkerGitService implements GitService {
         if (!this.worker) return this.mockService.readFileAtCommit(oid, filepath);
         return this.sendCommand('readFileAtCommit', { oid, filepath }); 
     }
-    push(author: GitAuthor, token: string, proxyUrl: string, onProgress?: (progress: GitProgress) => void): Promise<{ ok: boolean, error?: string }> {
-        if (!this.worker) return this.mockService.push(author, token, proxyUrl, onProgress);
-        return this.sendCommand('push', { token, proxyUrl }, onProgress);
+    push(onProgress?: (progress: GitProgress) => void): Promise<{ ok: boolean, error?: string }> {
+        if (!this.worker) return this.mockService.push(onProgress);
+        return this.sendCommand('push', { }, onProgress);
     }
-    pull(author: GitAuthor, token: string, proxyUrl: string, rebase: boolean, onProgress?: (progress: GitProgress) => void): Promise<void> {
-        if (!this.worker) return this.mockService.pull(author, token, proxyUrl, rebase, onProgress);
-        return this.sendCommand('pull', { author, token, proxyUrl, rebase }, onProgress);
+    pull(rebase: boolean, onProgress?: (progress: GitProgress) => void): Promise<void> {
+        if (!this.worker) return this.mockService.pull(rebase, onProgress);
+        return this.sendCommand('pull', { rebase }, onProgress);
     }
-    rebase(branch: string, author: GitAuthor): Promise<void> {
-        if (!this.worker) return this.mockService.rebase(branch, author);
-        return this.sendCommand('rebase', { branch, author });
+    rebase(branch: string): Promise<void> {
+        if (!this.worker) return this.mockService.rebase(branch);
+        return this.sendCommand('rebase', { branch });
+    }
+    getWorkingDirFiles(): Promise<Record<string, string>> {
+        if (!this.worker) return this.mockService.getWorkingDirFiles();
+        return this.sendCommand('getWorkingDirFiles', {});
+    }
+    writeFile(filepath: string, content: string): Promise<void> {
+        if (!this.worker) return this.mockService.writeFile(filepath, content);
+        return this.sendCommand('writeFile', { filepath, content });
+    }
+    removeFile(filepath: string): Promise<void> {
+        if (!this.worker) return this.mockService.removeFile(filepath);
+        return this.sendCommand('removeFile', { filepath });
     }
 }
 
@@ -335,33 +399,41 @@ class WorkerGitService implements GitService {
 // --- Mock Git Service ---
 class MockGitService implements GitService {
     isReal = false;
-    async clone(url: string, proxyUrl: string | undefined, author: GitAuthor, token: string, onProgress?: (progress: GitProgress) => void): Promise<void> { console.warn("MockGitService: clone called"); }
+    async clone(url: string, onProgress?: (progress: GitProgress) => void): Promise<void> { console.warn("MockGitService: clone called"); }
     async status(appFiles: Record<string, string>, changedFilePaths?: string[]): Promise<GitStatus[]> { console.warn("MockGitService: status called"); return []; }
-    async commit(message: string, author: GitAuthor, appFiles: Record<string, string>): Promise<{ oid: string }> { console.warn("MockGitService: commit called"); return { oid: 'mock_oid' }; }
+    async commit(message: string, appFiles: Record<string, string>): Promise<{ oid: string }> { console.warn("MockGitService: commit called"); return { oid: 'mock_oid' }; }
     async log(ref?: string): Promise<GitCommit[]> { console.warn("MockGitService: log called"); return []; }
     async listBranches(): Promise<string[]> { console.warn("MockGitService: listBranches called"); return ['main']; }
     async checkout(branch: string): Promise<{ files: Record<string, string> }> { console.warn("MockGitService: checkout called"); return { files: {} }; }
     async getCommitChanges(oid: string): Promise<GitFileChange[]> { console.warn("MockGitService: getCommitChanges called"); return []; }
     async readFileAtCommit(oid: string, filepath: string): Promise<string | null> { console.warn("MockGitService: readFileAtCommit called"); return null; }
     async getHeadFiles(): Promise<Record<string, string>> { console.warn("MockGitService: getHeadFiles called"); return {}; }
-    async push(author: GitAuthor, token: string, proxyUrl: string, onProgress?: (progress: GitProgress) => void): Promise<{ ok: boolean, error?: string }> { console.warn("MockGitService: push called"); return { ok: true }; }
-    async pull(author: GitAuthor, token: string, proxyUrl: string, rebase: boolean, onProgress?: (progress: GitProgress) => void): Promise<void> { console.warn("MockGitService: pull called"); }
-    async rebase(branch: string, author: GitAuthor): Promise<void> { console.warn("MockGitService: rebase called"); }
+    async push(onProgress?: (progress: GitProgress) => void): Promise<{ ok: boolean, error?: string }> { console.warn("MockGitService: push called"); return { ok: true }; }
+    async pull(rebase: boolean, onProgress?: (progress: GitProgress) => void): Promise<void> { console.warn("MockGitService: pull called"); }
+    async rebase(branch: string): Promise<void> { console.warn("MockGitService: rebase called"); }
+    async getWorkingDirFiles(): Promise<Record<string, string>> { console.warn("MockGitService: getWorkingDirFiles called"); return {}; }
+    async writeFile(filepath: string, content: string): Promise<void> { console.warn("MockGitService: writeFile called"); }
+    async removeFile(filepath: string): Promise<void> { console.warn("MockGitService: removeFile called"); }
 }
 
 // --- Service Factory ---
-export function createGitService(isReal: boolean, projectId: string | null): GitService {
+export function createGitService(isReal: boolean, projectId: string | null, getAuthCallback?: any): GitService {
   if (!isReal || !projectId) {
     return new MockGitService();
   }
+  
+  const isInIframe = window.self !== window.top;
 
-  // Use the main-thread service for Electron to access the IPC bridge
-  if (window.electron?.isElectron) {
-    console.log(`Initializing main-thread Electron Git Service for project ${projectId}.`);
-    return new ElectronMainThreadGitService(projectId);
+  // Use the main-thread service for Electron OR if inside the preview iframe where workers fail.
+  if (window.electron?.isElectron || isInIframe) {
+    console.log(`Initializing main-thread Git Service for project ${projectId}. In iframe: ${isInIframe}`);
+    return new MainThreadGitService(projectId, getAuthCallback);
   }
   
   // Use the worker-based service for all other environments (web, Capacitor) for performance
   console.log(`Initializing worker-based Git Service for project ${projectId}.`);
-  return new WorkerGitService(projectId);
+  const workerService = new WorkerGitService(projectId);
+  // Pass the auth callback to the worker. It will be passed back with every command.
+  (workerService as any).getAuth = getAuthCallback;
+  return workerService;
 }

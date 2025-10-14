@@ -66,9 +66,34 @@ export const unpkgPathPlugin = (files: Record<string, string>, onLog: OnLog): es
             }
         }
 
-        // 5. If it's not a local file, assume it's an external package and fetch from the CDN.
+        // 5. If it's not a local file, try to resolve from importmap, then fall back to CDN.
         log(`Assuming external package for bare import: ${args.path}`);
-        const resolvedUrl = new URL(args.path, 'https://esm.sh/').href;
+        let resolvedUrl = new URL(args.path, 'https://esm.sh/').href; // Default fallback
+
+        const indexHtmlContent = files['index.html'];
+        if (indexHtmlContent) {
+            try {
+                const importMapMatch = indexHtmlContent.match(/<script type="importmap">([\s\S]*?)<\/script>/);
+                if (importMapMatch) {
+                    const importMap = JSON.parse(importMapMatch[1]);
+                    if (importMap.imports) {
+                        if (importMap.imports[args.path]) {
+                            resolvedUrl = importMap.imports[args.path];
+                            log(`Resolved bare import from importmap: ${args.path} -> ${resolvedUrl}`);
+                        } else {
+                            const trailingSlashMatch = Object.keys(importMap.imports).find(key => key.endsWith('/') && args.path.startsWith(key));
+                            if (trailingSlashMatch) {
+                                resolvedUrl = importMap.imports[trailingSlashMatch] + args.path.substring(trailingSlashMatch.length);
+                                log(`Resolved bare import from importmap (prefix): ${args.path} -> ${resolvedUrl}`);
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                log(`Could not parse importmap: ${e}`);
+            }
+        }
+        
         return {
             path: resolvedUrl,
             namespace: 'a',
