@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { bundle } from '../../bundler';
 import SpinnerIcon from '../icons/SpinnerIcon';
@@ -27,14 +28,102 @@ const previewHtml = `
       
       window.addEventListener('error', (event) => handleError(event.error));
 
+      const handleCaptureState = (event) => {
+        const videoEl = document.querySelector('video');
+        const styles = Array.from(document.head.querySelectorAll('style, link[rel="stylesheet"]'))
+                           .map(el => el.outerHTML)
+                           .join('');
+        const payload = {
+            htmlContent: styles + document.body.outerHTML,
+            videoFrameDataUrl: null,
+            videoFrameRect: null,
+        };
+
+        if (videoEl && videoEl.readyState >= 2) { // HAVE_CURRENT_DATA
+            const canvas = document.createElement('canvas');
+            canvas.width = videoEl.videoWidth;
+            canvas.height = videoEl.videoHeight;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+                ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+                payload.videoFrameDataUrl = canvas.toDataURL();
+                // Bounding rect needs to be serialized as it's not a plain object
+                payload.videoFrameRect = JSON.parse(JSON.stringify(videoEl.getBoundingClientRect()));
+            }
+        }
+        
+        window.parent.postMessage({
+            type: 'preview-state-captured',
+            requestId: event.data.requestId,
+            payload: payload
+        }, '*');
+      };
+
+      const handleInteraction = (event) => {
+        try {
+            const { selector, action, value } = event.data.payload;
+            const element = document.querySelector(selector);
+            if (!element) {
+                throw new Error('Element with selector "' + selector + '" not found.');
+            }
+            switch(action) {
+                case 'click':
+                    element.click();
+                    break;
+                case 'type':
+                    element.value = value;
+                    element.dispatchEvent(new Event('input', { bubbles: true }));
+                    element.dispatchEvent(new Event('change', { bubbles: true }));
+                    break;
+                case 'focus':
+                    element.focus();
+                    break;
+                case 'blur':
+                    element.blur();
+                    break;
+                default:
+                    throw new Error('Unsupported action: "' + action + '".');
+            }
+            window.parent.postMessage({ type: 'interaction-success', requestId: event.data.requestId, message: "Successfully performed '" + action + "' on '" + selector + "'." }, '*');
+        } catch (err) {
+             window.parent.postMessage({ type: 'interaction-error', requestId: event.data.requestId, message: err.message }, '*');
+        }
+      };
+
       window.addEventListener('message', (event) => {
+        const rootEl = document.getElementById('root');
+
+        const waitForContentAndRun = (actionFn) => {
+            let attempts = 0;
+            const maxAttempts = 20; // Try for 2 seconds
+            const interval = 100;
+
+            const checkContent = () => {
+                // Check if root has children, significant innerHTML, or if an error is displayed
+                if (rootEl && (rootEl.children.length > 0 || rootEl.innerHTML.length > 100 || document.getElementById('root-error'))) {
+                    actionFn(event);
+                } else if (attempts < maxAttempts) {
+                    attempts++;
+                    setTimeout(checkContent, interval);
+                } else {
+                    console.warn('Timed out waiting for preview content, running action anyway.');
+                    actionFn(event);
+                }
+            };
+            checkContent();
+        };
+
         if (event.data.type === 'execute') {
             try {
-                document.querySelector('#root').innerHTML = ''; // Clear previous content/errors
+                if(rootEl) rootEl.innerHTML = ''; // Clear previous content/errors
                 eval(event.data.code);
             } catch (err) {
                 handleError(err);
             }
+        } else if (event.data.type === 'capture-preview-state') {
+            waitForContentAndRun(handleCaptureState);
+        } else if (event.data.type === 'interact-with-element') {
+            waitForContentAndRun(handleInteraction);
         }
       }, false);
     </script>
