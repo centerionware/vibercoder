@@ -14,6 +14,7 @@ async function recursiveReadDir(fs: any, currentPath: string): Promise<string[]>
     let files: string[] = [];
     const entries = await fs.promises.readdir(currentPath);
     for (const entry of entries) {
+        if (entry === '.git') continue; // Skip the .git directory
         // LightningFS doesn't have a robust path join, so we handle it manually
         const entryPath = `${currentPath === '/' ? '' : currentPath}/${entry}`;
         const stat = await fs.promises.stat(entryPath);
@@ -121,7 +122,7 @@ class MainThreadGitService implements GitService {
         }
 
         // Add changes to index
-        const statusMatrix = await git.statusMatrix({ fs: this.fs, dir: this.dir });
+        const statusMatrix = await git.statusMatrix({ fs: this.fs, dir: this.dir, filter: f => !f.startsWith('.git/') });
         for (const [filepath, head, workdir] of statusMatrix) {
             if (workdir === 0) await git.remove({ fs: this.fs, dir: this.dir, filepath });
             else if (workdir === 2 || (workdir as number) === 3) {
@@ -187,6 +188,9 @@ class MainThreadGitService implements GitService {
         const auth = this.getAuth('write');
         if (!auth) throw new Error("Push failed: No credentials available.");
         const branch = await git.currentBranch({ fs: this.fs, dir: this.dir });
+        if (!branch) {
+            throw new Error("Cannot push: Not currently on a branch.");
+        }
         return git.push({
             fs: this.fs,
             http: this.http,

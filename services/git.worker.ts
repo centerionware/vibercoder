@@ -83,7 +83,7 @@ self.onmessage = async (event: MessageEvent) => {
       case 'commit':
         const commitAuth = getAuthFromPayload(payload, 'write');
         await writeAppFilesToFs(payload.appFiles);
-        const statusMatrix = await git.statusMatrix({ fs, dir });
+        const statusMatrix = await git.statusMatrix({ fs, dir, filter: f => !f.startsWith('.git/') });
         for (const [filepath, head, workdir] of statusMatrix) {
              if (workdir === 0) {
                 await git.remove({ fs, dir, filepath });
@@ -177,6 +177,9 @@ self.onmessage = async (event: MessageEvent) => {
       case 'push':
         const pushAuth = getAuthFromPayload(payload, 'write');
         const branch = await git.currentBranch({ fs, dir });
+        if (!branch) {
+            throw new Error("Cannot push: Not currently on a branch.");
+        }
         result = await git.push({
             fs, http, dir, corsProxy: pushAuth.proxyUrl,
             ref: branch,
@@ -248,6 +251,7 @@ async function recursiveReadDir(currentPath: string): Promise<string[]> {
     let files: string[] = [];
     const entries = await fs.promises.readdir(currentPath);
     for (const entry of entries) {
+        if (entry === '.git') continue; // Skip .git directory
         const entryPath = `${currentPath === '/' ? '' : currentPath}/${entry}`;
         const stat = await fs.promises.stat(entryPath);
         if (stat.isDirectory()) {
