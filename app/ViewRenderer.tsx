@@ -34,8 +34,6 @@ const ViewRenderer: React.FC<ViewRendererProps> = (app) => {
           onRuntimeError={app.handleRuntimeError}
           bundleLogs={app.bundleLogs}
           onClearLogs={app.clearBundleLogs}
-          isFullScreen={app.isFullScreen}
-          onToggleFullScreen={app.onToggleFullScreen}
         />
       );
     case View.Ai:

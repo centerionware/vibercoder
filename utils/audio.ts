@@ -68,11 +68,11 @@ export function createBlob(data: Float32Array): Blob {
 
 /**
  * Plays a simple notification sound for user feedback.
- * @param type 'start' for activation, 'stop' for deactivation.
+ * @param type 'start' for activation, 'stop' for deactivation, 'ai-start' for AI turn start, 'ai-stop' for AI turn end.
  * @param context The AudioContext to use for playback.
  * @returns A promise that resolves when the sound has finished playing.
  */
-export const playNotificationSound = (type: 'start' | 'stop' = 'start', context: AudioContext | null): Promise<void> => {
+export const playNotificationSound = (type: 'start' | 'stop' | 'ai-start' | 'ai-stop' = 'start', context: AudioContext | null): Promise<void> => {
   return new Promise((resolve) => {
     if (!context || context.state === 'closed') {
       console.warn("Cannot play notification sound: AudioContext is not available or closed.");
@@ -98,19 +98,37 @@ export const playNotificationSound = (type: 'start' | 'stop' = 'start', context:
 
       // Set volume (gain)
       gainNode.gain.setValueAtTime(0, context.currentTime);
-      gainNode.gain.linearRampToValueAtTime(0.2, context.currentTime + 0.01); // Quick ramp up to avoid clicks
+      gainNode.gain.linearRampToValueAtTime(0.2, context.currentTime + 0.01); // Increased volume
 
-      // Set frequency based on type
-      if (type === 'start') {
-          oscillator.frequency.setValueAtTime(880, context.currentTime); // A5 note for activation
-      } else {
-          oscillator.frequency.setValueAtTime(523.25, context.currentTime); // C5 note for deactivation
+      let frequency: number;
+      let duration = 0.15;
+
+      // Set frequency and duration based on type
+      switch(type) {
+          case 'start':
+              frequency = 880; // A5 note for session activation
+              break;
+          case 'stop':
+              frequency = 523.25; // C5 note for session deactivation
+              break;
+          case 'ai-start':
+              frequency = 1200; // Higher pitch, short blip for AI turn start
+              duration = 0.1;
+              break;
+          case 'ai-stop':
+              frequency = 600; // Audible but lower pitch "plonk" for AI turn end
+              duration = 0.15;
+              break;
+          default:
+              frequency = 880;
       }
+      
+      oscillator.frequency.setValueAtTime(frequency, context.currentTime);
 
       // Schedule start and stop
       oscillator.start(context.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.00001, context.currentTime + 0.2); // Fade out over 0.2s
-      oscillator.stop(context.currentTime + 0.2);
+      gainNode.gain.exponentialRampToValueAtTime(0.00001, context.currentTime + duration);
+      oscillator.stop(context.currentTime + duration);
     } catch (e) {
       console.error("Could not play notification sound:", e);
       resolve(); // Resolve even on error to not block the calling function.

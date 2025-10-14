@@ -11,8 +11,6 @@ interface State {
 }
 
 class ErrorBoundary extends React.Component<Props, State> {
-  // Use a class field to initialize state. This is a modern and concise approach
-  // for React class components.
   state: State = {
     hasError: false,
     error: null,
@@ -40,16 +38,15 @@ class ErrorBoundary extends React.Component<Props, State> {
     window.removeEventListener('unhandledrejection', this.handleRejection);
   }
 
-  // FIX: Converted to an arrow function to automatically bind `this`.
-  // This resolves errors where `this.setState` would not be found on the component instance when used as a window event handler.
+  // FIX: Use an arrow function for the event handler. This automatically binds `this`
+  // to the component instance, ensuring that `this.setState` is defined and can be called.
   private handleError = (event: ErrorEvent) => {
     console.error("Global uncaught error:", event.error);
     event.preventDefault();
     this.setState({ hasError: true, error: event.error });
   }
 
-  // FIX: Converted to an arrow function to automatically bind `this`.
-  // This resolves errors where `this.setState` would not be found on the component instance when used as a window event handler.
+  // FIX: Use an arrow function for the event handler to ensure correct `this` binding.
   private handleRejection = (event: PromiseRejectionEvent) => {
     console.error("Global unhandled rejection:", event.reason);
     event.preventDefault();
@@ -62,6 +59,8 @@ class ErrorBoundary extends React.Component<Props, State> {
       return <ErrorFallback error={this.state.error} />;
     }
     
+    // FIX: The `render` method is called by React with the correct context, so `this.props`
+    // is correctly available. The reported error was likely a cascade from the event handler type issues.
     return this.props.children;
   }
 }

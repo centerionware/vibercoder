@@ -97,6 +97,7 @@ export const useAiLive = (props: UseAiLiveProps) => {
         if (message.serverContent && !sessionRefs.current.isAiTurn) {
             sessionRefs.current.isAiTurn = true;
             setIsAiTurn(true);
+            playNotificationSound('ai-start', audioContextRefs.current.output);
         }
     
         const base64Audio = message.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
@@ -180,6 +181,7 @@ export const useAiLive = (props: UseAiLiveProps) => {
 
     const finalizeTurn = useCallback(() => {
         console.log("[AI Live] Finalizing turn, processing message queue.");
+        playNotificationSound('ai-stop', audioContextRefs.current.output);
         sessionRefs.current.isTurnFinalizing = false;
         endOfTurnTimerRef.current = null;
     
