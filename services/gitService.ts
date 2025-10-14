@@ -257,6 +257,7 @@ class WorkerGitService implements GitService {
     private requests: Map<string, { resolve: (value: any) => void; reject: (reason?: any) => void; }> = new Map();
     private mockService = new MockGitService();
     private initPromise: Promise<void> | null = null;
+    private getAuth: (operation: 'read' | 'write') => ({ token: string | undefined; author: GitAuthor; proxyUrl: string; }) | null = () => null;
 
     constructor(projectId: string) {
         try {
@@ -308,6 +309,13 @@ class WorkerGitService implements GitService {
             throw new Error("Git worker is not available.");
         }
 
+        const isWrite = ['commit', 'push', 'rebase'].includes(type);
+        const operation = isWrite ? 'write' : 'read';
+
+        const auth = this.getAuth(operation);
+        const finalPayload = { ...payload, auth };
+
+
         return new Promise((resolve, reject) => {
             const id = uuidv4();
             this.requests.set(id, { resolve, reject });
@@ -329,7 +337,7 @@ class WorkerGitService implements GitService {
                 this.requests.set(id, { resolve, reject });
             }
             
-            this.worker!.postMessage({ id, type, payload });
+            this.worker!.postMessage({ id, type, payload: finalPayload });
         });
     }
 

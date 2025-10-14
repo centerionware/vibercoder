@@ -445,6 +445,11 @@ export const useAppLogic = () => {
   }, [activeView, settings.autoEnableLiveMode, liveSession.isLive, liveSession.startLiveSession]);
   
   const handleClone = useCallback(async (url: string, name: string) => {
+    if (projects.some(p => p.name === name)) {
+        alert(`A project named "${name}" already exists. Please choose a different name.`);
+        return;
+    }
+
     setIsCloning(true);
     setCloningProgress('Creating project...');
     let newProjectId: string | null = null;
@@ -474,7 +479,7 @@ export const useAppLogic = () => {
             switchProject(newProjectId);
         }
     }
-  }, [createNewProject, switchProject, getGitAuth, deleteProject]);
+  }, [createNewProject, switchProject, getGitAuth, deleteProject, projects]);
 
   const handleClearDebugLogs = useCallback(() => {
     clearGlobalLogs();
