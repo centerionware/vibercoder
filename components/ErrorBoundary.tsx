@@ -40,15 +40,16 @@ class ErrorBoundary extends React.Component<Props, State> {
     window.removeEventListener('unhandledrejection', this.handleRejection);
   }
 
-  // FIX: Use arrow functions for event handlers to automatically bind `this`.
-  // This ensures `this.setState` and `this.props` refer to the component instance,
-  // resolving errors where they were not found on the component type.
+  // FIX: Converted to an arrow function to automatically bind `this`.
+  // This resolves errors where `this.setState` would not be found on the component instance when used as a window event handler.
   private handleError = (event: ErrorEvent) => {
     console.error("Global uncaught error:", event.error);
     event.preventDefault();
     this.setState({ hasError: true, error: event.error });
   }
 
+  // FIX: Converted to an arrow function to automatically bind `this`.
+  // This resolves errors where `this.setState` would not be found on the component instance when used as a window event handler.
   private handleRejection = (event: PromiseRejectionEvent) => {
     console.error("Global unhandled rejection:", event.reason);
     event.preventDefault();

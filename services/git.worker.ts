@@ -176,8 +176,10 @@ self.onmessage = async (event: MessageEvent) => {
         
       case 'push':
         const pushAuth = getAuthFromPayload(payload, 'write');
+        const branch = await git.currentBranch({ fs, dir });
         result = await git.push({
             fs, http, dir, corsProxy: pushAuth.proxyUrl,
+            ref: branch,
             onAuth: () => ({ username: pushAuth.token }),
             onProgress: (progress) => {
                 self.postMessage({ type: 'progress', id, payload: progress });
@@ -260,12 +262,12 @@ async function recursiveReadDir(currentPath: string): Promise<string[]> {
 async function getHeadFilesFromFs(): Promise<Record<string, string>> {
     const files: Record<string, string> = {};
     try {
-        await git.checkout({ fs, dir, ref: 'HEAD', force: true });
-        const filepaths = await git.listFiles({ fs, dir });
+        const oid = await git.resolveRef({ fs, dir, ref: 'HEAD' });
+        const filepaths = await git.listFiles({ fs, dir, ref: 'HEAD' });
         for (const filepath of filepaths) {
             try {
-                const content = await fs.promises.readFile(`${dir}${filepath}`, 'utf8');
-                files[filepath] = content as string;
+                const { blob } = await git.readBlob({ fs, dir, oid, filepath });
+                files[filepath] = Buffer.from(blob).toString('utf8');
             } catch(e) { /* ignore read errors for non-files like submodules */ }
         }
     } catch (e) {

@@ -76,13 +76,16 @@ class MainThreadGitService implements GitService {
     async getHeadFiles(): Promise<Record<string, string>> {
         const files: Record<string, string> = {};
         try {
-            await git.checkout({ fs: this.fs, dir: this.dir, ref: 'HEAD', force: true });
-            const filepaths = await git.listFiles({ fs: this.fs, dir: this.dir });
+            // Get commit hash for HEAD
+            const oid = await git.resolveRef({ fs: this.fs, dir: this.dir, ref: 'HEAD' });
+            // List files at that commit
+            const filepaths = await git.listFiles({ fs: this.fs, dir: this.dir, ref: 'HEAD' });
             for (const filepath of filepaths) {
                 try {
-                    const content = await this.fs.promises.readFile(`${this.dir}${filepath}`, 'utf8');
-                    files[filepath] = content as string;
-                } catch (e) {}
+                    // Read file content at that commit
+                    const { blob } = await git.readBlob({ fs: this.fs, dir: this.dir, oid, filepath });
+                    files[filepath] = Buffer.from(blob).toString('utf8');
+                } catch (e) { /* ignore read errors for non-files like submodules */ }
             }
         } catch (e) {
             console.warn("Could not read git files. Repository may be empty.");
@@ -183,6 +186,7 @@ class MainThreadGitService implements GitService {
     async push(onProgress?: (progress: GitProgress) => void): Promise<{ ok: boolean, error?: string }> {
         const auth = this.getAuth('write');
         if (!auth) throw new Error("Push failed: No credentials available.");
+        const branch = await git.currentBranch({ fs: this.fs, dir: this.dir });
         return git.push({
             fs: this.fs,
             http: this.http,
@@ -190,6 +194,7 @@ class MainThreadGitService implements GitService {
             corsProxy: this.http === http ? auth.proxyUrl : undefined,
             onAuth: () => ({ username: auth.token }),
             onProgress,
+            ref: branch,
         });
     }
 
