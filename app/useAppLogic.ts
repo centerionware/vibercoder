@@ -179,17 +179,46 @@ export const useAppLogic = () => {
     vfsReadyResolverRef.current(); // VFS is now ready, resolve the promise
   }, [files]);
   
-  const getGitAuth = useCallback(() => {
-    const token = gitCredentials.find(c => c.isDefault)?.token || settings.gitAuthToken;
-    const author = { name: settings.gitUserName, email: settings.gitUserEmail };
-    const proxyUrl = settings.gitCorsProxy;
+  const getGitAuth = useCallback((): { token: string, author: GitAuthor, proxyUrl: string } | null => {
+    if (!activeProject) return null;
+
+    const { gitSettings: projectGitSettings } = activeProject;
+    const globalAuthor = { name: settings.gitUserName, email: settings.gitUserEmail };
+    
+    let token: string | undefined;
+    let author = globalAuthor;
+    let proxyUrl = settings.gitCorsProxy;
+    
+    const source = projectGitSettings?.source || 'global';
+
+    switch (source) {
+        case 'specific':
+            token = gitCredentials.find(c => c.id === projectGitSettings?.credentialId)?.token;
+            break;
+        case 'custom':
+            token = projectGitSettings?.custom?.authToken;
+            author = {
+                name: projectGitSettings?.custom?.userName || globalAuthor.name,
+                email: projectGitSettings?.custom?.userEmail || globalAuthor.email,
+            };
+            proxyUrl = projectGitSettings?.custom?.corsProxy || settings.gitCorsProxy;
+            break;
+        case 'default':
+        case 'global':
+        default:
+            // For both 'default' and 'global' settings, we prioritize the default credential.
+            // The global token is the ultimate fallback.
+            token = gitCredentials.find(c => c.isDefault)?.token || settings.gitAuthToken;
+            break;
+    }
 
     if (!token || !author.name || !author.email) {
-        alert("Git authentication or user details are not configured. Please check your settings.");
+        alert("Git authentication or user details are not configured. Please check project settings or global settings.");
         return null;
     }
+
     return { token, author, proxyUrl };
-  }, [gitCredentials, settings]);
+  }, [activeProject, gitCredentials, settings]);
 
   const handlePush = useCallback(async () => {
     if (!gitService) return;
@@ -265,13 +294,12 @@ export const useAppLogic = () => {
 
   const internalHandleCommit = useCallback(async (message: string) => {
     if (!gitService) throw new Error("Git service not available.");
-    const { gitUserName, gitUserEmail } = settings;
-    if (!gitUserName || !gitUserEmail) {
-        throw new Error("Please set your Git user name and email in the global settings.");
-    }
+    const auth = getGitAuth();
+    if (!auth) throw new Error("Could not resolve Git author information for commit.");
+
     setIsCommitting(true);
     try {
-        await gitService.commit(message, { name: gitUserName, email: gitUserEmail }, files);
+        await gitService.commit(message, auth.author, files);
         setCommitMessage(''); // Clear message after successful commit
         const newStatus = await gitService.status(files);
         setChangedFiles(newStatus);
@@ -281,7 +309,7 @@ export const useAppLogic = () => {
     } finally {
         setIsCommitting(false);
     }
-  }, [files, settings, gitService]);
+  }, [files, gitService, getGitAuth]);
 
   const handleCommit = useCallback(async (message: string) => {
     try {
@@ -400,8 +428,12 @@ export const useAppLogic = () => {
         const newProject = await createNewProject(name, false, url);
         // A temporary git service for the new project ID before it's active
         const tempGitService = createGitService(true, newProject.id);
-        const token = gitCredentials.find(c => c.isDefault)?.token || settings.gitAuthToken;
-        await tempGitService.clone(url, settings.gitCorsProxy, { name: settings.gitUserName, email: settings.gitUserEmail }, token, (progress: GitProgress) => {
+        const auth = getGitAuth();
+        if (!auth) {
+            // getGitAuth shows its own alert
+            throw new Error("Git authentication details not found.");
+        }
+        await tempGitService.clone(url, auth.proxyUrl, auth.author, auth.token, (progress: GitProgress) => {
             setCloningProgress(`${progress.phase} (${progress.loaded}/${progress.total})`);
         });
         
@@ -415,7 +447,7 @@ export const useAppLogic = () => {
         setCloningProgress(null);
         setIsProjectModalOpen(false);
     }
-  }, [settings, gitCredentials, createNewProject, switchProject]);
+  }, [createNewProject, switchProject, getGitAuth]);
 
   const handleClearDebugLogs = useCallback(() => {
     clearGlobalLogs();

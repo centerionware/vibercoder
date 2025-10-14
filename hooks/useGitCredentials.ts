@@ -16,11 +16,15 @@ export const useGitCredentials = () => {
 
     const createGitCredential = useCallback(async (name: string, token: string) => {
         if (!name.trim() || !token.trim()) return;
+        
+        const allCredentials = await db.gitCredentials.toArray();
+        const isFirstCredential = allCredentials.length === 0;
+
         const newCredential: GitCredential = {
             id: uuidv4(),
             name,
             token,
-            isDefault: false,
+            isDefault: isFirstCredential,
         };
         await db.gitCredentials.add(newCredential);
         setCredentials(prev => [...prev, newCredential]);
