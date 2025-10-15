@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { db } from '../utils/idb';
 import { getDebugLogs } from '../utils/logging';
+import { safeLocalStorage } from '../utils/environment';
 
 interface ErrorFallbackProps {
   error: Error;
@@ -19,7 +20,7 @@ const ErrorFallback: React.FC<ErrorFallbackProps> = ({ error }) => {
       console.warn("IndexedDB has been cleared.");
       
       // Clear localStorage
-      localStorage.clear();
+      safeLocalStorage.clear();
       console.warn("localStorage has been cleared.");
       
       // Reload the page

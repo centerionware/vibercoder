@@ -15,6 +15,7 @@ const PreviewIframe: React.FC<PreviewIframeProps> = ({ builtCode, onRuntimeError
     const handleMessage = (event: MessageEvent) => {
       // An iframe with a sandbox attribute (without 'allow-same-origin') has an opaque origin,
       // so we can't do a strict origin check. We must rely on the source window being the one from our ref.
+      // After adding 'allow-same-origin', we could technically check event.origin, but checking the source window is more robust.
       if (event.source !== iframeRef.current?.contentWindow) {
         return;
       }
@@ -45,7 +46,7 @@ const PreviewIframe: React.FC<PreviewIframeProps> = ({ builtCode, onRuntimeError
       ref={iframeRef}
       srcDoc={previewHtml}
       title="Preview"
-      sandbox="allow-scripts allow-forms allow-modals allow-popups allow-downloads"
+      sandbox="allow-scripts allow-forms allow-modals allow-popups allow-downloads allow-same-origin"
       className="absolute inset-0 w-full h-full border-0"
     />
   );

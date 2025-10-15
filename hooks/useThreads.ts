@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../utils/idb';
 import { ChatThread, AiMessage, GeminiContent } from '../types';
+import { safeLocalStorage } from '../utils/environment';
 
 export const useThreads = (activeProjectId: string | null) => {
     const [threads, setThreads] = useState<ChatThread[]>([]);
@@ -22,7 +23,7 @@ export const useThreads = (activeProjectId: string | null) => {
             if (dbThreads.length > 0) {
                 setThreads(dbThreads);
                 // Try to load last active thread FOR THIS PROJECT, otherwise load the most recent one
-                const lastActiveId = localStorage.getItem(`vibecode_activeThreadId_${activeProjectId}`);
+                const lastActiveId = safeLocalStorage.getItem(`vibecode_activeThreadId_${activeProjectId}`);
                 if (lastActiveId && dbThreads.some(t => t.id === lastActiveId)) {
                     setActiveThreadId(lastActiveId);
                 } else {
@@ -53,7 +54,7 @@ export const useThreads = (activeProjectId: string | null) => {
     // Persist active thread ID for the specific project
     useEffect(() => {
         if (activeThreadId && activeProjectId) {
-            localStorage.setItem(`vibecode_activeThreadId_${activeProjectId}`, activeThreadId);
+            safeLocalStorage.setItem(`vibecode_activeThreadId_${activeProjectId}`, activeThreadId);
         }
     }, [activeThreadId, activeProjectId]);
 

@@ -22,3 +22,39 @@ declare global {
 export const isNativeEnvironment = (): boolean => {
   return Capacitor.isNativePlatform() || !!window.electron?.isElectron;
 };
+
+// --- Safe localStorage Wrapper ---
+
+const isLocalStorageAvailable = (): boolean => {
+    try {
+        // Check if localStorage is not only present but also accessible.
+        const testKey = '__test_localStorage_availability__';
+        localStorage.setItem(testKey, testKey);
+        localStorage.removeItem(testKey);
+        return true;
+    } catch (e) {
+        console.warn("localStorage is not available in this environment. State will not be persisted across sessions.");
+        return false;
+    }
+};
+
+const storageAvailable = isLocalStorageAvailable();
+
+export const safeLocalStorage = {
+    getItem: (key: string): string | null => {
+        if (!storageAvailable) {
+            return null;
+        }
+        return localStorage.getItem(key);
+    },
+    setItem: (key: string, value: string): void => {
+        if (storageAvailable) {
+            localStorage.setItem(key, value);
+        }
+    },
+    clear: (): void => {
+        if (storageAvailable) {
+            localStorage.clear();
+        }
+    },
+};

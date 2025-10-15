@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { AppSettings } from '../types';
 import { DEFAULT_SETTINGS } from '../app/config';
+import { safeLocalStorage } from '../utils/environment';
 
 const SETTINGS_KEY = 'vibecode_settings';
 
@@ -11,7 +12,7 @@ export const useSettings = () => {
     // Load settings from localStorage on initial mount
     useEffect(() => {
         try {
-            const savedSettings = localStorage.getItem(SETTINGS_KEY);
+            const savedSettings = safeLocalStorage.getItem(SETTINGS_KEY);
             if (savedSettings) {
                 const parsed = JSON.parse(savedSettings);
                 // Merge with defaults to ensure all keys are present after an update
@@ -29,7 +30,7 @@ export const useSettings = () => {
     useEffect(() => {
         if (isSettingsLoaded) {
             try {
-                localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+                safeLocalStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
             } catch (e) {
                 console.error("Failed to save settings to localStorage:", e);
             }

@@ -3,12 +3,13 @@ import { v4 as uuidv4 } from 'uuid';
 import { db } from '../utils/idb';
 import { Project, GitSettings } from '../types';
 import { useSettings } from './useSettings';
+import { safeLocalStorage } from '../utils/environment';
 
 const ACTIVE_PROJECT_ID_KEY = 'vibecode_activeProjectId';
 
 export const useProjects = () => {
     const [projects, setProjects] = useState<Project[]>([]);
-    const [activeProjectId, setActiveProjectId] = useState<string | null>(localStorage.getItem(ACTIVE_PROJECT_ID_KEY));
+    const [activeProjectId, setActiveProjectId] = useState<string | null>(() => safeLocalStorage.getItem(ACTIVE_PROJECT_ID_KEY));
     const { settings } = useSettings();
 
     const activeProject = projects.find(p => p.id === activeProjectId);
@@ -29,7 +30,7 @@ export const useProjects = () => {
 
     useEffect(() => {
         if (activeProjectId) {
-            localStorage.setItem(ACTIVE_PROJECT_ID_KEY, activeProjectId);
+            safeLocalStorage.setItem(ACTIVE_PROJECT_ID_KEY, activeProjectId);
         }
     }, [activeProjectId]);
 
