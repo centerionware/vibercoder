@@ -1,4 +1,5 @@
 
+
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { Capacitor } from '@capacitor/core';
 
@@ -8,7 +9,6 @@ import { playNotificationSound } from '../utils/audio';
 
 import { useLiveState } from './useAiLive/state';
 import { useVideoStream } from './useAiLive/videoManager';
-import { createTurnManager } from './useAiLive/turnManager';
 import { createMessageProcessor, useUiUpdater } from './useAiLive/messageProcessor';
 import { createSessionManager } from './useAiLive/sessionManager';
 import { stopAudioProcessing } from './useAiLive/audioManager';
@@ -53,43 +53,32 @@ export const useAiLive = (props: UseAiLiveProps) => {
     }, [clearInactivityTimer, refs.inactivityTimerRef]);
 
     // --- Create Manager Instances (Memoized) ---
-    // FIX: Import and use `useMemo` to memoize manager instances.
-    const turnManager = useMemo(() => createTurnManager({
-        propsRef,
-        sessionRefs: refs.sessionRefs,
-        ui: { cancelUiUpdate, setIsAiTurn: setters.setIsAiTurn },
-        audioContext: refs.audioContextRefs.current?.output || null,
-        inactivity: { startInactivityTimer, clearInactivityTimer }
-    }), [cancelUiUpdate, setters.setIsAiTurn, refs.sessionRefs, refs.audioContextRefs, startInactivityTimer, clearInactivityTimer]);
-
-    // FIX: Import and use `useMemo` to memoize manager instances.
     const messageProcessor = useMemo(() => createMessageProcessor({
         propsRef,
         sessionRefs: refs.sessionRefs,
-        turnManager,
         ui: {
             requestUiUpdate,
+            cancelUiUpdate,
             setIsSpeaking: setters.setIsSpeaking,
             setIsAiTurn: setters.setIsAiTurn,
         },
         audioContextRefs: refs.audioContextRefs,
-        inactivity: { clearInactivityTimer },
+        inactivity: { clearInactivityTimer, startInactivityTimer },
         stopExecutionRef: refs.stopExecutionRef,
         lastToolChimeTimeRef: refs.lastToolChimeTimeRef,
         isSessionDirty: refs.isSessionDirty,
         endOfTurnTimerRef: refs.endOfTurnTimerRef,
-    }), [turnManager, requestUiUpdate, setters.setIsSpeaking, setters.setIsAiTurn, refs.sessionRefs, refs.audioContextRefs, clearInactivityTimer, refs.stopExecutionRef, refs.lastToolChimeTimeRef, refs.isSessionDirty, refs.endOfTurnTimerRef]);
+    }), [requestUiUpdate, cancelUiUpdate, setters.setIsSpeaking, setters.setIsAiTurn, refs.sessionRefs, refs.audioContextRefs, clearInactivityTimer, startInactivityTimer, refs.stopExecutionRef, refs.lastToolChimeTimeRef, refs.isSessionDirty, refs.endOfTurnTimerRef]);
 
-    // FIX: Import and use `useMemo` to memoize manager instances.
     const sessionManager = useMemo(() => createSessionManager({
         propsRef,
         stateRef,
         refs,
         setters,
         onMessage: messageProcessor.onMessage,
-        finalizeTurn: turnManager.finalizeTurn,
+        finalizeTurn: messageProcessor.finalizeTurn,
         disableVideoStream,
-    }), [propsRef, stateRef, refs, setters, messageProcessor.onMessage, turnManager.finalizeTurn, disableVideoStream]);
+    }), [propsRef, stateRef, refs, setters, messageProcessor.onMessage, messageProcessor.finalizeTurn, disableVideoStream]);
     
     // --- Public API ---
     const startLiveSession = useCallback(async (): Promise<boolean> => {

@@ -35,10 +35,10 @@ interface SessionManagerDependencies {
     propsRef: React.RefObject<UseAiLiveProps>;
     stateRef: React.RefObject<{ isLive: boolean; isMuted: boolean; isSpeaking: boolean; isAiTurn: boolean; isVideoStreamEnabled: boolean; }>;
     refs: {
-        audioContextRefs: React.RefObject<AudioContextRefs>;
-        sessionRefs: React.RefObject<SessionRefs>;
-        retryRef: React.RefObject<{ count: number; maxRetries: number; delay: number; timeoutId: number | null; }>;
-        isSessionDirty: React.RefObject<boolean>;
+        audioContextRefs: React.MutableRefObject<AudioContextRefs>;
+        sessionRefs: React.MutableRefObject<SessionRefs>;
+        retryRef: React.MutableRefObject<{ count: number; maxRetries: number; delay: number; timeoutId: number | null; }>;
+        isSessionDirty: React.MutableRefObject<boolean>;
     };
     setters: {
         setIsLive: React.Dispatch<React.SetStateAction<boolean>>;
@@ -85,12 +85,15 @@ export const createSessionManager = ({
         if (sessionRefs.current?.liveMessageId) finalizeTurn();
 
         if (sessionRefs.current) {
-            sessionRefs.current = {
-                ...sessionRefs.current,
-                session: null, sessionPromise: null, liveMessageId: null,
-                currentInputTranscription: '', currentOutputTranscription: '',
-                currentToolCalls: [], isAiTurn: false, pendingMessageQueue: [], isTurnFinalizing: false,
-            };
+            sessionRefs.current.session = null;
+            sessionRefs.current.sessionPromise = null;
+            sessionRefs.current.liveMessageId = null;
+            sessionRefs.current.currentInputTranscription = '';
+            sessionRefs.current.currentOutputTranscription = '';
+            sessionRefs.current.currentToolCalls = [];
+            sessionRefs.current.isAiTurn = false;
+            sessionRefs.current.pendingMessageQueue = [];
+            sessionRefs.current.isTurnFinalizing = false;
         }
     }, [stateRef, retryRef, isSessionDirty, setters, disableVideoStream, audioContextRefs, sessionRefs, finalizeTurn]);
     

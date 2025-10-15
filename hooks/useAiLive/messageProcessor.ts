@@ -9,8 +9,8 @@ import { playNotificationSound } from '../../utils/audio';
 // Hook for managing debounced UI updates
 export const useUiUpdater = (
     propsRef: React.RefObject<UseAiLiveProps>,
-    sessionRefs: React.RefObject<SessionRefs>,
-    uiUpdateTimerRef: React.RefObject<number | null>
+    sessionRefs: React.MutableRefObject<SessionRefs>,
+    uiUpdateTimerRef: React.MutableRefObject<number | null>
 ) => {
     const requestUiUpdate = useCallback(() => {
         if (uiUpdateTimerRef.current) return;
@@ -39,24 +39,67 @@ export const useUiUpdater = (
 
 interface MessageProcessorDependencies {
     propsRef: React.RefObject<UseAiLiveProps>;
-    sessionRefs: React.RefObject<SessionRefs>;
-    turnManager: { finalizeTurn: (process: (msg: any) => void) => void };
+    sessionRefs: React.MutableRefObject<SessionRefs>;
     ui: {
         requestUiUpdate: () => void;
+        cancelUiUpdate: () => void;
         setIsSpeaking: (isSpeaking: boolean) => void;
         setIsAiTurn: (isAiTurn: boolean) => void;
     };
-    audioContextRefs: React.RefObject<AudioContextRefs>;
-    inactivity: { clearInactivityTimer: () => void };
-    stopExecutionRef: React.RefObject<boolean>;
-    lastToolChimeTimeRef: React.RefObject<number>;
-    // FIX: Added refs for `isSessionDirty` and `endOfTurnTimerRef` to dependencies.
-    isSessionDirty: React.RefObject<boolean>;
-    endOfTurnTimerRef: React.RefObject<number | null>;
+    audioContextRefs: React.MutableRefObject<AudioContextRefs>;
+    inactivity: { 
+        clearInactivityTimer: () => void;
+        startInactivityTimer: () => void;
+    };
+    stopExecutionRef: React.MutableRefObject<boolean>;
+    lastToolChimeTimeRef: React.MutableRefObject<number>;
+    isSessionDirty: React.MutableRefObject<boolean>;
+    endOfTurnTimerRef: React.MutableRefObject<number | null>;
 }
 
 export const createMessageProcessor = (deps: MessageProcessorDependencies) => {
     
+    // This function is defined lazily and will be assigned the real implementation later.
+    // This helps break the circular dependency between finalizeTurn and processModelOutput.
+    const processModelOutputRef = useRef<(message: any) => Promise<void>>(() => Promise.resolve());
+
+    const finalizeTurn = () => {
+        if (!deps.sessionRefs.current) return;
+        
+        console.log("[AI Live] Finalizing turn, processing message queue.");
+        playNotificationSound('ai-stop', deps.audioContextRefs.current?.output);
+        deps.sessionRefs.current.isTurnFinalizing = false;
+
+        const queue = [...deps.sessionRefs.current.pendingMessageQueue];
+        deps.sessionRefs.current.pendingMessageQueue = [];
+
+        queue.forEach(msg => processModelOutputRef.current(msg));
+        
+        if (deps.sessionRefs.current.isAiTurn) {
+            deps.sessionRefs.current.isAiTurn = false;
+            deps.ui.setIsAiTurn(false);
+        }
+        
+        deps.ui.cancelUiUpdate();
+        const { liveMessageId, currentInputTranscription, currentOutputTranscription, currentToolCalls } = deps.sessionRefs.current;
+        if (liveMessageId) {
+            deps.propsRef.current?.updateMessage(liveMessageId, { content: currentInputTranscription, isLive: false });
+            deps.propsRef.current?.updateMessage(`${liveMessageId}-model`, { 
+                content: currentOutputTranscription, 
+                isLive: false,
+                toolCalls: [...currentToolCalls]
+            });
+            deps.propsRef.current?.onEndAiRequest();
+        }
+
+        deps.sessionRefs.current.liveMessageId = null;
+        deps.sessionRefs.current.currentInputTranscription = '';
+        deps.sessionRefs.current.currentOutputTranscription = '';
+        deps.sessionRefs.current.currentToolCalls = [];
+
+        deps.inactivity.startInactivityTimer();
+    };
+
     const processModelOutput = useCallback(async (message: any) => {
         const { propsRef, sessionRefs, ui, audioContextRefs, stopExecutionRef, lastToolChimeTimeRef } = deps;
 
@@ -124,6 +167,7 @@ export const createMessageProcessor = (deps: MessageProcessorDependencies) => {
             }
         }
     }, [deps]);
+    processModelOutputRef.current = processModelOutput;
 
     const processInputTranscription = useCallback((message: any) => {
         const { propsRef, sessionRefs, ui, inactivity, stopExecutionRef } = deps;
@@ -141,16 +185,13 @@ export const createMessageProcessor = (deps: MessageProcessorDependencies) => {
     }, [deps]);
 
     const onMessage = useCallback((message: any) => {
-        // FIX: Destructure `isSessionDirty` and `endOfTurnTimerRef` from dependencies.
-        const { sessionRefs, ui, inactivity, turnManager, isSessionDirty, endOfTurnTimerRef } = deps;
+        const { sessionRefs, ui, inactivity, isSessionDirty, endOfTurnTimerRef } = deps;
         if (!sessionRefs.current) return;
         
-        // FIX: Access `isSessionDirty` directly from its ref.
         isSessionDirty.current = true;
     
         if (message.serverContent?.inputTranscription) {
             inactivity.clearInactivityTimer();
-            // FIX: Access `endOfTurnTimerRef` directly from its ref.
             if (endOfTurnTimerRef.current) {
                 clearTimeout(endOfTurnTimerRef.current);
             }
@@ -182,13 +223,12 @@ export const createMessageProcessor = (deps: MessageProcessorDependencies) => {
         if (message.serverContent?.turnComplete) {
             if (!sessionRefs.current.isTurnFinalizing) {
                 sessionRefs.current.isTurnFinalizing = true;
-                // FIX: Access `endOfTurnTimerRef` directly from its ref.
                 endOfTurnTimerRef.current = window.setTimeout(
-                    () => turnManager.finalizeTurn(processModelOutput), 1000
+                    () => finalizeTurn(), 1000
                 );
             }
         }
-    }, [deps, processInputTranscription, processModelOutput]);
+    }, [deps, processInputTranscription, processModelOutput, finalizeTurn]);
 
-    return { onMessage, processModelOutput };
+    return { onMessage, processModelOutput, finalizeTurn };
 };
