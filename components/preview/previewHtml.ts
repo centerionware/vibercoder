@@ -34,7 +34,7 @@ export const previewHtml = `
     "monaco-editor": "https://aistudiocdn.com/monaco-editor@^0.54.0",
     "dexie": "https://aistudiocdn.com/dexie@^4.2.1",
     "buffer": "https://aistudiocdn.com/buffer@^6.0.3",
-    "esbuild-wasm": "https://aistudiocdn.com/esbuild-wasm@^0.25.10",
+    "esbuild-wasm": "https://aistudiocdn.com/esbuild-wasm@0.25.11",
     "@capacitor/core": "https://aistudiocdn.com/@capacitor/core@^7.4.3",
     "isomorphic-git/": "https://aistudiocdn.com/isomorphic-git@^1.34.0/",
     "isomorphic-git": "https://aistudiocdn.com/isomorphic-git@^1.34.0",
@@ -48,7 +48,7 @@ export const previewHtml = `
 }
 </script>
     <style>
-      html, body, #root { height: 100%; width: 10%; }
+      html, body, #root { height: 100%; width: 100%; }
       body { margin: 0; background-color: #1a1b26; }
       #root-error { color: white; font-family: sans-serif; padding: 1rem; }
       #root-error h3 { color: #f87171; }
@@ -176,4 +176,3 @@ export const previewHtml = `
     </script>
   </body>
 </html>
-`
