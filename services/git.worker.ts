@@ -71,8 +71,10 @@ self.onmessage = async (event: MessageEvent) => {
         const statuses = [];
         for (const row of matrix) {
             const [filepath, head, workdir, stage] = row;
-            // From isomorphic-git docs, this combination means the file is unmodified.
-            if (head === 1 && workdir === 2 && stage === 2) continue;
+            // This combination means the file is unmodified. Isomorphic-git's `status` command
+            // internally uses a more complex check, but for clean checkouts and simple changes,
+            // this is a reliable indicator of an unchanged file.
+            if (head === 1 && workdir === 1 && stage === 1) continue;
     
             // Otherwise, determine the status.
             if (workdir === 0) {

@@ -332,25 +332,29 @@ class WorkerGitService implements GitService {
         const auth = this.getAuth(operation);
         const finalPayload = { ...payload, auth };
 
-
         return new Promise((resolve, reject) => {
             const id = uuidv4();
-            this.requests.set(id, { resolve, reject });
 
-            let progressHandler: ((event: MessageEvent) => void) | null = null;
             if ((type === 'clone' || type === 'push' || type === 'pull') && onProgress) {
-                progressHandler = (event: MessageEvent) => {
+                const progressHandler = (event: MessageEvent) => {
                     if (event.data.type === 'progress' && event.data.id === id) {
                         onProgress(event.data.payload);
                     }
                 };
                 this.worker!.addEventListener('message', progressHandler);
-                
-                const cleanup = () => { if(progressHandler) this.worker!.removeEventListener('message', progressHandler); };
-                const originalResolve = resolve;
-                resolve = (value) => { cleanup(); originalResolve(value); };
-                const originalReject = reject;
-                reject = (reason) => { cleanup(); originalReject(reason); };
+
+                const cleanupAndResolve = (value: any) => {
+                    this.worker!.removeEventListener('message', progressHandler);
+                    resolve(value);
+                };
+
+                const cleanupAndReject = (reason: any) => {
+                    this.worker!.removeEventListener('message', progressHandler);
+                    reject(reason);
+                };
+
+                this.requests.set(id, { resolve: cleanupAndResolve, reject: cleanupAndReject });
+            } else {
                 this.requests.set(id, { resolve, reject });
             }
             
