@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../utils/idb';
-import { Project } from '../types';
+import { Project, GitSettings } from '../types';
 import { useSettings } from './useSettings';
 
 const ACTIVE_PROJECT_ID_KEY = 'vibecode_activeProjectId';
@@ -33,14 +33,14 @@ export const useProjects = () => {
         }
     }, [activeProjectId]);
 
-    const createNewProject = useCallback(async (name: string, setActive: boolean = true, remoteUrl: string = ''): Promise<Project> => {
+    const createNewProject = useCallback(async (name: string, setActive: boolean = true, remoteUrl: string = '', gitSettings?: GitSettings): Promise<Project> => {
         const newProject: Project = {
             id: uuidv4(),
             name,
             entryPoint: 'index.tsx',
             gitRemoteUrl: remoteUrl,
             createdAt: Date.now(),
-            gitSettings: {
+            gitSettings: gitSettings || {
                 source: 'global' // Default to using global settings
             }
         };

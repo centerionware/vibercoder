@@ -256,22 +256,23 @@ export const useAppLogic = () => {
     vfsReadyResolverRef.current();
   }, [files]);
 
-  const gitProgressCallback = useCallback((progress: GitProgress) => {
-    if (progress.total) {
-        setGitNetworkProgress(`${progress.phase} (${progress.loaded}/${progress.total})`);
-    } else if (progress.loaded) {
-        setGitNetworkProgress(`${progress.phase} (${progress.loaded})...`);
-    } else {
-        setGitNetworkProgress(progress.phase);
-    }
-  }, []);
-
   const handlePush = useCallback(async () => {
     if (!gitService) return;
     setIsGitNetworkActivity(true);
     setGitNetworkProgress('Pushing...');
+    
+    const onProgress = (progress: GitProgress) => {
+        if (progress.total) {
+            setGitNetworkProgress(`${progress.phase} (${progress.loaded}/${progress.total})`);
+        } else if (progress.loaded) {
+            setGitNetworkProgress(`${progress.phase} (${progress.loaded})...`);
+        } else {
+            setGitNetworkProgress(progress.phase);
+        }
+    };
+
     try {
-        const result = await gitService.push(gitProgressCallback);
+        const result = await gitService.push(onProgress);
         if (!result.ok) {
             throw new Error(result.error || 'Push failed. Check credentials and remote repository permissions.');
         }
@@ -283,14 +284,25 @@ export const useAppLogic = () => {
         setIsGitNetworkActivity(false);
         setGitNetworkProgress(null);
     }
-  }, [gitService, gitProgressCallback]);
+  }, [gitService]);
 
   const handlePull = useCallback(async (rebase: boolean) => {
       if (!gitService) return;
       setIsGitNetworkActivity(true);
       setGitNetworkProgress('Pulling...');
+
+      const onProgress = (progress: GitProgress) => {
+        if (progress.total) {
+            setGitNetworkProgress(`${progress.phase} (${progress.loaded}/${progress.total})`);
+        } else if (progress.loaded) {
+            setGitNetworkProgress(`${progress.phase} (${progress.loaded})...`);
+        } else {
+            setGitNetworkProgress(progress.phase);
+        }
+      };
+
       try {
-          await gitService.pull(rebase, gitProgressCallback);
+          await gitService.pull(rebase, onProgress);
           const newFiles = await gitService.getWorkingDirFiles();
           setFiles(newFiles);
           const newStatus = await gitService.status(newFiles);
@@ -303,7 +315,7 @@ export const useAppLogic = () => {
           setIsGitNetworkActivity(false);
           setGitNetworkProgress(null);
       }
-  }, [gitService, setFiles, gitProgressCallback]);
+  }, [gitService, setFiles]);
 
   const handleRebase = useCallback(async (branch: string) => {
       if (!gitService) return;
@@ -459,8 +471,23 @@ export const useAppLogic = () => {
     setIsCloning(true);
     setCloningProgress('Creating project...');
     let newProjectId: string | null = null;
+
+    const onProgress = (progress: GitProgress) => {
+        if (progress.total) {
+            setCloningProgress(`${progress.phase} (${progress.loaded}/${progress.total})`);
+        } else if (progress.loaded) {
+            setCloningProgress(`${progress.phase} (${progress.loaded})...`);
+        } else {
+            setCloningProgress(progress.phase);
+        }
+    };
+
     try {
-        const newProject = await createNewProject(name, false, url);
+        const projectGitSettings: GitSettings = credentialId
+            ? { source: 'specific', credentialId: credentialId }
+            : { source: 'default' };
+
+        const newProject = await createNewProject(name, false, url, projectGitSettings);
         newProjectId = newProject.id;
 
         const getCloneAuth = () => {
@@ -476,7 +503,8 @@ export const useAppLogic = () => {
         
         const tempGitService = createGitService(true, newProject.id, getCloneAuth);
         
-        await tempGitService.clone(url, gitProgressCallback);
+        await tempGitService.clone(url, onProgress);
+
     } catch (error: any) {
         alert(`Cloning failed: ${error.message}`);
         console.error("CLONE FAILED:", error);
@@ -494,7 +522,7 @@ export const useAppLogic = () => {
             }, 500);
         }
     }
-  }, [projects, createNewProject, gitCredentials, settings.gitUserName, settings.gitUserEmail, settings.gitCorsProxy, gitProgressCallback, deleteProject, switchProject]);
+  }, [projects, createNewProject, gitCredentials, settings.gitUserName, settings.gitUserEmail, settings.gitCorsProxy, deleteProject, switchProject]);
 
   const handleClearDebugLogs = useCallback(() => {
     clearGlobalLogs();
