@@ -4,7 +4,13 @@
  * The `seedInitialPrompts` function in `utils/idb.ts` will automatically
  * sync these definitions with the IndexedDB database on application startup.
  */
-import FULL_STACK_DEVELOPMENT_PROTOCOL from './protocols/full_stack_development_protocol';
+import LEAD_ENGINEER_PROTOCOL from './protocols/lead_engineer_protocol';
+import SENIOR_UI_UX_ENGINEER_PROTOCOL from './protocols/senior_ui_ux_engineer_protocol';
+import SENIOR_SOFTWARE_ARCHITECT_PROTOCOL from './protocols/senior_software_architect_protocol';
+import DEVOPS_SPECIALIST_PROTOCOL from './protocols/devops_specialist_protocol';
+import QUALITY_ASSURANCE_ENGINEER_PROTOCOL from './protocols/quality_assurance_engineer_protocol';
+import SENIOR_DATABASE_ENGINEER_PROTOCOL from './protocols/senior_database_engineer_protocol';
+import AUTHENTICATION_SPECIALIST_PROTOCOL from './protocols/authentication_specialist_protocol';
 import FEATURE_IMPLEMENTATION_PROTOCOL from './protocols/feature_implementation_protocol';
 import APP_CREATION_PROTOCOL from './protocols/app_creation_protocol';
 import DEBUGGING_PROTOCOL from './protocols/debugging_protocol';
@@ -12,6 +18,7 @@ import FEATURE_TRACING_PROTOCOL from './protocols/feature_tracing_protocol';
 import GIT_COMMIT_PROTOCOL from './protocols/git_commit_protocol';
 import USER_FEEDBACK_PROTOCOL from './protocols/user_feedback_protocol';
 import CHAT_CONTEXT_PROTOCOL from './protocols/chat_context_protocol';
+import LISTENING_CONTROL_PROTOCOL from './protocols/listening_control_protocol';
 import SELF_CORRECTION_PROTOCOL from './protocols/self_correction_protocol';
 import BUILD_ENVIRONMENT_CONTEXT from './protocols/build_environment_context';
 import PROJECT_ANALYSIS_PROTOCOL from './protocols/project_analysis_protocol';
@@ -27,6 +34,7 @@ import REQUEST_VALIDATION_PROTOCOL from './protocols/request_validation_protocol
 import SOLUTION_PRESENTATION_PROTOCOL from './protocols/solution_presentation_protocol';
 import TASK_MANAGEMENT_PROTOCOL from './protocols/task_management_protocol';
 import UI_UX_DESIGN_PROTOCOL from './protocols/ui_ux_design_protocol';
+import VISION_PROTOCOL from './protocols/vision_protocol';
 import ASSET_MANAGEMENT_PROTOCOL from './protocols/asset_management_protocol';
 
 
@@ -39,9 +47,39 @@ interface DefaultPrompt {
 
 export const defaultPrompts: DefaultPrompt[] = [
     {
-        id: 'full_stack_development_protocol',
-        description: 'The main autonomous protocol that dictates the core workflow for any code development or modification task.',
-        content: FULL_STACK_DEVELOPMENT_PROTOCOL,
+        id: 'lead_engineer_protocol',
+        description: 'The main orchestrator protocol that dictates which specialized engineering persona to adopt for a task.',
+        content: LEAD_ENGINEER_PROTOCOL,
+    },
+    {
+        id: 'senior_ui_ux_engineer_protocol',
+        description: 'Persona for creating beautiful, intuitive, and accessible user interfaces.',
+        content: SENIOR_UI_UX_ENGINEER_PROTOCOL,
+    },
+    {
+        id: 'senior_software_architect_protocol',
+        description: 'Persona for managing code structure, quality, refactoring, and documentation.',
+        content: SENIOR_SOFTWARE_ARCHITECT_PROTOCOL,
+    },
+    {
+        id: 'devops_specialist_protocol',
+        description: 'Persona for handling Git workflows, build processes, and debugging operational errors.',
+        content: DEVOPS_SPECIALIST_PROTOCOL,
+    },
+    {
+        id: 'quality_assurance_engineer_protocol',
+        description: 'Persona for verifying functionality, manual testing, and writing automated tests.',
+        content: QUALITY_ASSURANCE_ENGINEER_PROTOCOL,
+    },
+    {
+        id: 'senior_database_engineer_protocol',
+        description: 'Persona for managing data models, schema, and queries using Dexie.js, with a focus on security.',
+        content: SENIOR_DATABASE_ENGINEER_PROTOCOL,
+    },
+    {
+        id: 'authentication_specialist_protocol',
+        description: 'Persona for securely managing user credentials, primarily for Git, and guiding users on token creation.',
+        content: AUTHENTICATION_SPECIALIST_PROTOCOL,
     },
     {
         id: 'feature_implementation_protocol',
@@ -77,6 +115,11 @@ export const defaultPrompts: DefaultPrompt[] = [
         id: 'chat_context_protocol',
         description: 'A protocol for accessing and reasoning about the current conversation history.',
         content: CHAT_CONTEXT_PROTOCOL,
+    },
+    {
+        id: 'listening_control_protocol',
+        description: 'A protocol explaining how to use the `pauseListening` and `stopListening` tools to manage a voice conversation.',
+        content: LISTENING_CONTROL_PROTOCOL,
     },
     {
         id: 'self_correction_protocol',
@@ -152,6 +195,11 @@ export const defaultPrompts: DefaultPrompt[] = [
         id: 'ui_ux_design_protocol',
         description: 'A protocol for applying UI/UX design principles beyond the basic style guide.',
         content: UI_UX_DESIGN_PROTOCOL,
+    },
+    {
+        id: 'vision_protocol',
+        description: 'A protocol that explains how to use visual tools like screen capture and live video stream.',
+        content: VISION_PROTOCOL,
     },
     {
         id: 'asset_management_protocol',
