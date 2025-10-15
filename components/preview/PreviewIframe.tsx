@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useMemo } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { previewHtml } from './previewHtml';
 
 interface PreviewIframeProps {
@@ -10,15 +10,11 @@ const PreviewIframe: React.FC<PreviewIframeProps> = ({ builtCode, onRuntimeError
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [isReady, setIsReady] = useState(false);
 
-  // Memoize the data URL to prevent the iframe from reloading on every render unless the html changes.
-  const iframeSrc = useMemo(() => `data:text/html;charset=utf-8,${encodeURIComponent(previewHtml)}`, []);
-
-
   // This effect runs once to set up the message listener for the iframe's entire lifecycle.
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      // Using a data URL creates a unique origin, so we can't do a strict origin check.
-      // We rely on the source window being the one from our ref.
+      // An iframe with a sandbox attribute (without 'allow-same-origin') has an opaque origin,
+      // so we can't do a strict origin check. We must rely on the source window being the one from our ref.
       if (event.source !== iframeRef.current?.contentWindow) {
         return;
       }
@@ -47,7 +43,7 @@ const PreviewIframe: React.FC<PreviewIframeProps> = ({ builtCode, onRuntimeError
     <iframe
       id="preview-iframe"
       ref={iframeRef}
-      src={iframeSrc}
+      srcDoc={previewHtml}
       title="Preview"
       sandbox="allow-scripts allow-forms allow-modals allow-popups allow-downloads"
       className="absolute inset-0 w-full h-full border-0"
