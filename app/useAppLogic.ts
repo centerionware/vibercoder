@@ -54,6 +54,10 @@ export const useAppLogic = () => {
   const [liveFrameData, setLiveFrameData] = useState<string | null>(null);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [changedFiles, setChangedFiles] = useState<GitStatus[]>([]);
+  
+  // State to manage clone operations across renders
+  const [pendingClone, setPendingClone] = useState<{ projectId: string; url: string; } | null>(null);
+
 
   // --- Refs & Services ---
   const aiRef = useRef<GoogleGenAI | null>(null);
@@ -133,43 +137,76 @@ export const useAppLogic = () => {
     return { token: token!, author, proxyUrl };
   }, [activeProject, gitCredentials, settings]);
   
+  // This consolidated useEffect hook manages Git service creation, workspace syncing, and now, cloning.
   useEffect(() => {
-    // Pass the `getGitAuth` callback directly to the service factory.
-    // This ensures the service can access the LATEST credentials on every call.
-    setGitService(createGitService(true, activeProjectId, getGitAuth));
-  }, [activeProjectId, getGitAuth]);
+    if (!activeProjectId) {
+      setGitService(null);
+      return;
+    }
 
-  // Effect to load project files when the active project changes. This is the primary sync point.
-  useEffect(() => {
-    if (!gitService || !activeProject) {
+    const project = projects.find(p => p.id === activeProjectId);
+    if (!project) {
         return;
-    };
-
-    const loadProjectFiles = async () => {
-      console.log(`Syncing workspace for project: "${activeProject.name}"`);
-      const workingDirFiles = await gitService.getWorkingDirFiles();
-      
-      if (Object.keys(workingDirFiles).length > 0) {
-        console.log(`Found ${Object.keys(workingDirFiles).length} files in git working directory. Updating workspace.`);
-        setFiles(workingDirFiles);
-      } else if (activeProject.gitRemoteUrl) {
-        console.log("Project is remote but has no files. Setting workspace to empty.");
-        setFiles({});
-      } else {
-        console.log("Project is local and has no files. Populating with initial template.");
-        setFiles(initialFiles);
-        for (const [filename, content] of Object.entries(initialFiles)) {
-            await gitService.writeFile(filename, content);
+    }
+    
+    const onProgress = (progress: GitProgress) => {
+        if (progress.total) {
+            setCloningProgress(`${progress.phase} (${progress.loaded}/${progress.total})`);
+        } else if (progress.loaded) {
+            setCloningProgress(`${progress.phase} (${progress.loaded})...`);
+        } else {
+            setCloningProgress(progress.phase);
         }
-      }
-      
-      setChangedFiles([]);
+    };
+    
+    const newGitService = createGitService(true, activeProjectId, getGitAuth);
+    setGitService(newGitService);
+
+    const runAsyncTasks = async () => {
+        if (pendingClone && pendingClone.projectId === activeProjectId) {
+            const { url } = pendingClone;
+            try {
+                const { files: clonedFiles } = await newGitService.clone(url, onProgress);
+                setPendingClone(null);
+                setFiles(clonedFiles);
+                setChangedFiles([]);
+                setIsProjectModalOpen(false);
+            } catch (error: any) {
+                alert(`Cloning failed: ${error.message}`);
+                console.error("CLONE FAILED in useEffect:", error);
+                setPendingClone(null);
+            } finally {
+                setIsCloning(false);
+                setCloningProgress(null);
+            }
+        } else {
+            console.log(`Syncing workspace for project: "${project.name}"`);
+            try {
+                const workingDirFiles = await newGitService.getWorkingDirFiles();
+                if (Object.keys(workingDirFiles).length > 0) {
+                    console.log(`Found ${Object.keys(workingDirFiles).length} files in git working directory. Updating workspace.`);
+                    setFiles(workingDirFiles);
+                } else if (project.gitRemoteUrl) {
+                    console.log("Project is remote but has no files. This could be a new/empty repo. Setting workspace to empty.");
+                    setFiles({});
+                } else {
+                    console.log("Project is local and has no files. Populating with initial template.");
+                    setFiles(initialFiles);
+                    for (const [filename, content] of Object.entries(initialFiles)) {
+                        newGitService.writeFile(filename, content).catch(e => console.error(`Failed to write initial file ${filename}:`, e));
+                    }
+                }
+                setChangedFiles([]);
+            } catch (error) {
+                console.error(`Failed to sync workspace for project ${project.name}:`, error);
+            }
+        }
     };
 
-    loadProjectFiles();
-  }, [activeProject, gitService, setFiles]);
+    runAsyncTasks();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProjectId, projects, getGitAuth, setFiles, pendingClone]);
   
-  // Fetch git status when the view changes to Git or files change
   useEffect(() => {
     if (gitService?.isReal && activeView === View.Git) {
         gitService.status(files).then(setChangedFiles).catch(err => {
@@ -302,10 +339,8 @@ export const useAppLogic = () => {
       };
 
       try {
-          await gitService.pull(rebase, onProgress);
-          const newFiles = await gitService.getWorkingDirFiles();
+          const { files: newFiles, status: newStatus } = await gitService.pull(rebase, onProgress);
           setFiles(newFiles);
-          const newStatus = await gitService.status(newFiles);
           setChangedFiles(newStatus);
           alert('Pull successful!');
       } catch (e: any) {
@@ -322,10 +357,8 @@ export const useAppLogic = () => {
       setIsGitNetworkActivity(true);
       setGitNetworkProgress(`Rebasing onto ${branch}...`);
       try {
-          await gitService.rebase(branch);
-          const newFiles = await gitService.getWorkingDirFiles();
+          const { files: newFiles, status: newStatus } = await gitService.rebase(branch);
           setFiles(newFiles);
-          const newStatus = await gitService.status(newFiles);
           setChangedFiles(newStatus);
           alert('Rebase successful!');
       } catch (e: any) {
@@ -341,10 +374,9 @@ export const useAppLogic = () => {
     if (!gitService) throw new Error("Git service not available.");
     setIsCommitting(true);
     try {
-        await gitService.commit(message, files);
+        const { status } = await gitService.commit(message, files);
         setCommitMessage(''); // Clear message after successful commit
-        const newStatus = await gitService.status(files);
-        setChangedFiles(newStatus);
+        setChangedFiles(status);
     } catch (error: any) {
         console.error("COMMIT FAILED:", error);
         throw new Error(`Commit failed: ${error.message}`);
@@ -375,13 +407,12 @@ export const useAppLogic = () => {
         alert("Git service is not available.");
         return;
     }
-    setIsCommitting(true); // Reuse loading state
+    setIsCommitting(true); // Reuse for loading state
     try {
         const headFiles = await gitService.getHeadFiles();
         setFiles(headFiles);
         // After resetting files, the status should be clean.
-        const newStatus = await gitService.status(headFiles);
-        setChangedFiles(newStatus);
+        setChangedFiles([]);
         alert("Workspace changes have been discarded.");
     } catch (e: any) {
         alert(`Failed to discard changes: ${e.message}`);
@@ -469,60 +500,23 @@ export const useAppLogic = () => {
     }
 
     setIsCloning(true);
-    setCloningProgress('Creating project...');
-    let newProjectId: string | null = null;
-
-    const onProgress = (progress: GitProgress) => {
-        if (progress.total) {
-            setCloningProgress(`${progress.phase} (${progress.loaded}/${progress.total})`);
-        } else if (progress.loaded) {
-            setCloningProgress(`${progress.phase} (${progress.loaded})...`);
-        } else {
-            setCloningProgress(progress.phase);
-        }
-    };
-
+    setCloningProgress('Initializing project...');
     try {
         const projectGitSettings: GitSettings = credentialId
-            ? { source: 'specific', credentialId: credentialId }
+            ? { source: 'specific', credentialId }
             : { source: 'default' };
 
         const newProject = await createNewProject(name, false, url, projectGitSettings);
-        newProjectId = newProject.id;
-
-        const getCloneAuth = () => {
-            const selectedCred = credentialId ? gitCredentials.find(c => c.id === credentialId) : gitCredentials.find(c => c.isDefault);
-            const token = selectedCred?.token;
-            if (!token) console.warn("No credential provided for clone. Attempting anonymous request.");
-            return {
-                token,
-                author: { name: settings.gitUserName || 'VibeCode User', email: settings.gitUserEmail || 'user@vibecode.io' },
-                proxyUrl: settings.gitCorsProxy,
-            };
-        };
         
-        const tempGitService = createGitService(true, newProject.id, getCloneAuth);
-        
-        await tempGitService.clone(url, onProgress);
-
-    } catch (error: any) {
-        alert(`Cloning failed: ${error.message}`);
-        console.error("CLONE FAILED:", error);
-        if (newProjectId) {
-            await deleteProject(newProjectId);
-        }
-        newProjectId = null;
-    } finally {
+        setPendingClone({ projectId: newProject.id, url });
+        switchProject(newProject.id);
+    } catch (error) {
+        console.error("Failed to initiate clone:", error);
+        alert("Failed to create project for cloning.");
         setIsCloning(false);
         setCloningProgress(null);
-        if (newProjectId) {
-            switchProject(newProjectId);
-            setTimeout(() => {
-                setIsProjectModalOpen(false);
-            }, 500);
-        }
     }
-  }, [projects, createNewProject, gitCredentials, settings.gitUserName, settings.gitUserEmail, settings.gitCorsProxy, deleteProject, switchProject]);
+  }, [projects, createNewProject, switchProject]);
 
   const handleClearDebugLogs = useCallback(() => {
     clearGlobalLogs();

@@ -229,9 +229,9 @@ export interface Prompt {
 // Git Service
 export interface GitService {
     isReal: boolean;
-    clone(url: string, onProgress?: (progress: GitProgress) => void): Promise<void>;
+    clone(url: string, onProgress?: (progress: GitProgress) => void): Promise<{ files: Record<string, string> }>;
     status(appFiles: Record<string, string>, changedFilePaths?: string[]): Promise<GitStatus[]>;
-    commit(message: string, appFiles: Record<string, string>): Promise<{ oid: string }>;
+    commit(message: string, appFiles: Record<string, string>): Promise<{ oid: string; status: GitStatus[] }>;
     log(ref?: string): Promise<GitCommit[]>;
     listBranches(): Promise<string[]>;
     checkout(branch: string): Promise<{ files: Record<string, string> }>;
@@ -239,8 +239,8 @@ export interface GitService {
     readFileAtCommit(oid: string, filepath: string): Promise<string | null>;
     getHeadFiles(): Promise<Record<string, string>>;
     push(onProgress?: (progress: GitProgress) => void): Promise<{ ok: boolean, error?: string }>;
-    pull(rebase: boolean, onProgress?: (progress: GitProgress) => void): Promise<void>;
-    rebase(branch: string): Promise<void>;
+    pull(rebase: boolean, onProgress?: (progress: GitProgress) => void): Promise<{ files: Record<string, string>; status: GitStatus[] }>;
+    rebase(branch: string): Promise<{ files: Record<string, string>; status: GitStatus[] }>;
     getWorkingDirFiles(): Promise<Record<string, string>>;
     writeFile(filepath: string, content: string): Promise<void>;
     removeFile(filepath: string): Promise<void>;

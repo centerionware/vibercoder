@@ -3,7 +3,7 @@ import http from 'isomorphic-git/http/web';
 import LightningFS from '@isomorphic-git/lightning-fs';
 import { Buffer } from 'buffer';
 import { performDiff } from '../utils/diff';
-import { GitFileStatus, GitFileChange, GitAuthor } from '../types';
+import { GitFileStatus, GitFileChange, GitAuthor, GitStatus } from '../types';
 
 if (typeof self !== 'undefined' && !(self as any).Buffer) {
   (self as any).Buffer = Buffer;
@@ -59,7 +59,8 @@ self.onmessage = async (event: MessageEvent) => {
             self.postMessage({ type: 'progress', id, payload: progress });
           },
         });
-        result = { success: true };
+        const clonedFiles = await getWorkingDirFilesFromFs();
+        result = { files: clonedFiles };
         break;
       
       case 'getHeadFiles':
@@ -67,25 +68,7 @@ self.onmessage = async (event: MessageEvent) => {
         break;
 
       case 'status':
-        const matrix = await git.statusMatrix({ fs, dir });
-        const statuses = [];
-        for (const row of matrix) {
-            const [filepath, head, workdir, stage] = row;
-            // This combination means the file is unmodified. Isomorphic-git's `status` command
-            // internally uses a more complex check, but for clean checkouts and simple changes,
-            // this is a reliable indicator of an unchanged file.
-            if (head === 1 && workdir === 1 && stage === 1) continue;
-    
-            // Otherwise, determine the status.
-            if (workdir === 0) {
-                statuses.push({ filepath, status: GitFileStatus.Deleted });
-            } else if (head === 0) {
-                statuses.push({ filepath, status: GitFileStatus.New });
-            } else {
-                statuses.push({ filepath, status: GitFileStatus.Modified });
-            }
-        }
-        result = statuses;
+        result = await getStatusFromFs(payload.appFiles);
         break;
       
       case 'commit':
@@ -100,7 +83,8 @@ self.onmessage = async (event: MessageEvent) => {
             }
         }
         const oid = await git.commit({ fs, dir, message: payload.message, author: commitAuth.author });
-        result = { oid };
+        const postCommitStatus = await getStatusFromFs(payload.appFiles);
+        result = { oid, status: postCommitStatus };
         break;
       
       case 'log':
@@ -216,7 +200,9 @@ self.onmessage = async (event: MessageEvent) => {
                 self.postMessage({ type: 'progress', id, payload: progress });
             }
         } as any);
-        result = { success: true };
+        const postPullFiles = await getWorkingDirFilesFromFs();
+        const postPullStatus = await getStatusFromFs(postPullFiles);
+        result = { files: postPullFiles, status: postPullStatus };
         break;
 
       case 'rebase':
@@ -226,7 +212,9 @@ self.onmessage = async (event: MessageEvent) => {
             branch: payload.branch,
             author: rebaseAuth.author
         });
-        result = { success: true };
+        const postRebaseFiles = await getWorkingDirFilesFromFs();
+        const postRebaseStatus = await getStatusFromFs(postRebaseFiles);
+        result = { files: postRebaseFiles, status: postRebaseStatus };
         break;
 
       case 'getWorkingDirFiles':
@@ -328,5 +316,21 @@ async function readFileAtCommitFromFs(oid: string, filepath: string): Promise<st
         return null;
     }
 }
+
+async function getStatusFromFs(appFiles: Record<string, string>): Promise<GitStatus[]> {
+    const headFiles = await getHeadFilesFromFs();
+    const allFiles = new Set([...Object.keys(appFiles), ...Object.keys(headFiles)]);
+    const statusResult: GitStatus[] = [];
+    for (const filepath of allFiles) {
+        const inHead = headFiles[filepath] !== undefined;
+        const inWorkspace = appFiles[filepath] !== undefined;
+
+        if (inHead && !inWorkspace) statusResult.push({ filepath, status: GitFileStatus.Deleted });
+        else if (!inHead && inWorkspace) statusResult.push({ filepath, status: GitFileStatus.New });
+        else if (inHead && inWorkspace && headFiles[filepath] !== appFiles[filepath]) statusResult.push({ filepath, status: GitFileStatus.Modified });
+    }
+    return statusResult;
+}
+
 
 console.log('Git worker loaded.');
