@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { AiMessage, AppSettings, ToolCall } from '../../types';
 
@@ -26,7 +27,9 @@ export interface SessionRefs {
     currentOutputTranscription: string;
     currentToolCalls: ToolCall[];
     isAiTurn: boolean;
-    // New properties for end-of-turn debouncing
     pendingMessageQueue: any[];
     isTurnFinalizing: boolean;
+    // Track the voice used for the current session to detect changes
+    voiceName: string; 
+    // FIX: Removed obsolete `endOfTurnTimerRef` property. This ref is correctly managed in the parent `useAiLive` hook.
 }

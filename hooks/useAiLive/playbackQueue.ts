@@ -1,4 +1,3 @@
-// Fix: Added missing import for React to use React-specific types.
 import React from 'react';
 import { decode, decodeAudioData } from '../../utils/audio';
 import { AudioContextRefs, SessionRefs } from './types';

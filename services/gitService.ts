@@ -273,7 +273,15 @@ class WorkerGitService implements GitService {
             this.worker = new Worker(new URL('./git.worker.ts', import.meta.url), { type: 'module' });
             this.worker.onmessage = this.handleWorkerMessage.bind(this);
             this.worker.onerror = (e) => {
-                console.warn("Git worker encountered an error. Git functionality will be disabled.", e);
+                console.error("Git worker encountered a critical error and has been terminated.", e);
+                const workerError = new Error("The Git background worker crashed or failed to initialize. Please reload the application to use Git features.");
+                
+                // Reject all outstanding requests
+                for (const request of this.requests.values()) {
+                    request.reject(workerError);
+                }
+                this.requests.clear();
+            
                 this.isReal = false;
                 this.worker = null;
             };

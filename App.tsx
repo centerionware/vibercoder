@@ -91,6 +91,11 @@ const App = () => {
         onCloneProject={app.handleClone}
         isCloning={app.isCloning}
         cloningProgress={app.cloningProgress}
+        gitCredentials={app.gitCredentials}
+        onManageCredentials={() => {
+            app.setIsProjectModalOpen(false);
+            app.setIsGitCredentialsModalOpen(true);
+        }}
       />
       <ProjectSettingsModal
         isOpen={app.isProjectSettingsModalOpen}

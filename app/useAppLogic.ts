@@ -256,14 +256,22 @@ export const useAppLogic = () => {
     vfsReadyResolverRef.current();
   }, [files]);
 
+  const gitProgressCallback = useCallback((progress: GitProgress) => {
+    if (progress.total) {
+        setGitNetworkProgress(`${progress.phase} (${progress.loaded}/${progress.total})`);
+    } else if (progress.loaded) {
+        setGitNetworkProgress(`${progress.phase} (${progress.loaded})...`);
+    } else {
+        setGitNetworkProgress(progress.phase);
+    }
+  }, []);
+
   const handlePush = useCallback(async () => {
     if (!gitService) return;
     setIsGitNetworkActivity(true);
     setGitNetworkProgress('Pushing...');
     try {
-        const result = await gitService.push((progress) => {
-            setGitNetworkProgress(`${progress.phase} (${progress.loaded}/${progress.total})`);
-        });
+        const result = await gitService.push(gitProgressCallback);
         if (!result.ok) {
             throw new Error(result.error || 'Push failed. Check credentials and remote repository permissions.');
         }
@@ -275,17 +283,15 @@ export const useAppLogic = () => {
         setIsGitNetworkActivity(false);
         setGitNetworkProgress(null);
     }
-  }, [gitService]);
+  }, [gitService, gitProgressCallback]);
 
   const handlePull = useCallback(async (rebase: boolean) => {
       if (!gitService) return;
       setIsGitNetworkActivity(true);
       setGitNetworkProgress('Pulling...');
       try {
-          await gitService.pull(rebase, (progress) => {
-              setGitNetworkProgress(`${progress.phase} (${progress.loaded}/${progress.total})`);
-          });
-          const newFiles = await gitService.getHeadFiles();
+          await gitService.pull(rebase, gitProgressCallback);
+          const newFiles = await gitService.getWorkingDirFiles();
           setFiles(newFiles);
           const newStatus = await gitService.status(newFiles);
           setChangedFiles(newStatus);
@@ -297,7 +303,7 @@ export const useAppLogic = () => {
           setIsGitNetworkActivity(false);
           setGitNetworkProgress(null);
       }
-  }, [gitService, setFiles]);
+  }, [gitService, setFiles, gitProgressCallback]);
 
   const handleRebase = useCallback(async (branch: string) => {
       if (!gitService) return;
@@ -305,7 +311,7 @@ export const useAppLogic = () => {
       setGitNetworkProgress(`Rebasing onto ${branch}...`);
       try {
           await gitService.rebase(branch);
-          const newFiles = await gitService.getHeadFiles();
+          const newFiles = await gitService.getWorkingDirFiles();
           setFiles(newFiles);
           const newStatus = await gitService.status(newFiles);
           setChangedFiles(newStatus);
@@ -444,7 +450,7 @@ export const useAppLogic = () => {
     }
   }, [activeView, settings.autoEnableLiveMode, liveSession.isLive, liveSession.startLiveSession]);
   
-  const handleClone = useCallback(async (url: string, name: string) => {
+  const handleClone = useCallback(async (url: string, name: string, credentialId?: string | null) => {
     if (projects.some(p => p.name === name)) {
         alert(`A project named "${name}" already exists. Please choose a different name.`);
         return;
@@ -456,30 +462,39 @@ export const useAppLogic = () => {
     try {
         const newProject = await createNewProject(name, false, url);
         newProjectId = newProject.id;
-        // The gitService will be re-created by the useEffect for the new activeProjectId,
-        // so we create a temporary one here for the clone operation itself.
-        const tempGitService = createGitService(true, newProject.id, getGitAuth);
+
+        const getCloneAuth = () => {
+            const selectedCred = credentialId ? gitCredentials.find(c => c.id === credentialId) : gitCredentials.find(c => c.isDefault);
+            const token = selectedCred?.token;
+            if (!token) console.warn("No credential provided for clone. Attempting anonymous request.");
+            return {
+                token,
+                author: { name: settings.gitUserName || 'VibeCode User', email: settings.gitUserEmail || 'user@vibecode.io' },
+                proxyUrl: settings.gitCorsProxy,
+            };
+        };
         
-        await tempGitService.clone(url, (progress: GitProgress) => {
-            setCloningProgress(`${progress.phase} (${progress.loaded}/${progress.total})`);
-        });
+        const tempGitService = createGitService(true, newProject.id, getCloneAuth);
+        
+        await tempGitService.clone(url, gitProgressCallback);
     } catch (error: any) {
         alert(`Cloning failed: ${error.message}`);
         console.error("CLONE FAILED:", error);
-        // If cloning fails, we should clean up the created project entry
         if (newProjectId) {
-            deleteProject(newProjectId);
+            await deleteProject(newProjectId);
         }
         newProjectId = null;
     } finally {
         setIsCloning(false);
         setCloningProgress(null);
-        setIsProjectModalOpen(false);
         if (newProjectId) {
             switchProject(newProjectId);
+            setTimeout(() => {
+                setIsProjectModalOpen(false);
+            }, 500);
         }
     }
-  }, [createNewProject, switchProject, getGitAuth, deleteProject, projects]);
+  }, [projects, createNewProject, gitCredentials, settings.gitUserName, settings.gitUserEmail, settings.gitCorsProxy, gitProgressCallback, deleteProject, switchProject]);
 
   const handleClearDebugLogs = useCallback(() => {
     clearGlobalLogs();

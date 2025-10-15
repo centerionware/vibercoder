@@ -16,6 +16,13 @@ class ErrorBoundary extends React.Component<Props, State> {
     error: null,
   };
 
+  // FIX: Add constructor to explicitly bind 'this' for event handlers.
+  constructor(props: Props) {
+    super(props);
+    this.handleError = this.handleError.bind(this);
+    this.handleRejection = this.handleRejection.bind(this);
+  }
+
   // Standard React error boundary method for render-phase errors
   static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
@@ -38,8 +45,8 @@ class ErrorBoundary extends React.Component<Props, State> {
     window.removeEventListener('unhandledrejection', this.handleRejection);
   }
 
-  // FIX: Changed to an arrow function to correctly bind `this` context when used as an event handler.
-  private handleError = (event: ErrorEvent) => {
+  // FIX: Converted from an arrow function to a regular class method.
+  private handleError(event: ErrorEvent) {
     console.error("Global uncaught error:", event.error);
     event.preventDefault();
     // Coerce event.error to an Error instance to match the component's state type.
@@ -47,8 +54,8 @@ class ErrorBoundary extends React.Component<Props, State> {
     this.setState({ hasError: true, error });
   }
 
-  // FIX: Changed to an arrow function to correctly bind `this` context when used as an event handler.
-  private handleRejection = (event: PromiseRejectionEvent) => {
+  // FIX: Converted from an arrow function to a regular class method.
+  private handleRejection(event: PromiseRejectionEvent) {
     console.error("Global unhandled rejection:", event.reason);
     event.preventDefault();
     const error = event.reason instanceof Error ? event.reason : new Error(JSON.stringify(event.reason));

@@ -68,11 +68,11 @@ export function createBlob(data: Float32Array): Blob {
 
 /**
  * Plays a simple notification sound for user feedback.
- * @param type 'start' for activation, 'stop' for deactivation, 'ai-start' for AI turn start, 'ai-stop' for AI turn end, 'reconnect' for successful reconnection.
+ * @param type 'start' for activation, 'stop' for deactivation, 'thinking' for AI turn start, 'tool-call' for AI using a tool, 'ai-stop' for AI turn end, 'reconnect' for successful reconnection.
  * @param context The AudioContext to use for playback.
  * @returns A promise that resolves when the sound has finished playing.
  */
-export const playNotificationSound = (type: 'start' | 'stop' | 'ai-start' | 'ai-stop' | 'reconnect' = 'start', context: AudioContext | null): Promise<void> => {
+export const playNotificationSound = (type: 'start' | 'stop' | 'thinking' | 'tool-call' | 'ai-stop' | 'reconnect' = 'start', context: AudioContext | null): Promise<void> => {
   return new Promise((resolve) => {
     if (!context || context.state === 'closed') {
       console.warn("Cannot play notification sound: AudioContext is not available or closed.");
@@ -130,10 +130,11 @@ export const playNotificationSound = (type: 'start' | 'stop' | 'ai-start' | 'ai-
         let duration = 0.15;
 
         switch(type) {
-            case 'start': frequency = 880; break;
-            case 'stop': frequency = 523.25; break;
-            case 'ai-start': frequency = 1200; duration = 0.1; break;
-            case 'ai-stop': frequency = 600; duration = 0.15; break;
+            case 'start': frequency = 880; break; // A5
+            case 'stop': frequency = 523.25; break; // C5
+            case 'thinking': frequency = 659; duration = 0.08; break; // E5, short
+            case 'tool-call': frequency = 1318; duration = 0.1; break; // E6, chime
+            case 'ai-stop': frequency = 440; duration = 0.15; break; // A4
             default: frequency = 880;
         }
         

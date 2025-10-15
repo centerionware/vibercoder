@@ -67,17 +67,23 @@ self.onmessage = async (event: MessageEvent) => {
         break;
 
       case 'status':
-        const headFiles = await getHeadFilesFromFs();
-        const allFiles = new Set([...Object.keys(payload.appFiles), ...Object.keys(headFiles)]);
-        const statusResult = [];
-        for (const filepath of allFiles) {
-            const inHead = headFiles[filepath] !== undefined;
-            const inWorkspace = payload.appFiles[filepath] !== undefined;
-            if (inHead && !inWorkspace) statusResult.push({ filepath, status: GitFileStatus.Deleted });
-            else if (!inHead && inWorkspace) statusResult.push({ filepath, status: GitFileStatus.New });
-            else if (inHead && inWorkspace && headFiles[filepath] !== payload.appFiles[filepath]) statusResult.push({ filepath, status: GitFileStatus.Modified });
+        const matrix = await git.statusMatrix({ fs, dir });
+        const statuses = [];
+        for (const row of matrix) {
+            const [filepath, head, workdir, stage] = row;
+            // From isomorphic-git docs, this combination means the file is unmodified.
+            if (head === 1 && workdir === 2 && stage === 2) continue;
+    
+            // Otherwise, determine the status.
+            if (workdir === 0) {
+                statuses.push({ filepath, status: GitFileStatus.Deleted });
+            } else if (head === 0) {
+                statuses.push({ filepath, status: GitFileStatus.New });
+            } else {
+                statuses.push({ filepath, status: GitFileStatus.Modified });
+            }
         }
-        result = statusResult;
+        result = statuses;
         break;
       
       case 'commit':
