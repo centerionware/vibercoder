@@ -1,3 +1,4 @@
+
 import { useState, useRef, useCallback, useEffect } from 'react';
 import html2canvas from 'html2canvas';
 import { v4 as uuidv4 } from 'uuid';
@@ -504,8 +505,8 @@ export const useAiLive = (props: UseAiLiveProps) => {
         }
     }, [isAiTurn, isSpeaking, pendingAction, pendingPauseDuration, performStop, performPause]);
     
-    // Forward-declare initiateSession to resolve circular dependency
-    let initiateSession: () => void;
+    // FIX: Use a ref to hold the initiateSession function to break the circular dependency.
+    const initiateSessionRef = useRef<() => void>();
 
     const onError = useCallback((e: ErrorEvent) => {
         console.error('Live session error:', e);
@@ -531,7 +532,8 @@ export const useAiLive = (props: UseAiLiveProps) => {
                     audioContextRefs.current.scriptProcessor = null;
                 }
                 
-                initiateSession();
+                // FIX: Call initiateSession via the ref to get the latest version.
+                initiateSessionRef.current?.();
             }, delay);
 
         } else {
@@ -547,9 +549,10 @@ export const useAiLive = (props: UseAiLiveProps) => {
             propsRef.current.onPermissionError(userMessage);
             performStop();
         }
-    }, [performStop, () => initiateSession()]);
+    // FIX: Removed the unstable dependency `() => initiateSession()` to prevent re-renders and fix the dependency cycle.
+    }, [performStop]);
 
-    initiateSession = useCallback(() => {
+    const initiateSession = useCallback(() => {
         const { aiRef, settings, activeThread } = propsRef.current;
         const onOpen = () => {
             if (retryRef.current.count > 0) {
@@ -575,6 +578,11 @@ export const useAiLive = (props: UseAiLiveProps) => {
             performStop();
         });
     }, [onMessage, onError, performStop]);
+
+    // FIX: Keep the ref updated with the latest version of initiateSession on every render.
+    useEffect(() => {
+        initiateSessionRef.current = initiateSession;
+    });
 
     const stopLiveSession = useCallback((options: { immediate?: boolean; isUnmount?: boolean } = {}) => {
         const { immediate = true, isUnmount = false } = options;
