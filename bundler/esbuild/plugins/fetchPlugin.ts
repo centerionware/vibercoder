@@ -45,6 +45,7 @@ export const fetchPlugin = (files: Record<string, string>, onLog: OnLog): esbuil
 
         // Handle CSS files by injecting them as a <style> tag
         if (args.path.endsWith('.css')) {
+            log(`Handling CSS import for ${args.path}`);
             const escaped = fileContent.replace(/\n/g, '').replace(/"/g, '\\"').replace(/'/g, "\\'");
             const contents = `
               const style = document.createElement('style');

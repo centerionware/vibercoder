@@ -11,6 +11,7 @@ import FullScreenPreviewHeader from '../preview/FullScreenPreviewHeader';
 interface PreviewViewProps {
   files: Record<string, string>;
   entryPoint: string;
+  apiKey: string;
   onLog: (log: string) => void;
   onRuntimeError: (error: string) => void;
   bundleLogs: string[];
@@ -23,6 +24,7 @@ const PreviewView: React.FC<PreviewViewProps> = (props) => {
   const {
     files,
     entryPoint,
+    apiKey,
     onLog,
     onClearLogs,
     onRuntimeError,
@@ -34,6 +36,7 @@ const PreviewView: React.FC<PreviewViewProps> = (props) => {
   const { isBundling, bundleError, builtCode } = usePreviewBundler({
     files,
     entryPoint,
+    apiKey,
     onLog,
     onClearLogs,
   });

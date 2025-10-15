@@ -9,16 +9,18 @@ import { BundleResult, OnLog } from '../types';
  * @param files A record of filenames to their content.
  * @param entryPoint The main file for the bundler (e.g., 'index.tsx').
  * @param onLog A callback to log bundling progress.
+ * @param apiKey The Google Gemini API key to make available in the bundled code.
  * @returns An object with the bundled code or an error message.
  */
 export const bundleWithEsbuild = async (
   files: Record<string, string>,
   entryPoint: string,
-  onLog: OnLog
+  onLog: OnLog,
+  apiKey: string
 ): Promise<BundleResult> => {
     try {
         onLog('Initializing esbuild service...');
-        await initializeService();
+        await initializeService(onLog);
         onLog('Bundler initialized.');
 
         onLog('Starting build...');
@@ -32,12 +34,14 @@ export const bundleWithEsbuild = async (
             plugins: [unpkgPathPlugin(files, onLog), fetchPlugin(files, onLog)],
             define: {
                 'process.env.NODE_ENV': '"production"',
-                'process.env.API_KEY': `"${process.env.API_KEY}"`,
+                'process.env.API_KEY': `"${apiKey}"`,
                 global: 'window',
             },
             jsxFactory: 'React.createElement',
             jsxFragment: 'React.Fragment',
         });
+        
+        onLog('Build process finished.');
         
         // Polyfill Buffer for libraries like isomorphic-git that need it in the browser.
         const bufferPolyfill = `
@@ -58,6 +62,7 @@ export const bundleWithEsbuild = async (
             error: null
         };
     } catch(e) {
+        onLog(`[Critical Error] ${e}`);
         if (e instanceof Error) {
             return { code: null, error: e.message };
         }

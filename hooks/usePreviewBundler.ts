@@ -5,11 +5,12 @@ import { bundle } from '../bundler';
 interface UsePreviewBundlerProps {
   files: Record<string, string>;
   entryPoint: string;
+  apiKey: string;
   onLog: (log: string) => void;
   onClearLogs: () => void;
 }
 
-export const usePreviewBundler = ({ files, entryPoint, onLog, onClearLogs }: UsePreviewBundlerProps) => {
+export const usePreviewBundler = ({ files, entryPoint, apiKey, onLog, onClearLogs }: UsePreviewBundlerProps) => {
   const [isBundling, setIsBundling] = useState(true);
   const [bundleError, setBundleError] = useState<string | null>(null);
   const [builtCode, setBuiltCode] = useState<string | null>(null);
@@ -23,21 +24,28 @@ export const usePreviewBundler = ({ files, entryPoint, onLog, onClearLogs }: Use
       setIsBundling(true);
       setBundleError(null);
 
-      const result = await bundle(files, entryPoint, onLog);
-      if (result.code) {
-        setBundleError(null);
-        setBuiltCode(result.code);
-        setBuildId(uuidv4());
-      } else if (result.error) {
-        setBundleError(result.error);
-        onLog(`Bundling failed: ${result.error}`);
+      try {
+        const result = await bundle(files, entryPoint, onLog, apiKey);
+        if (result.code) {
+          setBundleError(null);
+          setBuiltCode(result.code);
+          setBuildId(uuidv4());
+        } else if (result.error) {
+          setBundleError(result.error);
+          onLog(`Bundling failed: ${result.error}`);
+        }
+      } catch (e) {
+          const errorMsg = e instanceof Error ? e.message : 'An unexpected error occurred during bundling.';
+          setBundleError(errorMsg);
+          onLog(`Bundling failed: ${errorMsg}`);
+      } finally {
+          setIsBundling(false);
       }
-      setIsBundling(false);
     };
 
     const debounceTimer = setTimeout(doBundle, 500);
     return () => clearTimeout(debounceTimer);
-  }, [files, entryPoint, onLog, onClearLogs]);
+  }, [files, entryPoint, apiKey, onLog, onClearLogs]);
 
   return { isBundling, bundleError, builtCode, buildId };
 };

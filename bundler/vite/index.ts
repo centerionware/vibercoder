@@ -7,7 +7,8 @@ import { BundleResult, OnLog } from '../types';
 export const bundleWithVite = (
   files: Record<string, string>,
   entryPoint: string,
-  onLog: OnLog
+  onLog: OnLog,
+  apiKey: string
 ): Promise<BundleResult> => {
   onLog('[Vite] Bundler not implemented.');
   const error = `Vite bundler is not yet implemented. This is a placeholder for future development.`;

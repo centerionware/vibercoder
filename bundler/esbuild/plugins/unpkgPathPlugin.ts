@@ -29,7 +29,12 @@ export const unpkgPathPlugin = (files: Record<string, string>, onLog: OnLog): es
           } else {
             // CONTEXT: Local file. Resolve within the virtual file system.
             log(`Attempting to resolve local relative path: ${args.path} from ${args.resolveDir || 'root'}`);
-            const path = new URL(args.path, 'file://' + (args.resolveDir ? args.resolveDir + '/' : '')).pathname.substring(1);
+            // FIX: Construct a valid base URL for local file resolution. It must start with 'file:///'.
+            // If resolveDir is 'src/components', base becomes 'file:///src/components/'.
+            // If resolveDir is empty, base becomes 'file:///'.
+            const base = `file:///${args.resolveDir ? `${args.resolveDir}/` : ''}`;
+            const resolvedUrl = new URL(args.path, base);
+            const path = resolvedUrl.pathname.substring(1);
             
             const candidates = [
                 path, `${path}.ts`, `${path}.tsx`, `${path}.js`, `${path}.jsx`, `${path}.css`,

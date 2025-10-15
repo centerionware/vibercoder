@@ -30,6 +30,7 @@ const ViewRenderer: React.FC<ViewRendererProps> = (app) => {
         <PreviewView
           files={app.files}
           entryPoint={app.activeProject.entryPoint}
+          apiKey={app.settings.apiKey}
           onLog={app.handleLog}
           onRuntimeError={app.handleRuntimeError}
           bundleLogs={app.bundleLogs}

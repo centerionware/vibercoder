@@ -1,35 +1,33 @@
-
-
 import * as esbuild from 'esbuild-wasm';
+import { OnLog } from '../types';
 
 let serviceInitialized = false;
 
-export const initializeService = async () => {
+export const initializeService = async (onLog: OnLog) => {
     if (serviceInitialized) {
+        onLog('[Service] Already initialized.');
         return;
     }
     try {
-        // FIX: Some module loaders/CDNs wrap the actual exports in a `default` property.
-        // This checks for that and uses the correct object to call `initialize`.
         const esbuildService = (esbuild as any).default || esbuild;
 
-        // Simplify to always use the web-worker based initialization.
-        // In native Capacitor environments, the `fetch` call inside the worker
-        // will be automatically intercepted and handled by the native HTTP client,
-        // which correctly bypasses CORS and fetches the WASM binary.
+        onLog('[Service] Fetching and initializing esbuild.wasm...');
         await esbuildService.initialize({
-            wasmURL: 'https://unpkg.com/esbuild-wasm@0.25.10/esbuild.wasm',
+            wasmURL: 'https://aistudiocdn.com/esbuild-wasm@0.25.11/esbuild.wasm',
             worker: true,
         });
+        onLog('[Service] WASM initialized successfully.');
 
         serviceInitialized = true;
     } catch (e) {
         if (e instanceof Error && !e.message.includes('already been initialized')) {
-            // Rethrow critical initialization errors to be caught by the bundler.
+            onLog(`[Service Error] Failed to initialize esbuild: ${e.message}`);
             console.error("Failed to initialize esbuild service:", e);
             throw e;
         }
-        // If it's just a re-initialization error, we can ignore it and proceed.
+        // This handles hot-reloading scenarios where the service might be initialized multiple times.
+        // It's a non-fatal error we can safely ignore.
+        onLog('[Service] Caught re-initialization error, proceeding.');
         serviceInitialized = true;
     }
 };
