@@ -44,7 +44,15 @@ export const useAiLive = (props: UseAiLiveProps) => {
         isTurnFinalizing: false,
     });
     
+    const retryRef = useRef({
+        count: 0,
+        maxRetries: 3,
+        delay: 1000, // Initial delay in ms
+        timeoutId: null as number | null,
+    });
+
     const isSessionDirty = useRef(false);
+    const stopExecutionRef = useRef(false);
 
     const uiUpdateTimerRef = useRef<number | null>(null);
     const previousVoiceNameRef = useRef(props.settings.voiceName);
@@ -88,6 +96,7 @@ export const useAiLive = (props: UseAiLiveProps) => {
             sessionRefs.current.liveMessageId = uuidv4();
             propsRef.current.addMessage({ id: sessionRefs.current.liveMessageId, role: 'user', content: '', isLive: true });
             propsRef.current.addMessage({ id: `${sessionRefs.current.liveMessageId}-model`, role: 'model', content: '', isLive: true });
+            stopExecutionRef.current = false; // Reset stop flag at the start of a new turn.
         }
     }, []);
 
@@ -123,6 +132,23 @@ export const useAiLive = (props: UseAiLiveProps) => {
             requestUiUpdate();
     
             for (const fc of message.toolCall.functionCalls) {
+                // Check for stop signal before each tool execution
+                if (stopExecutionRef.current) {
+                    console.log('[AI Live] Halting tool execution due to user "stop" command.');
+                    
+                    // Update UI to mark remaining in-progress tools as cancelled
+                    sessionRefs.current.currentToolCalls = sessionRefs.current.currentToolCalls.map(tc =>
+                        tc.status === ToolCallStatus.IN_PROGRESS ? { ...tc, status: ToolCallStatus.CANCELLED } : tc
+                    );
+                    requestUiUpdate();
+                    
+                    // Acknowledge the stop in the transcript
+                    sessionRefs.current.currentOutputTranscription += "\n\n*Tool execution cancelled by user.*";
+                    
+                    // We must break the loop to stop processing further tools.
+                    break;
+                }
+
                 let status: ToolCallStatus;
                 try {
                     const toolFn = toolImplementations[fc.name!];
@@ -168,14 +194,27 @@ export const useAiLive = (props: UseAiLiveProps) => {
     }, [requestUiUpdate, startTurnIfNeeded]);
 
     const processInputTranscription = useCallback((message: any) => {
-        // Any user input cancels the inactivity reset timer.
+        // Any user activity detected, cancel inactivity timer
         if (inactivityTimerRef.current) {
             clearTimeout(inactivityTimerRef.current);
             inactivityTimerRef.current = null;
-            console.log('[AI Live] User activity detected, inactivity reset timer canceled.');
         }
         startTurnIfNeeded();
-        sessionRefs.current.currentInputTranscription += message.serverContent.inputTranscription.text;
+
+        const newText = message.serverContent.inputTranscription.text;
+        
+        const isAiWorking = sessionRefs.current.currentToolCalls.some(tc => tc.status === ToolCallStatus.IN_PROGRESS);
+
+        // If the AI is working and the user says "stop", treat it as a command, not speech.
+        if (isAiWorking && /\bstop\b/i.test(newText)) {
+            console.log('[AI Live] "stop" command detected and handled.');
+            stopExecutionRef.current = true;
+            // Do NOT append "stop" to the transcription. We just consume it as a command.
+        } else {
+            // Otherwise, it's normal speech.
+            sessionRefs.current.currentInputTranscription += newText;
+        }
+        
         requestUiUpdate();
     }, [requestUiUpdate, startTurnIfNeeded]);
 
@@ -212,6 +251,7 @@ export const useAiLive = (props: UseAiLiveProps) => {
         sessionRefs.current.currentInputTranscription = '';
         sessionRefs.current.currentOutputTranscription = '';
         sessionRefs.current.currentToolCalls = [];
+        stopExecutionRef.current = false; // Reset for the next turn
 
         // Start the inactivity timer to perform a silent reset if the user doesn't speak.
         if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
@@ -224,37 +264,53 @@ export const useAiLive = (props: UseAiLiveProps) => {
 
 
     const onMessage = useCallback((message: any) => {
-        isSessionDirty.current = true; // Any message from the server means context is being built.
-        
+        isSessionDirty.current = true;
+    
+        // --- 1. Handle user's speech ---
         if (message.serverContent?.inputTranscription) {
-            if (endOfTurnTimerRef.current) {
-                clearTimeout(endOfTurnTimerRef.current);
-                endOfTurnTimerRef.current = null;
-            }
+            // Any user input cancels the inactivity reset timer and any pending "turn complete" timer.
+            if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
+            if (endOfTurnTimerRef.current) clearTimeout(endOfTurnTimerRef.current);
             sessionRefs.current.isTurnFinalizing = false;
+    
+            // If user interrupts, clear queued AI messages and stop playback.
             if (sessionRefs.current.pendingMessageQueue.length > 0) {
                 console.log("[AI Live] User interrupted; discarding premature AI response.");
                 sessionRefs.current.pendingMessageQueue = [];
                 interruptPlayback(sessionRefs);
                 setIsSpeaking(false);
             }
+    
             processInputTranscription(message);
-            return;
+            return; // Early exit, this message is just user speech.
         }
     
+        // --- 2. Handle speech interruption signal ---
+        if (message.serverContent?.interrupted) {
+            console.log('[AI Live] Speech interrupted by user.');
+            interruptPlayback(sessionRefs);
+            setIsSpeaking(false);
+            // Do not return; the `interrupted` signal might accompany other data.
+        }
+    
+        // --- 3. Queue or Process Model's Turn ---
+        const isModelTurnMessage = message.toolCall || message.serverContent?.modelTurn || message.serverContent?.outputTranscription;
+        
+        if (isModelTurnMessage) {
+            if (sessionRefs.current.isTurnFinalizing) {
+                sessionRefs.current.pendingMessageQueue.push(message);
+            } else {
+                processModelOutput(message);
+            }
+        }
+    
+        // --- 4. Handle End of Turn ---
         if (message.serverContent?.turnComplete) {
             if (!sessionRefs.current.isTurnFinalizing) {
                 console.log("[AI Live] turnComplete received. Starting 1s cooldown timer.");
                 sessionRefs.current.isTurnFinalizing = true;
                 endOfTurnTimerRef.current = window.setTimeout(finalizeTurn, 1000);
             }
-            return;
-        }
-        
-        if (sessionRefs.current.isTurnFinalizing) {
-            sessionRefs.current.pendingMessageQueue.push(message);
-        } else {
-            processModelOutput(message);
         }
     }, [processInputTranscription, processModelOutput, finalizeTurn]);
     
@@ -352,6 +408,13 @@ export const useAiLive = (props: UseAiLiveProps) => {
         
         const { isUnmount = false } = options;
 
+        // Cancel any pending reconnect attempt and reset retry state.
+        if (retryRef.current.timeoutId) {
+            clearTimeout(retryRef.current.timeoutId);
+            retryRef.current.timeoutId = null;
+        }
+        retryRef.current.count = 0;
+
         if (inactivityTimerRef.current) {
             clearTimeout(inactivityTimerRef.current);
             inactivityTimerRef.current = null;
@@ -441,21 +504,77 @@ export const useAiLive = (props: UseAiLiveProps) => {
         }
     }, [isAiTurn, isSpeaking, pendingAction, pendingPauseDuration, performStop, performPause]);
     
+    // Forward-declare initiateSession to resolve circular dependency
+    let initiateSession: () => void;
+
     const onError = useCallback((e: ErrorEvent) => {
         console.error('Live session error:', e);
-        let userMessage = `An error occurred with the voice session: ${e.message || 'Unknown error'}. The session has been closed.`;
 
-        if (e.message?.toLowerCase().includes('permission')) {
-            userMessage = `The AI voice session failed due to a permission error. Please check the following:\n\n1. Your API key is correct and active.\n2. The "Generative Language API" is enabled in your Google Cloud project.\n3. Your API key restrictions (like HTTP referrers) allow this application's domain.`;
-        } else if (e.message?.toLowerCase().includes('internal error')) {
-            userMessage = `The AI voice session encountered an internal server error. This might be a temporary issue with the service. Please try starting a new session in a few moments.`;
-        } else if (e.message?.toLowerCase().includes('deadline expired')) {
-            userMessage = `The connection to the AI voice session timed out. This can happen with an unstable network connection or if the browser suspends the audio process. Please try again.`;
+        // Don't retry for permission-related errors as they are not transient.
+        const isRetryable = !e.message?.toLowerCase().includes('permission');
+
+        if (isRetryable && retryRef.current.count < retryRef.current.maxRetries) {
+            retryRef.current.count++;
+            const delay = retryRef.current.delay * Math.pow(2, retryRef.current.count - 1);
+            console.warn(`[AI Live] Retryable error detected. Attempting reconnect #${retryRef.current.count} in ${delay}ms...`);
+            
+            if (retryRef.current.timeoutId) clearTimeout(retryRef.current.timeoutId);
+
+            retryRef.current.timeoutId = window.setTimeout(() => {
+                retryRef.current.timeoutId = null;
+                console.log('[AI Live] Performing silent session reset due to error.');
+                isSessionDirty.current = false;
+                
+                sessionRefs.current.session?.close();
+                if (audioContextRefs.current.scriptProcessor) {
+                    audioContextRefs.current.scriptProcessor.disconnect();
+                    audioContextRefs.current.scriptProcessor = null;
+                }
+                
+                initiateSession();
+            }, delay);
+
+        } else {
+            console.error(`[AI Live] Unretryable error or max retries reached. Stopping session.`);
+            let userMessage = `An error occurred with the voice session: ${e.message || 'Unknown error'}. The session has been closed.`;
+
+            if (e.message?.toLowerCase().includes('permission')) {
+                userMessage = `The AI voice session failed due to a permission error. Please check the following:\n\n1. Your API key is correct and active.\n2. The "Generative Language API" is enabled in your Google Cloud project.\n3. Your API key restrictions (like HTTP referrers) allow this application's domain.`;
+            } else if (retryRef.current.count >= retryRef.current.maxRetries) {
+                userMessage = `The AI voice session failed to reconnect after multiple attempts. There might be a temporary network or service issue. The session has been closed. Please try starting a new session manually.`;
+            }
+            
+            propsRef.current.onPermissionError(userMessage);
+            performStop();
         }
-        
-        propsRef.current.onPermissionError(userMessage);
-        performStop();
-    }, [performStop]);
+    }, [performStop, () => initiateSession()]);
+
+    initiateSession = useCallback(() => {
+        const { aiRef, settings, activeThread } = propsRef.current;
+        const onOpen = () => {
+            if (retryRef.current.count > 0) {
+                console.log('[AI Live] Reconnect successful. Resetting retry count.');
+                playNotificationSound('reconnect', audioContextRefs.current.output);
+            }
+            retryRef.current.count = 0;
+            if (retryRef.current.timeoutId) {
+                clearTimeout(retryRef.current.timeoutId);
+                retryRef.current.timeoutId = null;
+            }
+            connectMicrophoneNodes(audioContextRefs, sessionRefs, stateRef);
+        };
+        const sessionPromise = createLiveSession({
+            aiRef, settings, activeThread, callbacks: { onopen: onOpen, onmessage: onMessage, onerror: onError, onclose: () => {} },
+        });
+        sessionRefs.current.sessionPromise = sessionPromise;
+        sessionPromise.then(session => {
+            sessionRefs.current.session = session;
+        }).catch(err => {
+            console.error("Failed to establish live session:", err);
+            propsRef.current.onPermissionError("Could not connect to the live AI service. Please check your API key and network connection.");
+            performStop();
+        });
+    }, [onMessage, onError, performStop]);
 
     const stopLiveSession = useCallback((options: { immediate?: boolean; isUnmount?: boolean } = {}) => {
         const { immediate = true, isUnmount = false } = options;
@@ -480,22 +599,6 @@ export const useAiLive = (props: UseAiLiveProps) => {
             setPendingAction('pause');
         }
     }, [performPause]);
-
-    const initiateSession = useCallback(() => {
-        const { aiRef, settings, activeThread } = propsRef.current;
-        const onOpen = () => connectMicrophoneNodes(audioContextRefs, sessionRefs, stateRef);
-        const sessionPromise = createLiveSession({
-            aiRef, settings, activeThread, callbacks: { onopen: onOpen, onmessage: onMessage, onerror: onError, onclose: () => {} },
-        });
-        sessionRefs.current.sessionPromise = sessionPromise;
-        sessionPromise.then(session => {
-            sessionRefs.current.session = session;
-        }).catch(err => {
-            console.error("Failed to establish live session:", err);
-            propsRef.current.onPermissionError("Could not connect to the live AI service.");
-            performStop();
-        });
-    }, [onMessage, onError, performStop]);
 
     useEffect(() => {
         inactivityResetCallbackRef.current = () => {
@@ -525,6 +628,13 @@ export const useAiLive = (props: UseAiLiveProps) => {
 
     const startLiveSession = useCallback(async (): Promise<boolean> => {
         if (stateRef.current.isLive) return false;
+        
+        // Reset retry state on any manual start attempt.
+        retryRef.current.count = 0;
+        if (retryRef.current.timeoutId) {
+            clearTimeout(retryRef.current.timeoutId);
+            retryRef.current.timeoutId = null;
+        }
 
         const { onPermissionError } = propsRef.current;
         const { input, output } = audioContextRefs.current;

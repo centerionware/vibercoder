@@ -32,11 +32,11 @@ const App = () => {
     );
   }
 
-  const mainContentClass = app.isFullScreen ? 'fixed inset-0 z-50 bg-vibe-bg-deep' : 'relative flex flex-col h-screen';
+  const mainContentClass = app.isFullScreen ? 'fixed inset-0 z-50 bg-vibe-bg-deep flex flex-col' : 'relative flex flex-col h-full';
   const nativeTopPaddingClass = isNative ? 'pt-8' : ''; // Add padding for the native status bar
 
   return (
-    <div id="app-container" className="bg-vibe-bg text-vibe-text font-sans">
+    <div id="app-container" className="bg-vibe-bg text-vibe-text font-sans h-screen">
       <div key={app.activeProject.id} className={`${mainContentClass} ${nativeTopPaddingClass}`}>
         {!app.isFullScreen && (
           <Header
@@ -47,7 +47,7 @@ const App = () => {
             onTitleClick={() => window.location.reload()}
           />
         )}
-        <main className={`flex-1 flex flex-col overflow-hidden ${app.isFullScreen ? '' : 'pb-20 md:flex-row'}`}>
+        <main className={`flex-1 flex flex-col overflow-hidden ${app.isFullScreen ? '' : 'pb-20'}`}>
           <ViewRenderer {...app} />
         </main>
         {!app.isFullScreen && (

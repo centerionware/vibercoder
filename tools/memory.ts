@@ -1,5 +1,6 @@
 import { FunctionDeclaration, Type } from '@google/genai';
 import { ToolImplementationsDependencies } from '../types';
+import { db } from '../utils/idb';
 
 // --- Function Declarations ---
 export const searchChatHistoryFunction: FunctionDeclaration = {
@@ -22,12 +23,20 @@ export const declarations: FunctionDeclaration[] = [
 ];
 
 // --- Implementations Factory ---
-export const getImplementations = ({ threads }: Pick<ToolImplementationsDependencies, 'threads'>) => ({
+export const getImplementations = ({ activeThread }: Pick<ToolImplementationsDependencies, 'activeThread'>) => ({
     searchChatHistory: async (args: { query: string }) => {
+        if (!activeThread) {
+            throw new Error("No active chat thread found. Cannot determine which project to search.");
+        }
+        const projectId = activeThread.projectId;
+        
+        // Fetch the most up-to-date data directly from the database to ensure complete history access.
+        const allThreadsForProject = await db.threads.where('projectId').equals(projectId).toArray();
+
         const query = args.query.toLowerCase();
         const results: any[] = [];
 
-        threads.forEach(thread => {
+        allThreadsForProject.forEach(thread => {
             thread.messages.forEach(message => {
                 if (message.content.toLowerCase().includes(query)) {
                     results.push({

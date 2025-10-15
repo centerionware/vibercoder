@@ -68,11 +68,11 @@ export function createBlob(data: Float32Array): Blob {
 
 /**
  * Plays a simple notification sound for user feedback.
- * @param type 'start' for activation, 'stop' for deactivation, 'ai-start' for AI turn start, 'ai-stop' for AI turn end.
+ * @param type 'start' for activation, 'stop' for deactivation, 'ai-start' for AI turn start, 'ai-stop' for AI turn end, 'reconnect' for successful reconnection.
  * @param context The AudioContext to use for playback.
  * @returns A promise that resolves when the sound has finished playing.
  */
-export const playNotificationSound = (type: 'start' | 'stop' | 'ai-start' | 'ai-stop' = 'start', context: AudioContext | null): Promise<void> => {
+export const playNotificationSound = (type: 'start' | 'stop' | 'ai-start' | 'ai-stop' | 'reconnect' = 'start', context: AudioContext | null): Promise<void> => {
   return new Promise((resolve) => {
     if (!context || context.state === 'closed') {
       console.warn("Cannot play notification sound: AudioContext is not available or closed.");
@@ -86,49 +86,64 @@ export const playNotificationSound = (type: 'start' | 'stop' | 'ai-start' | 'ai-
     }
     
     try {
-      // Create oscillator and gain node
       const oscillator = context.createOscillator();
       const gainNode = context.createGain();
-
       oscillator.connect(gainNode);
       gainNode.connect(context.destination);
 
-      // Resolve the promise when the sound has finished playing.
-      oscillator.onended = () => resolve();
-
-      // Set volume (gain)
       gainNode.gain.setValueAtTime(0, context.currentTime);
-      gainNode.gain.linearRampToValueAtTime(0.2, context.currentTime + 0.01); // Increased volume
+      gainNode.gain.linearRampToValueAtTime(0.2, context.currentTime + 0.01);
 
-      let frequency: number;
-      let duration = 0.15;
+      if (type === 'reconnect') {
+        // Chime: two quick notes for a distinct "reconnected" sound
+        const firstNoteFreq = 1046.50; // C6
+        const secondNoteFreq = 783.99; // G5
+        const noteDuration = 0.1;
+        const gap = 0.05;
 
-      // Set frequency and duration based on type
-      switch(type) {
-          case 'start':
-              frequency = 880; // A5 note for session activation
-              break;
-          case 'stop':
-              frequency = 523.25; // C5 note for session deactivation
-              break;
-          case 'ai-start':
-              frequency = 1200; // Higher pitch, short blip for AI turn start
-              duration = 0.1;
-              break;
-          case 'ai-stop':
-              frequency = 600; // Audible but lower pitch "plonk" for AI turn end
-              duration = 0.15;
-              break;
-          default:
-              frequency = 880;
+        // First note
+        oscillator.frequency.setValueAtTime(firstNoteFreq, context.currentTime);
+        oscillator.start(context.currentTime);
+        oscillator.stop(context.currentTime + noteDuration);
+
+        // Second note (scheduled to play right after the first)
+        const secondOscillator = context.createOscillator();
+        const secondGain = context.createGain();
+        secondOscillator.connect(secondGain);
+        secondGain.connect(context.destination);
+        
+        const secondStartTime = context.currentTime + noteDuration + gap;
+        secondGain.gain.setValueAtTime(0, secondStartTime);
+        secondGain.gain.linearRampToValueAtTime(0.2, secondStartTime + 0.01);
+        secondOscillator.frequency.setValueAtTime(secondNoteFreq, secondStartTime);
+
+        secondOscillator.onended = () => resolve(); // Resolve when the second note finishes
+
+        secondOscillator.start(secondStartTime);
+        const secondEndTime = secondStartTime + noteDuration;
+        secondGain.gain.exponentialRampToValueAtTime(0.00001, secondEndTime);
+        secondOscillator.stop(secondEndTime);
+
+      } else {
+        // Standard logic for single-note sounds
+        let frequency: number;
+        let duration = 0.15;
+
+        switch(type) {
+            case 'start': frequency = 880; break;
+            case 'stop': frequency = 523.25; break;
+            case 'ai-start': frequency = 1200; duration = 0.1; break;
+            case 'ai-stop': frequency = 600; duration = 0.15; break;
+            default: frequency = 880;
+        }
+        
+        oscillator.frequency.setValueAtTime(frequency, context.currentTime);
+        oscillator.onended = () => resolve();
+
+        oscillator.start(context.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.00001, context.currentTime + duration);
+        oscillator.stop(context.currentTime + duration);
       }
-      
-      oscillator.frequency.setValueAtTime(frequency, context.currentTime);
-
-      // Schedule start and stop
-      oscillator.start(context.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.00001, context.currentTime + duration);
-      oscillator.stop(context.currentTime + duration);
     } catch (e) {
       console.error("Could not play notification sound:", e);
       resolve(); // Resolve even on error to not block the calling function.

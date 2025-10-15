@@ -5,7 +5,7 @@ import { ToolImplementationsDependencies } from '../types';
 
 export const thinkFunction: FunctionDeclaration = {
   name: 'think',
-  description: 'Articulate a step-by-step plan for a complex task. This helps you structure your approach before executing other tools. You MUST call this tool before starting any multi-step task.',
+  description: 'Briefly articulate a step-by-step plan for a complex task. This helps you structure your approach before executing other tools. You MUST call this tool before starting any multi-step task.',
   parameters: {
     type: Type.OBJECT,
     properties: {

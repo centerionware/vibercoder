@@ -263,7 +263,7 @@ const CodeView: React.FC<CodeViewProps> = ({ files, activeFile, onFileChange, on
   const fileContent = activeFile ? files[activeFile] : undefined;
 
   return (
-    <div className="flex flex-1 h-full bg-vibe-bg-deep rounded-lg overflow-hidden">
+    <div className="flex flex-1 h-full bg-vibe-bg-deep overflow-hidden">
       {isExplorerCollapsed ? (
         <CollapsedExplorer onExpand={() => setIsExplorerCollapsed(false)} />
       ) : (

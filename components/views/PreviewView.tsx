@@ -1,10 +1,12 @@
-import React, { useRef, useState, useEffect } from 'react';
+
+import React, { useState, useEffect } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { usePreviewBundler } from '../../hooks/usePreviewBundler';
-import CompressIcon from '../icons/CompressIcon';
 import ExpandIcon from '../icons/ExpandIcon';
 import BuildLogDisplay from '../preview/BuildLogDisplay';
 import PreviewIframe from '../preview/PreviewIframe';
 import PreviewOverlays from '../preview/PreviewOverlays';
+import FullScreenPreviewHeader from '../preview/FullScreenPreviewHeader';
 
 interface PreviewViewProps {
   files: Record<string, string>;
@@ -13,72 +15,87 @@ interface PreviewViewProps {
   onRuntimeError: (error: string) => void;
   bundleLogs: string[];
   onClearLogs: () => void;
+  isFullScreen: boolean;
+  onToggleFullScreen: () => void;
 }
 
 const PreviewView: React.FC<PreviewViewProps> = (props) => {
-  const { files, entryPoint, onLog, onClearLogs, onRuntimeError, bundleLogs } = props;
+  const {
+    files,
+    entryPoint,
+    onLog,
+    onClearLogs,
+    onRuntimeError,
+    bundleLogs,
+    isFullScreen,
+    onToggleFullScreen
+  } = props;
 
-  const { isBundling, bundleError, builtCode, buildId } = usePreviewBundler({
+  const { isBundling, bundleError, builtCode } = usePreviewBundler({
     files,
     entryPoint,
     onLog,
     onClearLogs,
   });
 
-  const previewContainerRef = useRef<HTMLDivElement>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isNative, setIsNative] = useState(false);
 
   useEffect(() => {
-    const handleFullscreenChange = () => {
-      const isCurrentlyFullscreen = document.fullscreenElement === previewContainerRef.current;
-      setIsFullscreen(isCurrentlyFullscreen);
-    };
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    setIsNative(Capacitor.isNativePlatform());
   }, []);
 
-  const handleToggleFullScreen = () => {
-    if (!document.fullscreenElement) {
-      previewContainerRef.current?.requestFullscreen().catch(err => {
-        console.error(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
-      });
-    } else {
-      document.exitFullscreen();
-    }
-  };
-
-  return (
-    <div className="flex-1 flex flex-col bg-vibe-bg-deep rounded-lg overflow-hidden">
-      <div className="flex-shrink-0 bg-vibe-panel p-1 flex justify-between items-center border-b border-vibe-bg">
-        <span className="text-sm text-vibe-text-secondary px-2">Preview</span>
-        <button onClick={handleToggleFullScreen} className="p-1 hover:bg-vibe-bg-deep rounded" title={isFullscreen ? 'Exit Full Screen' : 'Enter Full Screen'}>
-          {isFullscreen ? <CompressIcon className="w-4 h-4" /> : <ExpandIcon className="w-4 h-4" />}
-        </button>
-      </div>
-      
-      <div id="preview-container" ref={previewContainerRef} className="relative flex-1 overflow-hidden bg-vibe-bg-deep">
-        <PreviewOverlays 
+  if (isFullScreen) {
+    return (
+      <div className="flex flex-1 flex-col bg-vibe-bg-deep">
+        <FullScreenPreviewHeader
+          isNative={isNative}
+          onExitFullScreen={onToggleFullScreen}
+        />
+        <div className="relative flex-1 overflow-hidden min-h-0">
+          <PreviewOverlays
             isBundling={isBundling}
             builtCode={builtCode}
             bundleError={bundleError}
-        />
-        
-        {builtCode && buildId && (
+          />
+          {builtCode && (
             <PreviewIframe
-                buildId={buildId}
-                builtCode={builtCode}
-                onRuntimeError={onRuntimeError}
+              builtCode={builtCode}
+              onRuntimeError={onRuntimeError}
             />
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 flex flex-col bg-vibe-bg-deep overflow-hidden">
+      <div className="flex-shrink-0 bg-vibe-panel p-1 flex justify-between items-center border-b border-vibe-bg">
+        <span className="text-sm text-vibe-text-secondary px-2">Preview</span>
+        <button onClick={onToggleFullScreen} className="p-1 hover:bg-vibe-bg-deep rounded" title="Enter Full Screen">
+          <ExpandIcon className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div id="preview-container" className="relative flex-1 overflow-hidden bg-vibe-bg-deep min-h-0">
+        <PreviewOverlays
+          isBundling={isBundling}
+          builtCode={builtCode}
+          bundleError={bundleError}
+        />
+        {builtCode && (
+          <PreviewIframe
+            builtCode={builtCode}
+            onRuntimeError={onRuntimeError}
+          />
         )}
       </div>
 
-      {!isFullscreen && (
-        <BuildLogDisplay 
-          logs={bundleLogs}
-          error={bundleError}
-          onClear={onClearLogs}
-        />
-      )}
+      <BuildLogDisplay
+        logs={bundleLogs}
+        error={bundleError}
+        onClear={onClearLogs}
+      />
     </div>
   );
 };

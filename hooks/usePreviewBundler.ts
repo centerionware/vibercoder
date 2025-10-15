@@ -22,8 +22,6 @@ export const usePreviewBundler = ({ files, entryPoint, onLog, onClearLogs }: Use
       onClearLogs();
       setIsBundling(true);
       setBundleError(null);
-      setBuiltCode(null);
-      setBuildId(null);
 
       const result = await bundle(files, entryPoint, onLog);
       if (result.code) {
