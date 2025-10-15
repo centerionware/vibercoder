@@ -1,5 +1,5 @@
 
-import React, { useCallback, useRef } from 'react';
+import React from 'react';
 import { UseAiLiveProps, ToolCall, ToolCallStatus } from '../../types';
 import { SessionRefs, AudioContextRefs } from './types';
 import { startTurnIfNeeded } from './turnManager';
@@ -12,7 +12,7 @@ export const useUiUpdater = (
     sessionRefs: React.MutableRefObject<SessionRefs>,
     uiUpdateTimerRef: React.MutableRefObject<number | null>
 ) => {
-    const requestUiUpdate = useCallback(() => {
+    const requestUiUpdate = React.useCallback(() => {
         if (uiUpdateTimerRef.current) return;
         uiUpdateTimerRef.current = window.setTimeout(() => {
             const { liveMessageId, currentInputTranscription, currentOutputTranscription, currentToolCalls } = sessionRefs.current!;
@@ -27,7 +27,7 @@ export const useUiUpdater = (
         }, 100);
     }, [propsRef, sessionRefs, uiUpdateTimerRef]);
 
-    const cancelUiUpdate = useCallback(() => {
+    const cancelUiUpdate = React.useCallback(() => {
         if (uiUpdateTimerRef.current) {
             clearTimeout(uiUpdateTimerRef.current);
             uiUpdateTimerRef.current = null;
@@ -59,9 +59,10 @@ interface MessageProcessorDependencies {
 
 export const createMessageProcessor = (deps: MessageProcessorDependencies) => {
     
-    // This function is defined lazily and will be assigned the real implementation later.
-    // This helps break the circular dependency between finalizeTurn and processModelOutput.
-    const processModelOutputRef = useRef<(message: any) => Promise<void>>(() => Promise.resolve());
+    // Use a plain object to break the circular dependency between finalizeTurn and processModelOutput.
+    const self = {
+      processModelOutput: (message: any): Promise<void> => Promise.resolve(),
+    };
 
     const finalizeTurn = () => {
         if (!deps.sessionRefs.current) return;
@@ -73,7 +74,7 @@ export const createMessageProcessor = (deps: MessageProcessorDependencies) => {
         const queue = [...deps.sessionRefs.current.pendingMessageQueue];
         deps.sessionRefs.current.pendingMessageQueue = [];
 
-        queue.forEach(msg => processModelOutputRef.current(msg));
+        queue.forEach(msg => self.processModelOutput(msg));
         
         if (deps.sessionRefs.current.isAiTurn) {
             deps.sessionRefs.current.isAiTurn = false;
@@ -100,7 +101,7 @@ export const createMessageProcessor = (deps: MessageProcessorDependencies) => {
         deps.inactivity.startInactivityTimer();
     };
 
-    const processModelOutput = useCallback(async (message: any) => {
+    const processModelOutput = async (message: any) => {
         const { propsRef, sessionRefs, ui, audioContextRefs, stopExecutionRef, lastToolChimeTimeRef } = deps;
 
         if (message.serverContent && !sessionRefs.current?.isAiTurn) {
@@ -166,10 +167,10 @@ export const createMessageProcessor = (deps: MessageProcessorDependencies) => {
                 ui.requestUiUpdate();
             }
         }
-    }, [deps]);
-    processModelOutputRef.current = processModelOutput;
+    };
+    self.processModelOutput = processModelOutput;
 
-    const processInputTranscription = useCallback((message: any) => {
+    const processInputTranscription = (message: any) => {
         const { propsRef, sessionRefs, ui, inactivity, stopExecutionRef } = deps;
         inactivity.clearInactivityTimer();
         startTurnIfNeeded(propsRef, sessionRefs, stopExecutionRef);
@@ -182,9 +183,9 @@ export const createMessageProcessor = (deps: MessageProcessorDependencies) => {
             sessionRefs.current!.currentInputTranscription += newText;
         }
         ui.requestUiUpdate();
-    }, [deps]);
+    };
 
-    const onMessage = useCallback((message: any) => {
+    const onMessage = (message: any) => {
         const { sessionRefs, ui, inactivity, isSessionDirty, endOfTurnTimerRef } = deps;
         if (!sessionRefs.current) return;
         
@@ -216,7 +217,7 @@ export const createMessageProcessor = (deps: MessageProcessorDependencies) => {
             if (sessionRefs.current.isTurnFinalizing) {
                 sessionRefs.current.pendingMessageQueue.push(message);
             } else {
-                processModelOutput(message);
+                self.processModelOutput(message);
             }
         }
     
@@ -228,7 +229,7 @@ export const createMessageProcessor = (deps: MessageProcessorDependencies) => {
                 );
             }
         }
-    }, [deps, processInputTranscription, processModelOutput, finalizeTurn]);
+    };
 
-    return { onMessage, processModelOutput, finalizeTurn };
+    return { onMessage, processModelOutput: self.processModelOutput, finalizeTurn };
 };

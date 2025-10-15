@@ -1,10 +1,11 @@
-import React, { useEffect } from 'react';
-import { Modality, GoogleGenAI } from '@google/genai';
-import { AppSettings, ChatThread, UseAiLiveProps } from '../../types';
+
+import React from 'react';
+import { Modality } from '@google/genai';
+import { UseAiLiveProps } from '../../types';
 import { allTools } from '../../services/toolOrchestrator';
 import { stopAudioProcessing, connectMicrophoneNodes } from './audioManager';
 import { playNotificationSound } from '../../utils/audio';
-import { LiveSession, SessionRefs, AudioContextRefs } from './types';
+import { AudioContextRefs, SessionRefs } from './types';
 
 const liveSystemInstruction = `You are Vibe, an autonomous AI agent in a real-time voice conversation. Your purpose is to fulfill user requests by executing tools efficiently. **Your responses must be direct and concise. Prioritize action over conversation.** For every new task, you MUST follow this cognitive cycle:
 
@@ -57,7 +58,85 @@ export const createSessionManager = ({
     
     const { audioContextRefs, sessionRefs, retryRef, isSessionDirty } = refs;
 
-    const performStop = React.useCallback(async (options: { isUnmount?: boolean } = {}) => {
+    // Use a mutable object to hold functions that might need to be called by each other,
+    // avoiding the need for `useRef` and `useEffect` in a non-hook function.
+    const self = {} as {
+        initiateSession: () => void;
+        performStop: (options?: { isUnmount?: boolean }) => Promise<void>;
+        onError: (e: ErrorEvent) => void;
+    };
+
+    self.onError = (e: ErrorEvent) => {
+        console.error('Live session error:', e);
+        const isRetryable = !e.message?.toLowerCase().includes('permission');
+        if (isRetryable && retryRef.current && retryRef.current.count < retryRef.current.maxRetries) {
+            retryRef.current.count++;
+            const delay = retryRef.current.delay * Math.pow(2, retryRef.current.count - 1);
+            console.warn(`[AI Live] Retryable error. Reconnect #${retryRef.current.count} in ${delay}ms...`);
+            
+            if (retryRef.current.timeoutId) clearTimeout(retryRef.current.timeoutId);
+            retryRef.current.timeoutId = window.setTimeout(() => {
+                if (retryRef.current) retryRef.current.timeoutId = null;
+                isSessionDirty.current = false;
+                sessionRefs.current?.session?.close();
+                if (audioContextRefs.current?.scriptProcessor) {
+                    audioContextRefs.current.scriptProcessor.disconnect();
+                    audioContextRefs.current.scriptProcessor = null;
+                }
+                self.initiateSession();
+            }, delay);
+        } else {
+            let userMessage = `An error occurred with the voice session: ${e.message || 'Unknown error'}. Session closed.`;
+            if (e.message?.toLowerCase().includes('permission')) {
+                userMessage = `AI voice session failed due to a permission error. Check API key validity, "Generative Language API" is enabled, and API key restrictions allow this domain.`;
+            } else if (retryRef.current && retryRef.current.count >= retryRef.current.maxRetries) {
+                userMessage = `AI voice session failed to reconnect. Check network/service status. Session closed.`;
+            }
+            propsRef.current?.onPermissionError(userMessage);
+            self.performStop({});
+        }
+    };
+    
+    const createLiveSession = ({ aiRef, settings, activeThread, callbacks }: any) => {
+        const ai = aiRef.current;
+        if (!ai) return Promise.reject(new Error("AI not initialized."));
+        return ai.live.connect({
+            model: settings.liveAiModel,
+            callbacks,
+            config: {
+                responseModalities: [Modality.AUDIO], inputAudioTranscription: {}, outputAudioTranscription: {},
+                speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: settings.voiceName || 'Zephyr' } } },
+                tools: [{ functionDeclarations: liveTools }], systemInstruction: liveSystemInstruction,
+            },
+        });
+    };
+
+    self.initiateSession = () => {
+        const { aiRef, settings, activeThread } = propsRef.current!;
+        const onOpen = () => {
+            if (retryRef.current) {
+                if (retryRef.current.count > 0) {
+                    playNotificationSound('reconnect', audioContextRefs.current?.output);
+                }
+                retryRef.current.count = 0;
+                if (retryRef.current.timeoutId) {
+                    clearTimeout(retryRef.current.timeoutId);
+                    retryRef.current.timeoutId = null;
+                }
+            }
+            connectMicrophoneNodes(audioContextRefs, sessionRefs, stateRef);
+        };
+        const sessionPromise = createLiveSession({ aiRef, settings, activeThread, callbacks: { onopen: onOpen, onmessage: onMessage, onerror: self.onError, onclose: () => {} } });
+        if (sessionRefs.current) sessionRefs.current.sessionPromise = sessionPromise;
+        sessionPromise.then(session => {
+            if (sessionRefs.current) sessionRefs.current.session = session;
+        }).catch(err => {
+            propsRef.current?.onPermissionError("Could not connect to live AI service. Check API key/network.");
+            self.performStop({});
+        });
+    };
+
+    self.performStop = async (options: { isUnmount?: boolean } = {}) => {
         if (!stateRef.current.isLive) return;
         const { isUnmount = false } = options;
 
@@ -95,101 +174,25 @@ export const createSessionManager = ({
             sessionRefs.current.pendingMessageQueue = [];
             sessionRefs.current.isTurnFinalizing = false;
         }
-    }, [stateRef, retryRef, isSessionDirty, setters, disableVideoStream, audioContextRefs, sessionRefs, finalizeTurn]);
-    
-    const initiateSessionRef = React.useRef<() => void>(() => {});
-
-    const onError = React.useCallback((e: ErrorEvent) => {
-        console.error('Live session error:', e);
-        const isRetryable = !e.message?.toLowerCase().includes('permission');
-        if (isRetryable && retryRef.current && retryRef.current.count < retryRef.current.maxRetries) {
-            retryRef.current.count++;
-            const delay = retryRef.current.delay * Math.pow(2, retryRef.current.count - 1);
-            console.warn(`[AI Live] Retryable error. Reconnect #${retryRef.current.count} in ${delay}ms...`);
-            
-            if (retryRef.current.timeoutId) clearTimeout(retryRef.current.timeoutId);
-            retryRef.current.timeoutId = window.setTimeout(() => {
-                if (retryRef.current) retryRef.current.timeoutId = null;
-                isSessionDirty.current = false;
-                sessionRefs.current?.session?.close();
-                if (audioContextRefs.current?.scriptProcessor) {
-                    audioContextRefs.current.scriptProcessor.disconnect();
-                    audioContextRefs.current.scriptProcessor = null;
-                }
-                initiateSessionRef.current();
-            }, delay);
-        } else {
-            let userMessage = `An error occurred with the voice session: ${e.message || 'Unknown error'}. Session closed.`;
-            if (e.message?.toLowerCase().includes('permission')) {
-                userMessage = `AI voice session failed due to a permission error. Check API key validity, "Generative Language API" is enabled, and API key restrictions allow this domain.`;
-            } else if (retryRef.current && retryRef.current.count >= retryRef.current.maxRetries) {
-                userMessage = `AI voice session failed to reconnect. Check network/service status. Session closed.`;
-            }
-            propsRef.current?.onPermissionError(userMessage);
-            performStop({});
-        }
-    }, [retryRef, isSessionDirty, sessionRefs, audioContextRefs, propsRef, performStop]);
-    
-    const createLiveSession = ({ aiRef, settings, activeThread, callbacks }: any) => {
-        const ai = aiRef.current;
-        if (!ai) return Promise.reject(new Error("AI not initialized."));
-        return ai.live.connect({
-            model: settings.liveAiModel,
-            callbacks,
-            config: {
-                responseModalities: [Modality.AUDIO], inputAudioTranscription: {}, outputAudioTranscription: {},
-                speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: settings.voiceName || 'Zephyr' } } },
-                tools: [{ functionDeclarations: liveTools }], systemInstruction: liveSystemInstruction,
-            },
-        });
     };
-
-    const initiateSession = React.useCallback(() => {
-        const { aiRef, settings, activeThread } = propsRef.current!;
-        const onOpen = () => {
-            if (retryRef.current) {
-                if (retryRef.current.count > 0) {
-                    playNotificationSound('reconnect', audioContextRefs.current?.output);
-                }
-                retryRef.current.count = 0;
-                if (retryRef.current.timeoutId) {
-                    clearTimeout(retryRef.current.timeoutId);
-                    retryRef.current.timeoutId = null;
-                }
-            }
-            connectMicrophoneNodes(audioContextRefs, sessionRefs, stateRef);
-        };
-        const sessionPromise = createLiveSession({ aiRef, settings, activeThread, callbacks: { onopen: onOpen, onmessage: onMessage, onerror: onError, onclose: () => {} } });
-        if (sessionRefs.current) sessionRefs.current.sessionPromise = sessionPromise;
-        sessionPromise.then(session => {
-            if (sessionRefs.current) sessionRefs.current.session = session;
-        }).catch(err => {
-            propsRef.current?.onPermissionError("Could not connect to live AI service. Check API key/network.");
-            performStop({});
-        });
-    }, [propsRef, retryRef, audioContextRefs, sessionRefs, stateRef, onMessage, onError, performStop]);
     
-    useEffect(() => {
-        initiateSessionRef.current = initiateSession;
-    });
-    
-    const hotSwapSession = React.useCallback(() => {
+    const hotSwapSession = () => {
         console.log("[AI Live] Performing session hot-swap...");
         sessionRefs.current?.session?.close();
         if (audioContextRefs.current?.scriptProcessor) {
             audioContextRefs.current.scriptProcessor.disconnect();
             audioContextRefs.current.scriptProcessor = null;
         }
-        initiateSession();
-    }, [sessionRefs, audioContextRefs, initiateSession]);
+        self.initiateSession();
+    };
 
-    const performPause = React.useCallback((durationInSeconds: number) => {
+    const performPause = (durationInSeconds: number) => {
         if (!stateRef.current.isLive || stateRef.current.isMuted) return;
         setters.setIsMuted(true);
         setTimeout(() => {
             if (stateRef.current.isLive) setters.setIsMuted(false);
         }, durationInSeconds * 1000);
-    }, [stateRef, setters]);
+    };
 
     const resetRetryState = () => {
         if(retryRef.current) {
@@ -201,5 +204,11 @@ export const createSessionManager = ({
         }
     };
 
-    return { initiateSession, performStop, performPause, hotSwapSession, resetRetryState };
+    return { 
+        initiateSession: self.initiateSession, 
+        performStop: self.performStop, 
+        performPause, 
+        hotSwapSession, 
+        resetRetryState 
+    };
 };
