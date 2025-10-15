@@ -175,4 +175,4 @@ export const previewHtml = `
       });
     </script>
   </body>
-</html>
+<bthrow
