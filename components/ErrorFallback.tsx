@@ -15,7 +15,6 @@ const ErrorFallback: React.FC<ErrorFallbackProps> = ({ error }) => {
       console.warn("Resetting application state due to critical error...");
       
       // Clear IndexedDB
-      // Fix: Cast 'db' to 'any' to allow calling Dexie's 'delete' method, resolving a TypeScript type error.
       await (db as any).delete();
       console.warn("IndexedDB has been cleared.");
       
@@ -30,6 +29,17 @@ const ErrorFallback: React.FC<ErrorFallbackProps> = ({ error }) => {
       alert("Could not fully reset the application. Please try clearing your browser's site data manually for this domain.");
     }
   };
+
+  const handleReload = () => {
+    window.location.reload();
+  };
+
+  const handleResetWithConfirmation = async () => {
+    if (window.confirm("Are you sure you want to reset the application? This will delete all projects, chat history, and settings. This action cannot be undone.")) {
+      await handleReset();
+    }
+  };
+
 
   return (
     <div className="bg-vibe-bg-deep text-vibe-text h-screen w-screen flex flex-col items-center justify-center p-4 font-sans">
@@ -64,13 +74,21 @@ const ErrorFallback: React.FC<ErrorFallbackProps> = ({ error }) => {
         <p className="text-sm text-vibe-comment mb-4">
           You can try reloading the page. If the problem persists, the most reliable solution is to reset the application's stored data. This will clear all chat history and settings.
         </p>
-
-        <button
-          onClick={handleReset}
-          className="w-full bg-red-600 text-white font-bold py-3 rounded-md hover:bg-red-700 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-vibe-panel focus:ring-red-500"
-        >
-          Reset Application & Reload
-        </button>
+        
+        <div className="flex flex-col gap-4 mt-6">
+            <button
+                onClick={handleReload}
+                className="w-full bg-vibe-accent text-white font-bold py-3 rounded-md hover:bg-vibe-accent-hover transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-vibe-panel focus:ring-vibe-accent"
+            >
+                Reload Page
+            </button>
+            <button
+                onClick={handleResetWithConfirmation}
+                className="w-full text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 py-2 rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-vibe-panel focus:ring-red-500"
+            >
+                Reset Application & Data
+            </button>
+        </div>
       </div>
     </div>
   );

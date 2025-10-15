@@ -129,6 +129,14 @@ self.onmessage = async (event: MessageEvent) => {
             await git.walk({ fs, dir, trees: [git.TREE({ ref: parentOid }), git.TREE({ ref: payload.oid })],
                 map: async function(filepath: string, [A, B]) {
                     if (filepath === '.') return;
+
+                    // FIX: Check entry type. Skip trees to prevent 'readBlob' errors.
+                    const typeA = await A?.type();
+                    const typeB = await B?.type();
+                    if (typeA === 'tree' || typeB === 'tree') {
+                        return; // This entry is a directory, not a file. Skip it.
+                    }
+
                     const aOid = await A?.oid(); const bOid = await B?.oid();
                     if (aOid === bOid) return; // Unchanged
 
