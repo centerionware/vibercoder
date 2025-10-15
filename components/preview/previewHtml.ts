@@ -48,6 +48,7 @@ export const previewHtml = `
 }
 </script>
     <style>
+      html, body, #root { height: 100%; }
       body { margin: 0; background-color: #1a1b26; }
       #root-error { color: white; font-family: sans-serif; padding: 1rem; }
       #root-error h3 { color: #f87171; }
@@ -175,4 +176,4 @@ export const previewHtml = `
     </script>
   </body>
 </html>
-`;
+`

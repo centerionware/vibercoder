@@ -44,7 +44,7 @@ const PreviewIframe: React.FC<PreviewIframeProps> = ({ builtCode, onRuntimeError
       ref={iframeRef}
       srcDoc={previewHtml}
       title="Preview"
-      sandbox="allow-scripts allow-same-origin"
+      sandbox="allow-scripts"
       className="absolute inset-0 w-full h-full border-0"
     />
   );
