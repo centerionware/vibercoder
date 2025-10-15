@@ -11,9 +11,12 @@ import { View } from '../types';
 type ViewRendererProps = ReturnType<typeof useAppLogic>;
 
 const ViewRenderer: React.FC<ViewRendererProps> = (app) => {
-  switch (app.activeView) {
-    case View.Code:
-      return (
+  // By rendering all views and using CSS to hide/show them, we preserve the state
+  // of each view component. This is crucial for the PreviewView's iframe, which
+  // will now maintain its state and not trigger a rebundle on view switching.
+  return (
+    <>
+      <div className={`h-full w-full ${app.activeView === View.Code ? 'flex flex-col' : 'hidden'}`}>
         <CodeView
           files={app.files}
           activeFile={app.activeFile}
@@ -24,9 +27,8 @@ const ViewRenderer: React.FC<ViewRendererProps> = (app) => {
           isFullScreen={app.isFullScreen}
           onToggleFullScreen={app.onToggleFullScreen}
         />
-      );
-    case View.Preview:
-      return (
+      </div>
+      <div className={`h-full w-full ${app.activeView === View.Preview ? 'flex flex-col' : 'hidden'}`}>
         <PreviewView
           files={app.files}
           entryPoint={app.activeProject.entryPoint}
@@ -38,9 +40,8 @@ const ViewRenderer: React.FC<ViewRendererProps> = (app) => {
           isFullScreen={app.isFullScreen}
           onToggleFullScreen={app.onToggleFullScreen}
         />
-      );
-    case View.Ai:
-      return (
+      </div>
+      <div className={`h-full w-full ${app.activeView === View.Ai ? 'flex flex-col' : 'hidden'}`}>
         <AiView
           aiRef={app.aiRef}
           settings={app.settings}
@@ -64,9 +65,8 @@ const ViewRenderer: React.FC<ViewRendererProps> = (app) => {
           onStartAiRequest={app.handleStartAiRequest}
           onEndAiRequest={app.onEndAiRequest}
         />
-      );
-    case View.Git:
-      return (
+      </div>
+      <div className={`h-full w-full ${app.activeView === View.Git ? 'flex flex-col' : 'hidden'}`}>
         <GitView
           files={app.files}
           changedFiles={app.changedFiles}
@@ -85,9 +85,8 @@ const ViewRenderer: React.FC<ViewRendererProps> = (app) => {
           commitMessage={app.commitMessage}
           onCommitMessageChange={app.setCommitMessage}
         />
-      );
-    case View.Settings:
-      return (
+      </div>
+      <div className={`h-full w-full ${app.activeView === View.Settings ? 'flex flex-col' : 'hidden'}`}>
         <SettingsView
           settings={app.settings}
           onSettingsChange={app.onSettingsChange}
@@ -96,9 +95,8 @@ const ViewRenderer: React.FC<ViewRendererProps> = (app) => {
           onOpenDebugLog={() => app.setIsDebugLogModalOpen(true)}
           onNavigate={app.onNavigate}
         />
-      );
-    case View.Prompts:
-      return (
+      </div>
+      <div className={`h-full w-full ${app.activeView === View.Prompts ? 'flex flex-col' : 'hidden'}`}>
         <PromptsView
             prompts={app.prompts}
             createPrompt={app.createPrompt}
@@ -106,10 +104,9 @@ const ViewRenderer: React.FC<ViewRendererProps> = (app) => {
             revertToVersion={app.revertToVersion}
             deletePrompt={app.deletePrompt}
         />
-      );
-    default:
-      return <div>Unknown View</div>;
-  }
+      </div>
+    </>
+  );
 };
 
 export default ViewRenderer;
