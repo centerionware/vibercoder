@@ -37,7 +37,7 @@ export const useGitCredentials = () => {
 
     const setDefaultGitCredential = useCallback(async (id: string) => {
         // Dexie transactions are great for this kind of multi-step update
-        // Fix: Cast 'db' to 'any' to allow calling Dexie's 'transaction' method, resolving a TypeScript type error.
+        // FIX: Cast 'db' to 'any' to allow calling Dexie's 'transaction' method, resolving a TypeScript type error.
         await (db as any).transaction('rw', db.gitCredentials, async () => {
             // Unset any existing default
             await db.gitCredentials.where({ isDefault: true }).modify({ isDefault: false });

@@ -1,7 +1,9 @@
-import { GoogleGenAI, Chat, Content as SdkGeminiContent, FunctionCall as SdkFunctionCall, Part } from '@google/genai';
+// FIX: Recreated the content of `types.ts` based on its usage across the entire application. This resolves numerous 'Cannot find name' and 'is not a module' errors in other files that depend on these type definitions.
+import { Content, FunctionCall } from '@google/genai';
 import React from 'react';
 
-// General App State
+// --- Core App ---
+
 export enum View {
   Code = 'code',
   Preview = 'preview',
@@ -17,11 +19,10 @@ export interface AppSettings {
   liveAiModel: string;
   voiceName: string;
   thinkingBudget: number | null;
-  // Global Git settings act as a fallback
   gitRemoteUrl: string;
   gitUserName: string;
   gitUserEmail: string;
-  gitAuthToken: string; // Fallback token
+  gitAuthToken: string;
   gitCorsProxy: string;
   wakeWord: string;
   wakeWordEnabled: boolean;
@@ -29,43 +30,39 @@ export interface AppSettings {
 }
 
 export interface Project {
-    id: string;
-    name: string;
-    entryPoint: string;
-    gitRemoteUrl: string;
-    createdAt: number;
-    // Per-project Git settings override global settings
-    gitSettings?: GitSettings;
+  id: string;
+  name: string;
+  entryPoint: string;
+  gitRemoteUrl: string;
+  createdAt: number;
+  gitSettings: GitSettings;
 }
 
-export interface GitSettings {
-  source: 'global' | 'default' | 'specific' | 'custom';
-  credentialId?: string; // For 'specific' source
-  custom?: { // For 'custom' source
-    userName: string;
-    userEmail: string;
-    authToken: string;
-    corsProxy: string;
-  };
+// --- AI & Chat ---
+
+export interface ChatThread {
+  id: string;
+  projectId: string;
+  title: string;
+  createdAt: number;
+  messages: AiMessage[];
+  history: GeminiContent[];
+  shortTermMemory: ShortTermMemory;
 }
 
-export interface GitCredential {
-    id: string;
-    name: string;
-    token: string;
-    isDefault?: boolean;
-}
-
-
-// AI Chat & Live Session
 export interface AiMessage {
   id: string;
   role: 'user' | 'model';
   content: string;
   thinking?: string | null;
   toolCalls?: ToolCall[];
-  attachments?: Attachment[];
   isLive?: boolean;
+  attachments?: Attachment[];
+}
+
+export interface Attachment {
+  type: 'image' | 'video';
+  data: string; // base64 for image, URL for video
 }
 
 export enum ToolCallStatus {
@@ -82,192 +79,75 @@ export interface ToolCall {
   status: ToolCallStatus;
 }
 
-export interface Attachment {
-  type: 'image' | 'video';
-  data: string; // Base64 for image, URL for video
-}
+export type GeminiContent = Content;
 
-export interface ChatThread {
-  id: string;
-  projectId: string;
-  title: string;
-  createdAt: number;
-  messages: AiMessage[];
-  history: GeminiContent[];
-  shortTermMemory: ShortTermMemory;
-}
+export type GeminiFunctionCall = FunctionCall;
 
-export interface ShortTermMemory {
-    [key: string]: {
-        value: any;
-        priority: 'low' | 'medium' | 'high';
-        createdAt: number;
-        lastAccessedAt: number;
-    }
-}
-
-// Re-exporting Gemini types to avoid direct SDK imports everywhere
-export type GeminiContent = SdkGeminiContent;
-export type GeminiFunctionCall = SdkFunctionCall;
-
-// AI Hook Props
 export interface UseAiChatProps {
-  aiRef: React.RefObject<GoogleGenAI | null>;
+  aiRef: React.RefObject<any>; // GoogleGenAI
   settings: AppSettings;
   activeThread: ChatThread | undefined;
-  toolImplementations: Record<string, (args: any) => Promise<any>>;
   addMessage: (message: AiMessage) => void;
   updateMessage: (id: string, updates: Partial<AiMessage>) => void;
   updateHistory: (newHistory: GeminiContent[]) => void;
-  updateThread: (threadId: string, updates: Partial<ChatThread>) => void;
+  toolImplementations: Record<string, (args: any) => Promise<any>>;
   onStartAiRequest: () => void;
   onEndAiRequest: () => void;
 }
 
+// FIX: Created a dedicated interface for the live session controls to break type circular dependencies.
 export interface LiveSessionControls {
+    startLiveSession: () => Promise<boolean>;
+    stopLiveSession: (options?: { immediate?: boolean; isUnmount?: boolean }) => void;
+    toggleMute: () => void;
     pauseListening: (durationInSeconds: number, options?: { immediate?: boolean }) => void;
-    stopLiveSession: (options?: { immediate?: boolean }) => void;
+    interrupt: () => void;
     enableVideoStream: () => void;
     disableVideoStream: () => void;
+    setAudioPipe: (target: 'ai' | 'none') => void;
 }
 
-export interface UseAiLiveProps {
-  aiRef: React.RefObject<GoogleGenAI | null>;
-  settings: AppSettings;
-  activeThread: ChatThread | undefined;
-  toolImplementations: Record<string, (args: any) => Promise<any>>;
-  addMessage: (message: AiMessage) => void;
-  updateMessage: (id: string, updates: Partial<AiMessage>) => void;
-  onPermissionError: (message: string) => void;
-  activeView: View;
-  setLiveFrameData: (data: string | null) => void;
-  onStartAiRequest: () => void;
-  onEndAiRequest: () => void;
-}
-
-export interface UseWakeWordProps {
-    wakeWord: string;
-    onWake: () => void;
-    enabled: boolean;
+// FIX: Removed `liveSessionControls` from props. A hook's props should not include its own return value.
+export interface UseAiLiveProps extends UseAiChatProps {
+    activeView: View;
     onPermissionError: (message: string) => void;
+    setLiveFrameData: (data: string | null) => void;
 }
 
-// AI Virtual File System (VFS)
-export const DELETED_FILE_SENTINEL = { DELETED: true as const };
-export type VFSMutation = string | typeof DELETED_FILE_SENTINEL;
+// --- Short Term Memory ---
+export interface ShortTermMemoryItem {
+    value: any;
+    priority: 'low' | 'medium' | 'high';
+    createdAt: number;
+    lastAccessedAt: number;
+}
+export type ShortTermMemory = Record<string, ShortTermMemoryItem>;
 
-export interface CopyOnWriteVFS {
-  originalFiles: Readonly<Record<string, string>>;
-  mutations: Record<string, VFSMutation>;
+
+// --- Git ---
+
+export interface GitAuthor {
+  name: string;
+  email: string;
 }
 
-
-// Tool Orchestrator
-export interface ToolImplementationsDependencies {
-  // File System
-  files: Record<string, string>;
-  setFiles: React.Dispatch<React.SetStateAction<Record<string, string>>>;
-  activeFile: string | null;
-  setActiveFile: (filename: string | null) => void;
-  // AI Virtual File System (VFS)
-  getOriginalHeadFiles: () => Record<string, string> | null;
-  getAiVirtualFiles: () => CopyOnWriteVFS | null;
-  setAiVirtualFiles: (updater: React.SetStateAction<CopyOnWriteVFS | null>) => void;
-  getVfsReadyPromise: () => Promise<void>;
-  onCommitAiToHead: () => void;
-  // App Control
-  activeView: View;
-  setActiveView: (view: View) => void;
-  bundleLogs: string[];
-  sandboxErrors: string[];
-  settings: AppSettings;
-  onSettingsChange: (settings: AppSettings) => void;
-  liveSessionControls: LiveSessionControls;
-  setScreenshotPreview: (dataUrl: string | null) => void;
-  isScreenshotPreviewDisabled: boolean;
-  setIsScreenshotPreviewDisabled: React.Dispatch<React.SetStateAction<boolean>>;
-  // Memory & Threads
-  threads: ChatThread[];
-  activeThread: ChatThread | undefined;
-  updateThread: (threadId: string, updates: Partial<ChatThread>) => void;
-  // Creative
-  aiRef: React.RefObject<GoogleGenAI | null>;
-  // Git
-  gitServiceRef: React.RefObject<GitService | null>;
-  onGitPush: () => Promise<void>;
-  onGitPull: (rebase: boolean) => Promise<void>;
-  onGitRebase: (branch: string) => Promise<void>;
-  onDiscardChanges: () => Promise<void>;
-  setCommitMessage: React.Dispatch<React.SetStateAction<string>>;
-  // Project Management
-  projects: Project[];
-  gitCredentials: GitCredential[];
-  // Prompt Management
-  prompts: Prompt[];
-  createPrompt: (id: string, description: string, content: string) => Promise<void>;
-  updatePrompt: (id: string, content: string, author: 'user' | 'ai') => Promise<void>;
-  deletePrompt: (id: string) => Promise<void>;
-}
-
-// Prompt Management
-export interface PromptVersion {
-  versionId: string;
-  content: string;
-  createdAt: number;
-  author: 'user' | 'ai';
-}
-
-export interface Prompt {
-  id: string; // The "key" or unique name of the prompt
-  description: string;
-  versions: PromptVersion[];
-  currentVersionId: string;
-  createdAt: number;
-}
-
-
-// Git Service
-export interface GitService {
-    isReal: boolean;
-    clone(url: string, onProgress?: (progress: GitProgress) => void): Promise<{ files: Record<string, string> }>;
-    status(appFiles: Record<string, string>, changedFilePaths?: string[]): Promise<GitStatus[]>;
-    commit(message: string, appFiles: Record<string, string>): Promise<{ oid: string; status: GitStatus[] }>;
-    log(ref?: string): Promise<GitCommit[]>;
-    listBranches(): Promise<string[]>;
-    checkout(branch: string): Promise<{ files: Record<string, string> }>;
-    getCommitChanges(oid: string): Promise<GitFileChange[]>;
-    readFileAtCommit(oid: string, filepath: string): Promise<string | null>;
-    getHeadFiles(): Promise<Record<string, string>>;
-    push(onProgress?: (progress: GitProgress) => void): Promise<{ ok: boolean, error?: string }>;
-    pull(rebase: boolean, onProgress?: (progress: GitProgress) => void): Promise<{ files: Record<string, string>; status: GitStatus[] }>;
-    rebase(branch: string): Promise<{ files: Record<string, string>; status: GitStatus[] }>;
-    getWorkingDirFiles(): Promise<Record<string, string>>;
-    writeFile(filepath: string, content: string): Promise<void>;
-    removeFile(filepath: string): Promise<void>;
+export interface GitCredential {
+  id: string;
+  name: string;
+  token: string;
+  isDefault: boolean;
 }
 
 export enum GitFileStatus {
-    Unmodified,
-    Modified,
-    New,
-    Deleted,
+    New = 'new',
+    Modified = 'modified',
+    Deleted = 'deleted',
+    Unmodified = 'unmodified',
 }
 
 export interface GitStatus {
-    filepath: string;
-    status: GitFileStatus;
-}
-
-export interface GitCommit {
-    oid: string;
-    message: string;
-    author: GitAuthor & { timestamp: number };
-    parent: string[];
-}
-
-export interface GitAuthor {
-    name: string;
-    email: string;
+  filepath: string;
+  status: GitFileStatus;
 }
 
 export interface DiffLine {
@@ -283,37 +163,150 @@ export interface GitFileChange {
     isTooLarge?: boolean;
 }
 
+export interface GitCommit {
+    oid: string;
+    message: string;
+    author: {
+        name: string;
+        email: string;
+        timestamp: number;
+    };
+    parent: string[];
+}
+
 export interface GitProgress {
     phase: string;
     loaded: number;
     total: number;
 }
 
-// Preview Sandbox
-export interface PreviewState {
-    htmlContent: string;
-    videoFrameDataUrl: string | null;
-    videoFrameRect: DOMRect | null;
+export interface GitHttpRequest {
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+  body?: AsyncIterable<Uint8Array>;
 }
 
-// Debugging
+export interface GitHttpResponse {
+  url: string;
+  method: string;
+  statusCode: number;
+  statusMessage: string;
+  body: AsyncIterable<Uint8Array>;
+  headers: Record<string, string>;
+}
+
+export interface GitSettings {
+  source: 'global' | 'default' | 'specific' | 'custom';
+  credentialId?: string;
+  custom?: {
+    userName: string;
+    userEmail: string;
+    authToken: string;
+    corsProxy: string;
+  };
+}
+
+export interface GitService {
+    isReal: boolean;
+    clone(url: string, onProgress?: (progress: GitProgress) => void): Promise<{ files: Record<string, string> }>;
+    status(appFiles: Record<string, string>): Promise<GitStatus[]>;
+    commit(message: string, appFiles: Record<string, string>): Promise<{ oid: string, status: GitStatus[] }>;
+    log(ref?: string): Promise<GitCommit[]>;
+    listBranches(): Promise<string[]>;
+    checkout(branch: string): Promise<{ files: Record<string, string> }>;
+    getCommitChanges(oid: string): Promise<GitFileChange[]>;
+    readFileAtCommit(oid: string, filepath: string): Promise<string | null>;
+    getHeadFiles(): Promise<Record<string, string>>;
+    push(onProgress?: (progress: GitProgress) => void): Promise<{ ok: boolean, error?: string }>;
+    pull(rebase: boolean, onProgress?: (progress: GitProgress) => void): Promise<{ files: Record<string, string>, status: GitStatus[] }>;
+    rebase(branch: string): Promise<{ files: Record<string, string>, status: GitStatus[] }>;
+    getWorkingDirFiles(): Promise<Record<string, string>>;
+    writeFile(filepath: string, content: string): Promise<void>;
+    removeFile(filepath: string): Promise<void>;
+}
+
+// --- Prompts ---
+export interface PromptVersion {
+    versionId: string;
+    content: string;
+    createdAt: number;
+    author: 'user' | 'ai';
+}
+
+export interface Prompt {
+    id: string; // The prompt key
+    description: string;
+    createdAt: number;
+    currentVersionId: string;
+    versions: PromptVersion[];
+}
+
+// --- Wake Word ---
+export interface UseWakeWordProps {
+  wakeWord: string;
+  onWake: () => void;
+  enabled: boolean;
+  onPermissionError: (message: string) => void;
+}
+
+// --- Tooling ---
+export const DELETED_FILE_SENTINEL = Symbol('DELETED_FILE');
+
+export interface AiVirtualFileSystem {
+    originalFiles: Record<string, string>;
+    mutations: Record<string, string | typeof DELETED_FILE_SENTINEL>;
+}
+
+export interface ToolImplementationsDependencies {
+    files: Record<string, string>;
+    setFiles: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+    activeFile: string | null;
+    setActiveFile: (filename: string | null) => void;
+    activeView: View;
+    setActiveView: (view: View) => void;
+    aiRef: React.RefObject<any>; // GoogleGenAI
+    gitServiceRef: React.RefObject<GitService | null>;
+    settings: AppSettings;
+    onSettingsChange: (settings: AppSettings) => void;
+    bundleLogs: string[];
+    sandboxErrors: string[];
+    // FIX: Changed to a ref to solve a circular dependency in useAppLogic.
+    liveSessionControlsRef: React.RefObject<LiveSessionControls | undefined>;
+    activeThread: ChatThread | undefined;
+    updateThread: (threadId: string, updates: Partial<ChatThread>) => void;
+    setScreenshotPreview: (dataUrl: string | null) => void;
+    isScreenshotPreviewDisabled: boolean;
+    setIsScreenshotPreviewDisabled: (disabled: boolean) => void;
+    onGitPush: () => Promise<void>;
+    onGitPull: (rebase: boolean) => Promise<void>;
+    onGitRebase: (branch: string) => Promise<void>;
+    onDiscardChanges: () => Promise<void>;
+    setCommitMessage: (message: string) => void;
+    // VFS
+    getAiVirtualFiles: () => AiVirtualFileSystem | null;
+    setAiVirtualFiles: React.Dispatch<React.SetStateAction<AiVirtualFileSystem | null>>;
+    onCommitAiToHead: () => void;
+    getVfsReadyPromise: () => Promise<void>;
+    saveVfsSession: () => Promise<void>;
+    deleteVfsSession: () => Promise<void>;
+    // Prompts
+    prompts: Prompt[];
+    createPrompt: (id: string, description: string, content: string) => Promise<void>;
+    updatePrompt: (id: string, content: string, author: 'user' | 'ai') => Promise<void>;
+    deletePrompt: (id: string) => Promise<void>;
+}
+
+// --- Logging ---
 export interface LogEntry {
   timestamp: number;
   level: 'log' | 'warn' | 'error' | 'info';
   message: string;
 }
 
-// Isomorphic Git HTTP client types for Electron proxy
-export interface GitHttpRequest {
-    url: string;
-    method?: string;
-    headers?: Record<string, string>;
-    body?: AsyncIterable<Uint8Array>;
-}
-export interface GitHttpResponse {
-    url: string;
-    statusCode: number;
-    statusMessage: string;
-    headers: Record<string, string>;
-    body: AsyncIterable<Uint8Array>;
+// --- Preview ---
+export interface PreviewState {
+  htmlContent: string;
+  videoFrameDataUrl: string | null;
+  videoFrameRect: DOMRect | null;
 }

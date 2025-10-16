@@ -168,19 +168,19 @@ const GitView: React.FC<GitViewProps> = (props) => {
         const rect = commitButtonRef.current.getBoundingClientRect();
         const menuHeight = 44; // Height of one button with padding
         
+        // FIX: The `top` property was being added after object creation, causing a TypeScript error.
+        // This was fixed by calculating the `top` position first and including it directly in the style object's definition.
+        const topPosition = rect.top > menuHeight + 8
+            ? `${rect.top - menuHeight - 4}px`
+            : `${rect.bottom + 4}px`;
+
         const style: React.CSSProperties = {
             width: `${rect.width}px`,
             left: `${rect.left}px`,
+            top: topPosition,
             zIndex: 50,
         };
 
-        // Prefer opening upwards
-        if (rect.top > menuHeight + 8) {
-            style.top = `${rect.top - menuHeight - 4}px`;
-        } else {
-            // Fallback to opening downwards
-            style.top = `${rect.bottom + 4}px`;
-        }
         setMenuStyle(style);
     }
     setIsCommitMenuOpen(prev => !prev);

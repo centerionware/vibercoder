@@ -1,9 +1,8 @@
-
 import React from 'react';
 import { Modality } from '@google/genai';
 import { UseAiLiveProps } from '../../types';
 import { allTools } from '../../services/toolOrchestrator';
-import { stopAudioProcessing, connectMicrophoneNodes } from './audioManager';
+import { stopAudioProcessing, setupScriptProcessor, connectMicSourceToProcessor } from './audioManager';
 import { playNotificationSound } from '../../utils/audio';
 import { AudioContextRefs, SessionRefs } from './types';
 
@@ -34,7 +33,13 @@ const liveTools = allTools.filter(t =>
 
 interface SessionManagerDependencies {
     propsRef: React.RefObject<UseAiLiveProps>;
-    stateRef: React.RefObject<{ isLive: boolean; isMuted: boolean; isSpeaking: boolean; isAiTurn: boolean; isVideoStreamEnabled: boolean; }>;
+    stateRef: React.RefObject<{ 
+        isLive: boolean; 
+        isMuted: boolean; 
+        isSpeaking: boolean; 
+        isAiTurn: boolean; 
+        isVideoStreamEnabled: boolean; 
+    }>;
     refs: {
         audioContextRefs: React.MutableRefObject<AudioContextRefs>;
         sessionRefs: React.MutableRefObject<SessionRefs>;
@@ -124,7 +129,10 @@ export const createSessionManager = ({
                     retryRef.current.timeoutId = null;
                 }
             }
-            connectMicrophoneNodes(audioContextRefs, sessionRefs, stateRef);
+            // Set up the processor node for the session. This no longer needs stateRef.
+            setupScriptProcessor(audioContextRefs, sessionRefs);
+            // Immediately connect the mic to the AI for the user's first turn.
+            connectMicSourceToProcessor(audioContextRefs);
         };
         const sessionPromise = createLiveSession({ aiRef, settings, activeThread, callbacks: { onopen: onOpen, onmessage: onMessage, onerror: self.onError, onclose: () => {} } });
         if (sessionRefs.current) sessionRefs.current.sessionPromise = sessionPromise;

@@ -69,7 +69,7 @@ export const declarations = [
 
 // --- Implementations Factory ---
 
-export const getImplementations = ({ getAiVirtualFiles, setAiVirtualFiles, getVfsReadyPromise }: Pick<ToolImplementationsDependencies, 'getAiVirtualFiles' | 'setAiVirtualFiles' | 'getVfsReadyPromise'>) => ({
+export const getImplementations = ({ getAiVirtualFiles, setAiVirtualFiles, getVfsReadyPromise, saveVfsSession }: Pick<ToolImplementationsDependencies, 'getAiVirtualFiles' | 'setAiVirtualFiles' | 'getVfsReadyPromise' | 'saveVfsSession'>) => ({
     listFiles: async () => {
         await getVfsReadyPromise();
         const vfs = getAiVirtualFiles();
@@ -136,6 +136,8 @@ export const getImplementations = ({ getAiVirtualFiles, setAiVirtualFiles, getVf
                 }
             };
         });
+
+        await saveVfsSession();
         
         return { success: true };
     },
@@ -168,6 +170,8 @@ export const getImplementations = ({ getAiVirtualFiles, setAiVirtualFiles, getVf
                 }
             };
         });
+
+        await saveVfsSession();
 
         return { success: true };
     }

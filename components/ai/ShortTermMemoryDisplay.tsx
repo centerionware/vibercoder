@@ -39,7 +39,7 @@ const ShortTermMemoryDisplay: React.FC<ShortTermMemoryDisplayProps> = ({ memory 
           <pre className="whitespace-pre-wrap">
             {JSON.stringify(
               Object.fromEntries(
-                // Fix: Cast the value to `any` to resolve a type inference issue with Object.entries,
+                // FIX: Cast the value to `any` to resolve a type inference issue with Object.entries,
                 // where the object's property value was being incorrectly typed as `unknown`.
                 Object.entries(memory).map(([key, value]) => [key, (value as any).value])
               ),

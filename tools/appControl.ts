@@ -178,7 +178,8 @@ export const getImplementations = ({
     onSettingsChange,
     files,
     sandboxErrors,
-    liveSessionControls,
+    // FIX: Destructure the ref instead of the value to break a circular dependency.
+    liveSessionControlsRef,
     activeView,
     setScreenshotPreview,
     isScreenshotPreviewDisabled,
@@ -209,7 +210,7 @@ export const getImplementations = ({
     },
     viewBuildOutput: async () => {
         // FIX: Corrected a reference error. The `bundleLogs` variable is in scope, not `buildLogs`. The property name is also corrected to `bundleLogs`.
-        return { bundleLogs: bundleLogs };
+        return { bundleLogs };
     },
     viewRuntimeErrors: async () => {
         return { runtimeErrors: sandboxErrors };
@@ -256,11 +257,13 @@ export const getImplementations = ({
     },
     pauseListening: async (args: { duration?: number }) => {
         const duration = args.duration ?? 5; // Default to 5 seconds
-        liveSessionControls.pauseListening(duration, { immediate: false });
+        // FIX: Access the controls via the ref's `.current` property.
+        liveSessionControlsRef.current?.pauseListening(duration, { immediate: false });
         return { success: true, message: `Listening paused for ${duration} seconds.` };
     },
     stopListening: async () => {
-        liveSessionControls.stopLiveSession({ immediate: false });
+        // FIX: Access the controls via the ref's `.current` property.
+        liveSessionControlsRef.current?.stopLiveSession({ immediate: false });
         return { success: true };
     },
     captureScreenshot: async () => {
@@ -342,7 +345,8 @@ export const getImplementations = ({
         }
     },
     enableLiveVideo: async () => {
-        liveSessionControls.enableVideoStream();
+        // FIX: Access the controls via the ref's `.current` property.
+        liveSessionControlsRef.current?.enableVideoStream();
         return { 
             success: true, 
             message: 'Live video stream enabled. It will automatically disable after 30 seconds.',
@@ -350,7 +354,8 @@ export const getImplementations = ({
         };
     },
     disableLiveVideo: async () => {
-        liveSessionControls.disableVideoStream();
+        // FIX: Access the controls via the ref's `.current` property.
+        liveSessionControlsRef.current?.disableVideoStream();
         return { success: true, message: 'Live video stream disabled.' };
     },
 });

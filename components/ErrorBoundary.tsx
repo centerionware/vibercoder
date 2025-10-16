@@ -1,4 +1,4 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
+import React, { ErrorInfo, ReactNode } from 'react';
 import ErrorFallback from './ErrorFallback';
 
 interface Props {
@@ -10,8 +10,8 @@ interface State {
   error: Error | null;
 }
 
-// FIX: Changed `React.Component` to `Component` to fix type resolution for inherited properties like 'props' and 'setState'.
-class ErrorBoundary extends Component<Props, State> {
+// FIX: A class component must extend React.Component to inherit core functionalities like 'props', 'state', and 'setState'.
+class ErrorBoundary extends React.Component<Props, State> {
   public state: State = {
     hasError: false,
     error: null,

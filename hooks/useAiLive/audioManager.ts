@@ -1,42 +1,80 @@
-
 import React from 'react';
 import { createBlob } from '../../utils/audio';
 import { AudioContextRefs, SessionRefs } from './types';
+import { UseAiLiveProps } from '../../types';
 
 const SCRIPT_PROCESSOR_BUFFER_SIZE = 4096;
 
 /**
- * Creates a new ScriptProcessor and connects the existing microphone source to it.
- * This is called for every new session, whether it's a cold start or a hot-swap.
+ * Creates and configures the ScriptProcessorNode for a session.
+ * It does NOT connect the microphone source to it; that is handled dynamically.
+ * The onaudioprocess handler is now "dumb" - if it fires, it sends data.
  */
-export const connectMicrophoneNodes = (
+export const setupScriptProcessor = (
     audioRefs: React.MutableRefObject<AudioContextRefs>,
-    sessionRefs: React.MutableRefObject<SessionRefs>,
-    // The stateRef is used to access the LATEST isMuted state inside the onaudioprocess closure.
-    stateRef: React.RefObject<{ isMuted: boolean }>
+    sessionRefs: React.MutableRefObject<SessionRefs>
 ) => {
-    const { micSourceNode, input } = audioRefs.current;
-    if (!micSourceNode || !input) {
-        console.error("Cannot connect microphone nodes: audio source or input context is missing.");
+    const { input } = audioRefs.current;
+    if (!input) {
+        console.error("Cannot set up script processor: input context is missing.");
         return;
+    }
+
+    // Disconnect any old processor before creating a new one
+    if (audioRefs.current.scriptProcessor) {
+        try {
+            audioRefs.current.scriptProcessor.disconnect();
+        } catch (e) {
+            console.warn("Could not disconnect old script processor:", e);
+        }
     }
 
     const scriptProcessor = input.createScriptProcessor(SCRIPT_PROCESSOR_BUFFER_SIZE, 1, 1);
     
     scriptProcessor.onaudioprocess = (event) => {
+        // This callback now only runs if the mic source is physically connected to this processor.
+        // Therefore, we can unconditionally send the data to the AI without any state checks.
         const inputData = event.inputBuffer.getChannelData(0);
-        if (!stateRef.current?.isMuted) {
-            const pcmBlob = createBlob(inputData);
-            sessionRefs.current.sessionPromise?.then((session) => {
-                session.sendRealtimeInput({ media: pcmBlob });
-            }).catch(console.error);
-        }
+        const pcmBlob = createBlob(inputData);
+        sessionRefs.current.sessionPromise?.then((session) => {
+            session.sendRealtimeInput({ media: pcmBlob });
+        }).catch(console.error);
     };
     
-    micSourceNode.connect(scriptProcessor);
+    // Connect the processor to the destination to allow it to run,
+    // but the mic source is not yet connected to it.
     scriptProcessor.connect(input.destination);
-
     audioRefs.current.scriptProcessor = scriptProcessor;
+};
+
+/**
+ * Connects the microphone source to the script processor, allowing audio to flow to the AI.
+ */
+export const connectMicSourceToProcessor = (audioRefs: React.MutableRefObject<AudioContextRefs>) => {
+    const { micSourceNode, scriptProcessor } = audioRefs.current;
+    if (micSourceNode && scriptProcessor) {
+        try {
+            micSourceNode.connect(scriptProcessor);
+            console.log("[Audio Pipe] Mic connected to AI stream.");
+        } catch (e) {
+            console.warn("Could not connect mic source to processor, it may already be connected.", e);
+        }
+    }
+};
+
+/**
+ * Disconnects the microphone source from the script processor, stopping audio flow to the AI.
+ */
+export const disconnectMicSourceFromProcessor = (audioRefs: React.MutableRefObject<AudioContextRefs>) => {
+    const { micSourceNode, scriptProcessor } = audioRefs.current;
+    if (micSourceNode && scriptProcessor) {
+        try {
+            micSourceNode.disconnect(scriptProcessor);
+            console.log("[Audio Pipe] Mic disconnected from AI stream.");
+        } catch (e) {
+            // This error is expected if it's already disconnected, so we can ignore it.
+        }
+    }
 };
 
 /**
@@ -49,36 +87,24 @@ export const stopAudioProcessing = async (
 ) => {
     const { scriptProcessor, micSourceNode, output } = audioRefs.current;
     
-    // Always disconnect the processor for the old session.
     scriptProcessor?.disconnect();
     audioRefs.current.scriptProcessor = null;
 
     if (options.keepMicActive) {
-        // For hot-swaps, just disconnect the source node from the old processor.
-        // The source node itself (and the underlying mic stream) remains active.
         micSourceNode?.disconnect();
     } else {
-        // --- FIX FOR MANUAL STOP ---
-        // For a full stop, perform a direct and robust teardown of all mic resources.
         const { micStream } = audioRefs.current;
-        
-        // 1. Forcefully stop all tracks on the stream.
         micStream?.getTracks().forEach(track => {
             if (track.readyState === 'live') {
                 track.stop();
             }
         });
-
-        // 2. Disconnect the source node from the audio graph.
         micSourceNode?.disconnect();
-
-        // 3. Null out the references to allow for a clean restart.
         audioRefs.current.micStream = null;
         audioRefs.current.micSourceNode = null;
         console.log("Microphone stream and source node cleaned up for full stop.");
     }
 
-    // Clean up any pending audio playback.
     if (output) {
         for (const source of sessionRefs.current.audioQueue.values()) {
             try { source.stop(); } catch(e) {}

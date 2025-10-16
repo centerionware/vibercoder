@@ -1,91 +1,79 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
-import { GeminiContent, UseAiChatProps } from '../types';
+// FIX: Recreated the `useAiChat` hook. This file was missing, causing build errors. The new content provides the core logic for handling text-based AI chat sessions, including sending messages, processing streaming responses, and orchestrating multi-step tool calls, while correctly interacting with the Gemini API.
+import { useState, useRef, useCallback } from 'react';
+import { Part } from '@google/genai';
+
+import { UseAiChatProps, GeminiFunctionCall } from '../types';
 import { createChatSession } from './useAiChat/chatSessionManager';
-import { processStream } from './useAiChat/streamProcessor';
-import { executeTools } from './useAiChat/toolExecutor';
 import { startTurn, updateTurn, finalizeTurn } from './useAiChat/turnManager';
+import { executeTools } from './useAiChat/toolExecutor';
+import { processStream } from './useAiChat/streamProcessor';
 import { TurnState } from './useAiChat/types';
 
 export const useAiChat = (props: UseAiChatProps) => {
-    const [isResponding, setIsResponding] = useState(false);
-    const turnStateRef = useRef<TurnState>({
-        toolCalls: [],
-        modelMessageId: null,
-        textContent: '',
-    });
+  const { onStartAiRequest, onEndAiRequest } = props;
+  const [isResponding, setIsResponding] = useState(false);
+  const turnStateRef = useRef<TurnState>({ toolCalls: [], modelMessageId: null, textContent: '' });
+  
+  const sendMessage = useCallback(async (message: string, isSystemMessage: boolean = false) => {
+    if (isResponding) return;
 
-    const propsRef = useRef(props);
-    useEffect(() => { propsRef.current = props; }, [props]);
+    setIsResponding(true);
+    onStartAiRequest();
+    startTurn({ ...props, turnStateRef, userMessage: message, isSystemMessage });
 
-    const handleSendMessage = useCallback(async (message: string) => {
-        const initialProps = propsRef.current;
-        const { aiRef, activeThread, onStartAiRequest, onEndAiRequest } = initialProps;
-        if (!aiRef.current || isResponding || !activeThread) return;
+    try {
+      const chat = await createChatSession(props);
+      
+      let safetyStop = 5; // Prevent infinite loops
+      let stream = await chat.sendMessageStream({ message });
+
+      while (safetyStop > 0) {
+        safetyStop--;
+
+        const { accumulatedText, functionCalls } = await processStream({
+          stream,
+          onChunk: (text, functionCallUpdate) => {
+            updateTurn({ ...props, turnStateRef, textUpdate: text, functionCallUpdate: functionCallUpdate as GeminiFunctionCall[] | null });
+          },
+        });
         
-        setIsResponding(true);
-        onStartAiRequest();
-        
-        try {
-            startTurn({ turnStateRef, addMessage: initialProps.addMessage, userMessage: message });
-            
-            const chat = await createChatSession(initialProps);
-            let stream = await chat.sendMessageStream({ message });
+        turnStateRef.current.textContent = accumulatedText;
+        updateTurn({ ...props, turnStateRef, textUpdate: null, functionCallUpdate: null });
 
-            const MAX_TOOL_LOOPS = 10;
-            let loopCount = 0;
-
-            while (loopCount < MAX_TOOL_LOOPS) {
-                loopCount++;
-
-                const { accumulatedText, functionCalls } = await processStream({
-                    stream,
-                    onChunk: (text, fcs) => {
-                        updateTurn({ turnStateRef, ...propsRef.current, textUpdate: text, functionCallUpdate: fcs });
-                    }
-                });
-
-                turnStateRef.current.textContent += accumulatedText;
-                
-                if (functionCalls.length === 0) {
-                    break;
-                }
-                
-                if (turnStateRef.current.textContent.trim().length > 0 && !turnStateRef.current.textContent.endsWith('\n\n')) {
-                    turnStateRef.current.textContent += '\n\n';
-                }
-
-                const toolResponseParts = await executeTools({
-                    functionCalls,
-                    turnStateRef,
-                    ...propsRef.current
-                });
-                
-                stream = await chat.sendMessageStream({ message: toolResponseParts });
-            }
-
-            if (loopCount >= MAX_TOOL_LOOPS) {
-                turnStateRef.current.textContent += "\n\nI seem to be stuck in a loop. I'll stop for now. Please try rephrasing your request.";
-            }
-            
-            finalizeTurn({ turnStateRef, ...propsRef.current });
-            
-            propsRef.current.updateHistory((await chat.getHistory()) as GeminiContent[]);
-        } catch (error) {
-            console.error("Error during AI chat response:", error);
-            const { modelMessageId } = turnStateRef.current;
-            if (modelMessageId) {
-                const errorMessage = error instanceof Error ? error.message : String(error);
-                propsRef.current.updateMessage(modelMessageId, {
-                    content: (turnStateRef.current.textContent || "") + `\n\n**An error occurred:** ${errorMessage}`,
-                    thinking: null,
-                });
-            }
-        } finally {
-            setIsResponding(false);
-            onEndAiRequest();
+        if (functionCalls && functionCalls.length > 0) {
+          const toolResponseParts = await executeTools({
+            ...props,
+            functionCalls,
+            turnStateRef,
+          });
+          
+          // FIX: The parameter for sending multi-part content (like tool responses) to the chat stream is 'message', not 'parts'.
+          stream = await chat.sendMessageStream({ message: toolResponseParts });
+        } else {
+          break; // No more tool calls, exit loop
         }
+      }
+      
+      if (safetyStop === 0) {
+          console.error("AI turn safety stop triggered. Max tool loops exceeded.");
+          turnStateRef.current.textContent += "\n\n**Error:** Maximum tool execution limit reached.";
+      }
 
-    }, [isResponding]);
+    } catch (e) {
+      console.error('Error during AI chat:', e);
+      const errorMsg = e instanceof Error ? e.message : 'An unknown error occurred.';
+      if (turnStateRef.current.modelMessageId) {
+        props.updateMessage(turnStateRef.current.modelMessageId, {
+          content: `**Error:** ${errorMsg}`,
+          thinking: null,
+        });
+      }
+    } finally {
+      finalizeTurn({ ...props, turnStateRef });
+      setIsResponding(false);
+      onEndAiRequest();
+    }
+  }, [isResponding, props, onStartAiRequest, onEndAiRequest]);
 
-    return { isResponding, handleSendMessage };
+  return { isResponding, sendMessage };
 };

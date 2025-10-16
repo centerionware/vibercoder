@@ -5,29 +5,37 @@ import { ToolImplementationsDependencies } from '../types';
 
 export const thinkFunction: FunctionDeclaration = {
   name: 'think',
-  description: 'Briefly articulate a step-by-step plan for a complex task. This helps you structure your approach before executing other tools. You MUST call this tool before starting any multi-step task.',
+  description: "Externalize your thought process, analysis, and plan. This is your internal monologue. Use it to break down a problem, list the steps you'll take, and explain your reasoning before executing other tools. This tool simply returns its input.",
   parameters: {
     type: Type.OBJECT,
     properties: {
-      plan: {
+      thought: {
         type: Type.STRING,
-        description: 'A concise, step-by-step plan of the tool calls you will make to accomplish the user\'s request. For example: "1. Read index.html. 2. Read style.css. 3. Propose changes to make the button blue."',
+        description: 'Your detailed thought process, analysis of the situation, and plan of action.',
       },
     },
-    required: ['plan'],
+    required: ['thought'],
   },
 };
 
-export const declarations = [thinkFunction];
+// --- Aggregated Declarations ---
+
+export const declarations = [
+    thinkFunction
+];
 
 // --- Implementations Factory ---
 
-export const getImplementations = (dependencies: ToolImplementationsDependencies) => ({
-  think: async (args: { plan: string }) => {
-    // The 'think' tool is a cognitive step for the model.
-    // Its primary purpose is to force the model to create and commit to a plan.
-    // The implementation doesn't need to do much besides acknowledge the plan.
-    console.log(`[AI Plan]:\n${args.plan}`);
-    return { success: true, message: 'Plan acknowledged. Proceeding with execution.' };
-  },
+export const getImplementations = (deps: ToolImplementationsDependencies) => ({
+    think: async (args: { thought: string }) => {
+        // The 'think' tool is a no-op from the system's perspective. 
+        // Its purpose is to force the model to output its reasoning
+        // in a structured way that we can display in the UI.
+        // It simply returns its input.
+        // FIX: Corrected a syntax error where single quotes were used with template literal syntax. Changed to backticks to ensure the variable is properly interpolated.
+        console.log(`[AI Thought] ${args.thought}`);
+        return {
+            thought: args.thought
+        };
+    },
 });

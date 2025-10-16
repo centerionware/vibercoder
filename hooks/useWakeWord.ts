@@ -10,6 +10,7 @@ export const useWakeWord = ({ wakeWord, onWake, enabled, onPermissionError }: Us
   const recognitionRef = useRef<any | null>(null);
   const stopResolverRef = useRef<(() => void) | null>(null);
   const enabledRef = useRef(enabled);
+  const isStoppingRef = useRef(false);
 
   useEffect(() => {
     enabledRef.current = enabled;
@@ -19,6 +20,7 @@ export const useWakeWord = ({ wakeWord, onWake, enabled, onPermissionError }: Us
   const stopAndRelease = useCallback((): Promise<void> => {
     return new Promise((resolve) => {
       if (recognitionRef.current) {
+        isStoppingRef.current = true;
         stopResolverRef.current = resolve;
         recognitionRef.current.stop();
       } else {
@@ -37,6 +39,8 @@ export const useWakeWord = ({ wakeWord, onWake, enabled, onPermissionError }: Us
       recognitionRef.current.stop();
     }
     
+    isStoppingRef.current = false;
+
     try {
         const hasPermission = await requestMicrophonePermission();
         if (!hasPermission) {
@@ -53,6 +57,7 @@ export const useWakeWord = ({ wakeWord, onWake, enabled, onPermissionError }: Us
         recognition.lang = 'en-US';
 
         recognition.onresult = (event: any) => {
+          if (!enabledRef.current) return;
           const transcript = Array.from(event.results)
             .map((result: any) => result[0])
             .map((result: any) => result.transcript)
@@ -60,6 +65,8 @@ export const useWakeWord = ({ wakeWord, onWake, enabled, onPermissionError }: Us
 
           if (transcript.toLowerCase().includes(wakeWord.toLowerCase())) {
             console.log('Wake word detected!');
+            // Reset recognition to prevent multiple triggers from the same phrase
+            recognition.stop(); 
             onWake();
           }
         };
@@ -76,14 +83,12 @@ export const useWakeWord = ({ wakeWord, onWake, enabled, onPermissionError }: Us
         };
 
         recognition.onend = () => {
-          if (stopResolverRef.current) {
+          if (isStoppingRef.current && stopResolverRef.current) {
             const resolver = stopResolverRef.current;
-            setTimeout(() => {
-                resolver();
-            }, 150);
-            
+            setTimeout(() => resolver(), 150);
             stopResolverRef.current = null;
             recognitionRef.current = null;
+            isStoppingRef.current = false;
             return;
           }
 
@@ -118,6 +123,7 @@ export const useWakeWord = ({ wakeWord, onWake, enabled, onPermissionError }: Us
       startListening();
     } else {
       if (recognitionRef.current) {
+        isStoppingRef.current = true;
         stopResolverRef.current = null;
         recognitionRef.current.stop();
       }
@@ -125,6 +131,7 @@ export const useWakeWord = ({ wakeWord, onWake, enabled, onPermissionError }: Us
 
     return () => {
       if (recognitionRef.current) {
+        isStoppingRef.current = true;
         stopResolverRef.current = null;
         recognitionRef.current.stop();
       }

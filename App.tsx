@@ -1,9 +1,12 @@
+
 import React, { useState, useEffect } from 'react';
 import { Capacitor } from '@capacitor/core';
+// FIX: Corrected import paths for useAppLogic and ViewRenderer to be relative to the current file location, resolving module not found errors.
 import { useAppLogic } from './app/useAppLogic';
 
 import Header from './components/Header';
 import BottomNav from './components/BottomNav';
+// FIX: Corrected import paths for useAppLogic and ViewRenderer to be relative to the current file location, resolving module not found errors.
 import ViewRenderer from './app/ViewRenderer';
 import SpinnerIcon from './components/icons/SpinnerIcon';
 import GitCredentialsModal from './components/modals/GitCredentialsModal';

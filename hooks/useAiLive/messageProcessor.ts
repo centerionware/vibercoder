@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { UseAiLiveProps, ToolCall, ToolCallStatus } from '../../types';
 import { SessionRefs, AudioContextRefs } from './types';
@@ -59,51 +58,52 @@ interface MessageProcessorDependencies {
 
 export const createMessageProcessor = (deps: MessageProcessorDependencies) => {
     
-    // Use a plain object to break the circular dependency between finalizeTurn and processModelOutput.
-    const self = {
-      processModelOutput: (message: any): Promise<void> => Promise.resolve(),
+    const { propsRef, sessionRefs, ui, audioContextRefs, stopExecutionRef, lastToolChimeTimeRef, inactivity, isSessionDirty, endOfTurnTimerRef } = deps;
+
+    const self = {} as {
+      processModelOutput: (message: any) => Promise<void>;
+      finalizeTurn: () => void;
     };
 
-    const finalizeTurn = () => {
-        if (!deps.sessionRefs.current) return;
+    self.finalizeTurn = () => {
+        if (!sessionRefs.current) return;
         
-        console.log("[AI Live] Finalizing turn, processing message queue.");
-        playNotificationSound('ai-stop', deps.audioContextRefs.current?.output);
-        deps.sessionRefs.current.isTurnFinalizing = false;
+        console.log("[AI Live] Finalizing turn.");
+        if (!stopExecutionRef.current) { // Don't play sound if user interrupted
+            playNotificationSound('ai-stop', audioContextRefs.current?.output);
+        }
+        sessionRefs.current.isTurnFinalizing = false;
 
-        const queue = [...deps.sessionRefs.current.pendingMessageQueue];
-        deps.sessionRefs.current.pendingMessageQueue = [];
-
+        const queue = [...sessionRefs.current.pendingMessageQueue];
+        sessionRefs.current.pendingMessageQueue = [];
         queue.forEach(msg => self.processModelOutput(msg));
         
-        if (deps.sessionRefs.current.isAiTurn) {
-            deps.sessionRefs.current.isAiTurn = false;
-            deps.ui.setIsAiTurn(false);
+        if (sessionRefs.current.isAiTurn) {
+            sessionRefs.current.isAiTurn = false;
+            ui.setIsAiTurn(false);
         }
         
-        deps.ui.cancelUiUpdate();
-        const { liveMessageId, currentInputTranscription, currentOutputTranscription, currentToolCalls } = deps.sessionRefs.current;
+        ui.cancelUiUpdate();
+        const { liveMessageId, currentInputTranscription, currentOutputTranscription, currentToolCalls } = sessionRefs.current;
         if (liveMessageId) {
-            deps.propsRef.current?.updateMessage(liveMessageId, { content: currentInputTranscription, isLive: false });
-            deps.propsRef.current?.updateMessage(`${liveMessageId}-model`, { 
+            propsRef.current?.updateMessage(liveMessageId, { content: currentInputTranscription, isLive: false });
+            propsRef.current?.updateMessage(`${liveMessageId}-model`, { 
                 content: currentOutputTranscription, 
                 isLive: false,
                 toolCalls: [...currentToolCalls]
             });
-            deps.propsRef.current?.onEndAiRequest();
+            propsRef.current?.onEndAiRequest();
         }
 
-        deps.sessionRefs.current.liveMessageId = null;
-        deps.sessionRefs.current.currentInputTranscription = '';
-        deps.sessionRefs.current.currentOutputTranscription = '';
-        deps.sessionRefs.current.currentToolCalls = [];
+        sessionRefs.current.liveMessageId = null;
+        sessionRefs.current.currentInputTranscription = '';
+        sessionRefs.current.currentOutputTranscription = '';
+        sessionRefs.current.currentToolCalls = [];
 
-        deps.inactivity.startInactivityTimer();
+        inactivity.startInactivityTimer();
     };
 
-    const processModelOutput = async (message: any) => {
-        const { propsRef, sessionRefs, ui, audioContextRefs, stopExecutionRef, lastToolChimeTimeRef } = deps;
-
+    self.processModelOutput = async (message: any) => {
         if (message.serverContent && !sessionRefs.current?.isAiTurn) {
             sessionRefs.current!.isAiTurn = true;
             ui.setIsAiTurn(true);
@@ -146,6 +146,7 @@ export const createMessageProcessor = (deps: MessageProcessorDependencies) => {
                 }
 
                 let status: ToolCallStatus;
+                let errors: string[] = [];
                 try {
                     const toolFn = propsRef.current!.toolImplementations[fc.name!];
                     if (!toolFn) throw new Error(`Tool "${fc.name}" not implemented.`);
@@ -156,60 +157,37 @@ export const createMessageProcessor = (deps: MessageProcessorDependencies) => {
                     status = ToolCallStatus.SUCCESS;
                 } catch (e) {
                     const error = e instanceof Error ? e.message : String(e);
+                    errors.push(error);
                     const session = await sessionRefs.current?.sessionPromise;
                     session?.sendToolResponse({ functionResponses: { id: fc.id, name: fc.name, response: { result: { error } } } });
                     status = ToolCallStatus.ERROR;
                 }
                 
                 sessionRefs.current!.currentToolCalls = sessionRefs.current!.currentToolCalls.map(tc =>
-                    tc.id === fc.id ? { ...tc, status } : tc
+                    tc.id === fc.id ? { ...tc, status, args: { ...tc.args, errors } } : tc
                 );
                 ui.requestUiUpdate();
             }
         }
     };
-    self.processModelOutput = processModelOutput;
-
-    const processInputTranscription = (message: any) => {
-        const { propsRef, sessionRefs, ui, inactivity, stopExecutionRef } = deps;
-        inactivity.clearInactivityTimer();
-        startTurnIfNeeded(propsRef, sessionRefs, stopExecutionRef);
-        const newText = message.serverContent.inputTranscription.text;
-        const isAiWorking = sessionRefs.current!.currentToolCalls.some(tc => tc.status === ToolCallStatus.IN_PROGRESS);
-
-        if (isAiWorking && /\bstop\b/i.test(newText)) {
-            stopExecutionRef.current = true;
-        } else {
-            sessionRefs.current!.currentInputTranscription += newText;
-        }
-        ui.requestUiUpdate();
-    };
-
+    
     const onMessage = (message: any) => {
-        const { sessionRefs, ui, inactivity, isSessionDirty, endOfTurnTimerRef } = deps;
         if (!sessionRefs.current) return;
         
         isSessionDirty.current = true;
     
         if (message.serverContent?.inputTranscription) {
             inactivity.clearInactivityTimer();
-            if (endOfTurnTimerRef.current) {
-                clearTimeout(endOfTurnTimerRef.current);
-            }
-            sessionRefs.current.isTurnFinalizing = false;
-            
-            if (sessionRefs.current.pendingMessageQueue.length > 0) {
-                sessionRefs.current.pendingMessageQueue = [];
-                interruptPlayback(sessionRefs);
-                ui.setIsSpeaking(false);
-            }
-            processInputTranscription(message);
+            startTurnIfNeeded(propsRef, sessionRefs, stopExecutionRef);
+            const newText = message.serverContent.inputTranscription.text;
+            sessionRefs.current!.currentInputTranscription += newText;
+            ui.requestUiUpdate();
             return;
         }
     
         if (message.serverContent?.interrupted) {
-            interruptPlayback(sessionRefs);
-            ui.setIsSpeaking(false);
+            // This is the default barge-in interruption. We now ignore it in favor of our more robust wake-word logic.
+            return;
         }
     
         const isModelTurnMessage = message.toolCall || message.serverContent?.modelTurn || message.serverContent?.outputTranscription;
@@ -225,11 +203,11 @@ export const createMessageProcessor = (deps: MessageProcessorDependencies) => {
             if (!sessionRefs.current.isTurnFinalizing) {
                 sessionRefs.current.isTurnFinalizing = true;
                 endOfTurnTimerRef.current = window.setTimeout(
-                    () => finalizeTurn(), 1000
+                    () => self.finalizeTurn(), 1000
                 );
             }
         }
     };
 
-    return { onMessage, processModelOutput: self.processModelOutput, finalizeTurn };
+    return { onMessage, processModelOutput: self.processModelOutput, finalizeTurn: self.finalizeTurn };
 };
