@@ -4,9 +4,11 @@ import { previewHtml } from './previewHtml';
 interface PreviewIframeProps {
   builtCode: string;
   onRuntimeError: (error: string) => void;
+  onProxyFetch: (request: any) => void;
+  onVirtualStorageRequest: (request: any) => void;
 }
 
-const PreviewIframe: React.FC<PreviewIframeProps> = ({ builtCode, onRuntimeError }) => {
+const PreviewIframe: React.FC<PreviewIframeProps> = ({ builtCode, onRuntimeError, onProxyFetch, onVirtualStorageRequest }) => {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [isReady, setIsReady] = useState(false);
 
@@ -25,12 +27,16 @@ const PreviewIframe: React.FC<PreviewIframeProps> = ({ builtCode, onRuntimeError
       } else if (event.data.type === 'preview-ready') {
         // The iframe has loaded its initial content and is ready to receive code.
         setIsReady(true);
+      } else if (event.data.type === 'proxy-fetch') {
+        onProxyFetch(event.data);
+      } else if (event.data.type === 'virtual-storage-request') {
+        onVirtualStorageRequest(event.data);
       }
     };
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [onRuntimeError]);
+  }, [onRuntimeError, onProxyFetch, onVirtualStorageRequest]);
 
   // This effect runs whenever the built code changes or the iframe becomes ready.
   // It sends the new code to the iframe for execution.

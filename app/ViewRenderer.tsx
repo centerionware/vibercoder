@@ -39,6 +39,8 @@ const ViewRenderer: React.FC<ViewRendererProps> = (app) => {
           onClearLogs={app.clearBundleLogs}
           isFullScreen={app.isFullScreen}
           onToggleFullScreen={app.onToggleFullScreen}
+          onProxyFetch={app.handleProxyFetch}
+          onVirtualStorageRequest={app.handleVirtualStorageRequest}
         />
       </div>
       <div className={`h-full w-full ${app.activeView === View.Ai ? 'flex flex-col' : 'hidden'}`}>

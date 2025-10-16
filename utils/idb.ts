@@ -8,15 +8,31 @@ export class VibeCodeDB extends Dexie {
   threads!: Table<ChatThread>;
   gitCredentials!: Table<GitCredential>;
   prompts!: Table<Prompt>;
+  virtualStorage!: Table<any>;
 
   constructor() {
     super('vibecodeDB');
-    // Bump version to 6 for prompts schema change
-    (this as any).version(6).stores({
+    // Bump version to 8 for storageKey change
+    // FIX: Cast `this` to `any` to work around a TypeScript type resolution issue where inherited methods from Dexie are not found.
+    (this as any).version(8).stores({
       projects: '++id, &name, gitRemoteUrl, gitSettings',
       threads: '++id, projectId',
       gitCredentials: '++id, name, isDefault',
       prompts: '&id', // 'id' is the prompt key
+      virtualStorage: '++id, &[storageKey+api+key], storageKey',
+    });
+    // Migrate from version 7 (iframeId)
+    // FIX: Cast `this` to `any` to work around a TypeScript type resolution issue where inherited methods from Dexie are not found.
+    (this as any).version(7).stores({
+      projects: '++id, &name, gitRemoteUrl, gitSettings',
+      threads: '++id, projectId',
+      gitCredentials: '++id, name, isDefault',
+      prompts: '&id',
+      virtualStorage: '++id, &[iframeId+api+key], iframeId',
+    }).upgrade(tx => {
+      // This is a destructive migration for the virtual storage. Old sandboxed
+      // data will be lost, which is acceptable for this feature upgrade.
+      return tx.table('virtualStorage').clear();
     });
   }
 }

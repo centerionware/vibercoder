@@ -18,6 +18,8 @@ interface PreviewViewProps {
   onClearLogs: () => void;
   isFullScreen: boolean;
   onToggleFullScreen: () => void;
+  onProxyFetch: (request: any) => void;
+  onVirtualStorageRequest: (request: any) => void;
 }
 
 const PreviewView: React.FC<PreviewViewProps> = (props) => {
@@ -30,7 +32,9 @@ const PreviewView: React.FC<PreviewViewProps> = (props) => {
     onRuntimeError,
     bundleLogs,
     isFullScreen,
-    onToggleFullScreen
+    onToggleFullScreen,
+    onProxyFetch,
+    onVirtualStorageRequest,
   } = props;
 
   const { isBundling, bundleError, builtCode } = usePreviewBundler({
@@ -64,6 +68,8 @@ const PreviewView: React.FC<PreviewViewProps> = (props) => {
             <PreviewIframe
               builtCode={builtCode}
               onRuntimeError={onRuntimeError}
+              onProxyFetch={onProxyFetch}
+              onVirtualStorageRequest={onVirtualStorageRequest}
             />
           )}
         </div>
@@ -90,6 +96,8 @@ const PreviewView: React.FC<PreviewViewProps> = (props) => {
           <PreviewIframe
             builtCode={builtCode}
             onRuntimeError={onRuntimeError}
+            onProxyFetch={onProxyFetch}
+            onVirtualStorageRequest={onVirtualStorageRequest}
           />
         )}
       </div>

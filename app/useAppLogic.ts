@@ -11,6 +11,8 @@ import { usePrompts } from '../hooks/usePrompts';
 import { useAiLive } from '../hooks/useAiLive';
 import { useWakeWord } from '../hooks/useWakeWord';
 import { isNativeEnvironment } from '../utils/environment';
+import { db } from '../utils/idb';
+
 
 import { createGitService } from '../services/gitService';
 import { createToolImplementations } from '../services/toolOrchestrator';
@@ -69,6 +71,11 @@ export const useAppLogic = () => {
   const aiVirtualFilesRef = useRef<CopyOnWriteVFS | null>(null);
   const vfsReadyPromiseRef = useRef<Promise<void>>(Promise.resolve());
   let vfsReadyResolverRef = useRef<() => void>(() => {});
+
+  // Refs for managing virtualized IndexedDB state
+  const idbConnectionsRef = useRef<Map<string, IDBDatabase>>(new Map());
+  const idbTransactionsRef = useRef<Map<string, IDBTransaction>>(new Map());
+  const idbObjectStoresRef = useRef<Map<string, IDBObjectStore>>(new Map());
 
   // --- Memoized Callbacks ---
   const clearBundleLogs = useCallback(() => setBundleLogs([]), []);
@@ -422,6 +429,153 @@ export const useAppLogic = () => {
     }
   }, [gitService, setFiles]);
 
+  const handleProxyFetch = useCallback(async (request: { requestId: string; payload: { url: string; options?: RequestInit } }) => {
+    const { requestId, payload } = request;
+    const { url, options } = payload;
+    
+    const iframe = document.querySelector('#preview-iframe') as HTMLIFrameElement;
+    if (!iframe || !iframe.contentWindow) {
+        console.error("Proxy fetch handler: Could not find preview iframe to send response.");
+        return;
+    }
+
+    try {
+        const response = await fetch(url, options);
+
+        const responseBody = await response.text();
+        const responseHeaders: Record<string, string> = {};
+        response.headers.forEach((value, key) => {
+            responseHeaders[key] = value;
+        });
+
+        const serializedResponse = {
+            ok: response.ok,
+            status: response.status,
+            statusText: response.statusText,
+            headers: responseHeaders,
+            body: responseBody,
+        };
+        
+        iframe.contentWindow.postMessage({
+            type: 'proxy-fetch-response',
+            requestId,
+            response: serializedResponse,
+        }, '*');
+
+    } catch (e: any) {
+        console.error("Proxy fetch failed:", e);
+        iframe.contentWindow.postMessage({
+            type: 'proxy-fetch-response',
+            requestId,
+            error: { message: e.message, name: e.name },
+        }, '*');
+    }
+  }, []);
+  
+  const handleVirtualStorageRequest = useCallback(async (eventData: any) => {
+      const { requestId, storageKey, api, payload } = eventData;
+      const iframe = document.querySelector('#preview-iframe') as HTMLIFrameElement;
+      if (!iframe?.contentWindow) return;
+  
+      const postResponse = (responsePayload: any) => {
+          iframe.contentWindow!.postMessage({
+              type: 'virtual-storage-response',
+              requestId,
+              payload: responsePayload
+          }, '*');
+      };
+  
+      const postError = (message: string) => {
+          iframe.contentWindow!.postMessage({
+              type: 'virtual-storage-response',
+              requestId,
+              error: { message }
+          }, '*');
+      };
+  
+      try {
+          if (api === 'localStorage') {
+              switch (payload.method) {
+                  case 'init': {
+                      const items = await db.virtualStorage
+                          .where({ storageKey: storageKey, api: 'localStorage' })
+                          .toArray();
+                      const data = items.reduce((acc: Record<string, string>, item: any) => {
+                          acc[item.key] = item.value;
+                          return acc;
+                      }, {});
+                      postResponse({ data });
+                      break;
+                  }
+                  case 'setItem': {
+                      await db.virtualStorage.put({
+                          storageKey,
+                          api: 'localStorage',
+                          key: payload.key,
+                          value: payload.value
+                      });
+                      postResponse({ success: true });
+                      break;
+                  }
+                  case 'removeItem': {
+                      const item: any = await db.virtualStorage
+                          .where({ storageKey, api: 'localStorage', key: payload.key })
+                          .first();
+                      if (item) {
+                          await db.virtualStorage.delete(item.id);
+                      }
+                      postResponse({ success: true });
+                      break;
+                  }
+                  case 'clear': {
+                      await db.virtualStorage
+                          .where({ storageKey, api: 'localStorage' })
+                          .delete();
+                      postResponse({ success: true });
+                      break;
+                  }
+                  default:
+                      postError(`Unknown localStorage method: ${payload.method}`);
+              }
+          } else if (api === 'indexedDB') {
+              // Note: This is a simplified proxy. A full implementation would require
+              // managing transactions and object stores in memory maps.
+              const { method, dbName, dbVersion } = payload;
+              const prefixedDbName = `vibecode-virtual-db-${storageKey}-${dbName}`;
+              
+              if (method === 'open') {
+                  const openRequest = indexedDB.open(prefixedDbName, dbVersion);
+  
+                  openRequest.onsuccess = () => {
+                      const db = openRequest.result;
+                      const dbId = `db-${storageKey}-${dbName}`;
+                      idbConnectionsRef.current.set(dbId, db);
+                      postResponse({
+                          event: 'success',
+                          dbId,
+                          result: { name: db.name, version: db.version, objectStoreNames: Array.from(db.objectStoreNames) }
+                      });
+                  };
+                  openRequest.onerror = () => postError(openRequest.error?.message || 'Failed to open IndexedDB.');
+                  openRequest.onupgradeneeded = (event) => {
+                      const db = openRequest.result;
+                      const dbId = `db-${storageKey}-${dbName}`;
+                      idbConnectionsRef.current.set(dbId, db);
+                      postResponse({
+                          event: 'upgradeneeded',
+                          dbId,
+                          result: { oldVersion: event.oldVersion, newVersion: event.newVersion, objectStoreNames: Array.from(db.objectStoreNames) }
+                      });
+                  };
+              } else {
+                  postError(`IndexedDB method '${method}' not yet implemented in proxy.`);
+              }
+          }
+      } catch (e: any) {
+          postError(e.message);
+      }
+  }, []);
+
   const toolImplementations = useMemo(() => {
     const liveSessionControlsProxy = {
         pauseListening: (...args: any[]) => liveSessionControlsRef.current?.pauseListening(...args),
@@ -576,6 +730,8 @@ export const useAppLogic = () => {
     isGitNetworkActivity, gitNetworkProgress, handlePush, handlePull, handleRebase,
     handleDiscardChanges,
     commitMessage, setCommitMessage,
+    handleProxyFetch,
+    handleVirtualStorageRequest,
     ...liveSession,
   };
 };
