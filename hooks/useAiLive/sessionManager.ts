@@ -1,5 +1,3 @@
-
-
 import React from 'react';
 import { Modality } from '@google/genai';
 import { UseAiLiveProps } from '../../types';
@@ -55,6 +53,13 @@ export const createSessionManager = ({
     };
 
     const acquireAndSetupMic = async (): Promise<boolean> => {
+        // --- Smart Acquisition: Re-use existing stream if possible ---
+        const { micStream } = audioContextRefs.current;
+        if (micStream && micStream.active) {
+            console.log("[Audio Pipe] Reusing existing, active microphone stream.");
+            return true;
+        }
+
         try {
             // It's crucial to ensure the AudioContexts are running before acquiring the mic.
             // This is safe to call even if they are already running, and necessary for recovery.
@@ -106,10 +111,10 @@ export const createSessionManager = ({
                 // 1. Close the old session object if it exists.
                 sessionRefs.current?.session?.close();
                 
-                // 2. Perform a FULL teardown of the audio pipeline.
-                await stopAudioProcessing(audioContextRefs, sessionRefs, { keepMicActive: false });
+                // 2. Perform a "soft" teardown, keeping the microphone stream alive.
+                await stopAudioProcessing(audioContextRefs, sessionRefs, { keepMicActive: true });
                 
-                // 3. Acquire a FRESH microphone stream.
+                // 3. Re-acquire the microphone stream (this will now re-use the existing one).
                 const micReady = await acquireAndSetupMic();
 
                 // 4. Only if the mic is successfully acquired, start a new session.
@@ -197,8 +202,8 @@ export const createSessionManager = ({
 
     const hotSwapSession = async () => {
         console.log("[AI Live] Hot-swapping session due to config change.");
-        // Perform a full teardown and re-acquisition to ensure a clean state
-        await stopAudioProcessing(audioContextRefs, sessionRefs, { keepMicActive: false });
+        // Perform a "soft" teardown, keeping the microphone stream alive for a seamless transition.
+        await stopAudioProcessing(audioContextRefs, sessionRefs, { keepMicActive: true });
         sessionRefs.current.session?.close();
         isSessionDirty.current = false;
         
