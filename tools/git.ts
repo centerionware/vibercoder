@@ -7,7 +7,6 @@ import { performDiff } from '../utils/diff';
 export const listBranchesFunction: FunctionDeclaration = {
   name: 'listBranches',
   description: 'List all local branches in the Git repository.',
-  parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const switchBranchFunction: FunctionDeclaration = {
@@ -28,7 +27,6 @@ export const switchBranchFunction: FunctionDeclaration = {
 export const gitLogFunction: FunctionDeclaration = {
   name: 'gitLog',
   description: 'View the commit history for the current branch.',
-  parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const viewCommitChangesFunction: FunctionDeclaration = {
@@ -49,7 +47,6 @@ export const viewCommitChangesFunction: FunctionDeclaration = {
 export const gitPushFunction: FunctionDeclaration = {
   name: 'gitPush',
   description: 'Push committed changes to the configured remote repository.',
-  parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const gitPullFunction: FunctionDeclaration = {
@@ -84,7 +81,6 @@ export const gitRebaseFunction: FunctionDeclaration = {
 export const discardWorkspaceChangesFunction: FunctionDeclaration = {
     name: 'discardWorkspaceChanges',
     description: 'Reverts all uncommitted changes in the workspace to match the last commit (HEAD). This will delete new files, restore deleted files, and undo all modifications. This action is irreversible.',
-    parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const viewWorkspaceChangesFunction: FunctionDeclaration = {

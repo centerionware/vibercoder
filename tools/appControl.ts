@@ -44,7 +44,6 @@ export const openFileFunction: FunctionDeclaration = {
 export const viewActiveFileFunction: FunctionDeclaration = {
     name: 'viewActiveFile',
     description: 'Check which file the user is currently viewing in the code editor.',
-    parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const viewBuildOutputFunction: FunctionDeclaration = {
@@ -80,13 +79,11 @@ export const viewConsoleLogsFunction: FunctionDeclaration = {
 export const viewBuildEnvironmentFunction: FunctionDeclaration = {
     name: 'viewBuildEnvironment',
     description: 'Inspect the configuration of the in-browser bundler (esbuild-wasm) to understand the build environment, such as JSX settings, module resolution logic, and entry point conventions.',
-    parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const viewSettingsFunction: FunctionDeclaration = {
     name: 'viewSettings',
     description: "View the application's current settings and the available options for each setting.",
-    parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const updateSettingsFunction: FunctionDeclaration = {
@@ -127,19 +124,16 @@ export const pauseListeningFunction: FunctionDeclaration = {
 export const stopListeningFunction: FunctionDeclaration = {
     name: 'stopListening',
     description: 'Stops the voice assistant session completely. The microphone will be turned off.',
-    parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const captureScreenshotFunction: FunctionDeclaration = {
   name: 'captureScreenshot',
   description: "Captures a real-time screenshot of the user's entire application window, exactly as they see it. Use this tool as your 'eyes' to analyze the UI, read text, inspect layouts, or see the output of code. Your subsequent analysis MUST be grounded exclusively in the content of the image provided by this tool.",
-  parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const enableScreenshotPreviewFunction: FunctionDeclaration = {
     name: 'enableScreenshotPreview',
     description: 'Re-enables the screenshot preview modal if the user has previously disabled it for the session. Use this if the user asks to see the screenshots again.',
-    parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const interactWithPreviewFunction: FunctionDeclaration = {
@@ -169,13 +163,11 @@ export const interactWithPreviewFunction: FunctionDeclaration = {
 export const enableLiveVideoFunction: FunctionDeclaration = {
   name: 'enableLiveVideo',
   description: 'Enables the live video stream of the user\'s screen. The stream provides a 1 FPS feed and acts as your "eyes", providing visual context for your next turn. It will automatically disable after 30 seconds to save resources. Use this when you need to see the UI to perform a task or answer a visual question.',
-  parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const disableLiveVideoFunction: FunctionDeclaration = {
   name: 'disableLiveVideo',
   description: 'Manually disables the live video stream. The stream also disables automatically after a short period, so this is only needed for explicit control.',
-  parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const declarations = [

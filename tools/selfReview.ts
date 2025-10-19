@@ -20,7 +20,6 @@ export const initiateSelfReviewFunction: FunctionDeclaration = {
 export const advanceSelfReviewFunction: FunctionDeclaration = {
   name: 'advanceSelfReview',
   description: 'Advances the internal code review cycle to the next persona or concludes it if all personas have completed their review.',
-  parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const declarations = [initiateSelfReviewFunction, advanceSelfReviewFunction];

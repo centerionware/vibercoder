@@ -38,7 +38,6 @@ export const createTaskPlanFunction: FunctionDeclaration = {
 export const viewTaskPlanFunction: FunctionDeclaration = {
   name: 'viewTaskPlan',
   description: "Retrieves the currently active task plan from short-term memory. Use this to orient yourself at the beginning of each turn.",
-  parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const updateTaskStatusFunction: FunctionDeclaration = {
@@ -62,7 +61,6 @@ export const updateTaskStatusFunction: FunctionDeclaration = {
 export const completeTaskFunction: FunctionDeclaration = {
   name: 'completeTask',
   description: "The correct tool to call when a task is finished. It cleans up only the active task details ('active_task', 'active_protocols') from memory, preserving all other context for subsequent related tasks. This is the standard final step for MOST tasks.",
-  parameters: { type: Type.OBJECT, properties: {} },
 };
 
 

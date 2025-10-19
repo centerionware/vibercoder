@@ -1,17 +1,11 @@
 import React from 'react';
 import { Modality } from '@google/genai';
 import { UseAiLiveProps } from '../../types';
-import { allTools, systemInstruction } from '../../services/toolOrchestrator';
 import { stopAudioProcessing, setupScriptProcessor, connectMicSourceToProcessor, disconnectMicSourceFromProcessor } from './audioManager';
 import { playNotificationSound } from '../../utils/audio';
 import { AudioContextRefs, SessionRefs } from './types';
 import { requestMediaPermissions } from '../../utils/permissions';
-
-const liveTools = allTools.filter(t => 
-    t.name !== 'captureScreenshot' && 
-    t.name !== 'enableScreenshotPreview' &&
-    t.name !== 'getChatHistory'
-);
+import { allTools, systemInstruction } from '../../services/toolOrchestrator';
 
 interface SessionManagerDependencies {
     propsRef: React.RefObject<UseAiLiveProps>;
@@ -146,7 +140,7 @@ export const createSessionManager = ({
         }
     };
     
-    const createLiveSession = ({ aiRef, settings, activeThread, callbacks }: any) => {
+    const createLiveSession = ({ aiRef, settings, callbacks }: any) => {
         const ai = aiRef.current;
         if (!ai) return Promise.reject(new Error("AI not initialized."));
         return ai.live.connect({
@@ -155,13 +149,14 @@ export const createSessionManager = ({
             config: {
                 responseModalities: [Modality.AUDIO], inputAudioTranscription: {}, outputAudioTranscription: {},
                 speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: settings.voiceName || 'Zephyr' } } },
-                tools: [{ functionDeclarations: liveTools }], systemInstruction: systemInstruction,
+                tools: [{ functionDeclarations: allTools }], 
+                systemInstruction: systemInstruction,
             },
         });
     };
 
     self.initiateSession = () => {
-        const { aiRef, settings, activeThread } = propsRef.current!;
+        const { aiRef, settings } = propsRef.current!;
         const onOpen = () => {
             setupScriptProcessor(audioContextRefs, sessionRefs);
 
@@ -181,6 +176,18 @@ export const createSessionManager = ({
 
         const onclose = (e: CloseEvent) => {
             console.log(`Live session closed. Code: ${e.code}, Reason: ${e.reason}`);
+            
+            // FIX: Check for fatal errors from the close reason to prevent reconnect loops.
+            const fatalKeywords = ['permission', 'api key', 'denied', 'quota', 'not found', 'invalid'];
+            const isFatal = fatalKeywords.some(kw => e.reason.toLowerCase().includes(kw));
+
+            if (isFatal) {
+                const userMessage = `AI voice session failed: ${e.reason}. Please check your API key, project settings, and ensure you have access to the required models.`;
+                propsRef.current?.onPermissionError(userMessage);
+                self.performStop({});
+                return;
+            }
+
             // Don't try to reconnect if it was a clean close initiated by our code (code 1000),
             // or if the session is no longer supposed to be live.
             if (e.code !== 1000 && stateRef.current.isLive) {
@@ -189,7 +196,7 @@ export const createSessionManager = ({
         };
 
         const sessionPromise = createLiveSession({
-            aiRef, settings, activeThread,
+            aiRef, settings,
             callbacks: { onopen: onOpen, onmessage: onMessage, onerror: self.onError, onclose },
         });
         
