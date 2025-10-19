@@ -41,6 +41,7 @@ const ViewRenderer: React.FC<AppLogic> = (props) => {
                 onToggleFullScreen={props.onToggleFullScreen}
                 onProxyFetch={props.onProxyFetch}
                 onProxyIframeLoad={props.onProxyIframeLoad}
+                onProxyNavigate={props.onProxyNavigate}
                 onVirtualStorageRequest={() => {}} // Placeholder
                 consoleLogs={props.previewConsoleLogs}
                 onConsoleMessage={props.handleConsoleMessage}

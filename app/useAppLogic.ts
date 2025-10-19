@@ -188,7 +188,12 @@ export const useAppLogic = () => {
                 throw new Error(`Request failed with status ${response.status}`);
             }
 
-            const html = await response.text();
+            let html = await response.text();
+            
+            const baseHref = new URL('./', response.url).href;
+            if (!html.includes('<base')) {
+              html = html.replace(/(<head[^>]*>)/i, '$1' + '<base href="' + baseHref + '">');
+            }
 
             source.postMessage({
                 type: 'proxy-iframe-response',
@@ -199,6 +204,65 @@ export const useAppLogic = () => {
             console.error('Proxy iframe load failed in main app:', error);
             source.postMessage({
                 type: 'proxy-iframe-error',
+                requestId,
+                payload: { error: error instanceof Error ? error.message : 'An unknown proxy error occurred.' },
+            }, { targetOrigin: event.origin });
+        }
+    }, []);
+    
+    const handleProxyNavigate = useCallback(async (event: MessageEvent) => {
+        const { requestId, payload } = event.data;
+        const { url, method, body, encoding } = payload;
+        const source = event.source as Window;
+        if (!source) return;
+
+        try {
+            const fetchOptions: RequestInit = { method: method || 'GET', headers: {} };
+
+            if (method === 'POST' && body) {
+                if (encoding === 'application/x-www-form-urlencoded') {
+                    (fetchOptions.headers as Record<string, string>)['Content-Type'] = 'application/x-www-form-urlencoded';
+                    fetchOptions.body = body;
+                } else if (encoding === 'multipart/form-data') {
+                    const formData = new FormData();
+                    for (const key in body) {
+                        formData.append(key, body[key]);
+                    }
+                    fetchOptions.body = formData;
+                } else {
+                    (fetchOptions.headers as Record<string, string>)['Content-Type'] = 'application/json';
+                    fetchOptions.body = JSON.stringify(body);
+                }
+            }
+            
+            const response = await fetch(url, fetchOptions);
+
+            if (!response.ok) {
+                throw new Error(`Navigation request failed with status ${response.status}`);
+            }
+            
+            const contentType = response.headers.get('content-type');
+            if (!contentType || !contentType.includes('text/html')) {
+                throw new Error(`Proxied navigation did not return HTML. Content-Type: ${contentType}`);
+            }
+
+            let html = await response.text();
+            
+            const baseHref = new URL('./', response.url).href; // Use final URL after redirects
+            if (!html.includes('<base')) {
+              html = html.replace(/(<head[^>]*>)/i, '$1' + '<base href="' + baseHref + '">');
+            }
+
+            source.postMessage({
+                type: 'proxy-navigate-response',
+                requestId,
+                payload: { html },
+            }, { targetOrigin: event.origin });
+
+        } catch (error) {
+            console.error('Proxy navigation failed in main app:', error);
+            source.postMessage({
+                type: 'proxy-navigate-error',
                 requestId,
                 payload: { error: error instanceof Error ? error.message : 'An unknown proxy error occurred.' },
             }, { targetOrigin: event.origin });
@@ -306,5 +370,6 @@ export const useAppLogic = () => {
         previewConsoleLogs, handleConsoleMessage, handleClearConsoleLogs,
         onProxyFetch: handleProxyFetch,
         onProxyIframeLoad: handleProxyIframeLoad,
+        onProxyNavigate: handleProxyNavigate,
     };
 };

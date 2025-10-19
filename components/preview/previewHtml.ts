@@ -34,7 +34,7 @@ export const previewHtml = `
     "monaco-editor": "https://aistudiocdn.com/monaco-editor@^0.54.0",
     "dexie": "https://aistudiocdn.com/dexie@^4.2.1",
     "buffer": "https://aistudiocdn.com/buffer@^6.0.3",
-    "esbuild-wasm": "https://aistudiocdn.com/esbuild-wasm@^0.25.11",
+    "esbuild-wasm": "https://aistudiocdn.com/esbuild-wasm@0.25.11",
     "@capacitor/core": "https://aistudiocdn.com/@capacitor/core@^7.4.3",
     "isomorphic-git/": "https://aistudiocdn.com/isomorphic-git@^1.34.0/",
     "isomorphic-git": "https://aistudiocdn.com/isomorphic-git@^1.34.0",
@@ -192,7 +192,93 @@ export const previewHtml = `
       } catch(e) {
         postLog('error', \`Failed to hijack top-level fetch: \${e.message}\`);
       }
+      
+      // --- Navigation Interception ---
+      const handleNavigation = (url, method = 'GET', body = null, encoding = null) => {
+          const requestId = 'proxy-nav-' + Math.random().toString(36).substr(2, 9);
 
+          parentWindow.postMessage({
+              type: 'proxy-navigate',
+              requestId,
+              payload: { url, method, body, encoding }
+          }, '*');
+
+          const onNavResponse = (event) => {
+              const { type, requestId: responseId, payload } = event.data;
+              if (responseId !== requestId) return;
+
+              window.removeEventListener('message', onNavResponse);
+
+              if (type === 'proxy-navigate-response') {
+                  document.open();
+                  document.write(payload.html);
+                  document.close();
+              } else if (type === 'proxy-navigate-error') {
+                  postLog('error', \`Navigation failed for \${url}: \${payload.error}\`);
+              }
+          };
+          window.addEventListener('message', onNavResponse);
+      };
+
+      document.addEventListener('click', (event) => {
+          // FIX: Check if an SPA router has already handled this click.
+          // If defaultPrevented is true, it means event.preventDefault() was called,
+          // so we should not interfere.
+          if (event.defaultPrevented) {
+              return;
+          }
+
+          const a = event.target.closest('a');
+          if (!a || !a.hasAttribute('href')) return;
+
+          const href = a.getAttribute('href');
+
+          // Ignore clicks on links that open new tabs, mail links, or internal page anchors.
+          if (a.target === '_blank' || a.target === '_top' || a.protocol === 'mailto:' || a.protocol === 'tel:' || href.startsWith('#')) {
+              return;
+          }
+
+          event.preventDefault();
+          event.stopPropagation();
+          
+          const absoluteUrl = a.href; // Browser resolves this against base URI
+          postLog('log', \`Intercepting navigation to: \${absoluteUrl}\`);
+          handleNavigation(absoluteUrl, 'GET');
+      }, true);
+
+      document.addEventListener('submit', (event) => {
+          const form = event.target;
+          if (!form || form.tagName !== 'FORM' || !form.action) return;
+          if (form.target === '_blank' || form.target === '_top') return;
+
+          event.preventDefault();
+          event.stopPropagation();
+          
+          const actionUrl = new URL(form.action, document.baseURI).href;
+          postLog('log', \`Intercepting form submission to: \${actionUrl}\`);
+
+          const formData = new FormData(form);
+          const method = (form.method || 'GET').toUpperCase();
+          
+          if (method === 'GET') {
+              const params = new URLSearchParams(formData).toString();
+              const url = new URL(actionUrl);
+              url.search = params;
+              handleNavigation(url.href, 'GET');
+          } else {
+              const encoding = form.enctype;
+              let body;
+              if (encoding === 'application/x-www-form-urlencoded') {
+                  body = new URLSearchParams(formData).toString();
+              } else { // Handles 'multipart/form-data' and 'text/plain'
+                  body = Object.fromEntries(formData.entries());
+              }
+              handleNavigation(actionUrl, 'POST', body, encoding);
+          }
+      }, true);
+
+
+      // --- Iframe Creation Observer ---
       const observer = new MutationObserver((mutationsList) => {
         for (const mutation of mutationsList) {
           if (mutation.type === 'childList') {
@@ -202,7 +288,6 @@ export const previewHtml = `
                 const originalSrc = iframeNode.getAttribute('src');
 
                 if (originalSrc && originalSrc.startsWith('http')) {
-                  // This is a cross-origin iframe, so we need to proxy its content.
                   iframeNode.removeAttribute('src');
 
                   try {
@@ -226,15 +311,7 @@ export const previewHtml = `
                     window.removeEventListener('message', onProxyResponse);
 
                     if (type === 'proxy-iframe-response') {
-                      let html = payload.html;
-                      // Inject a <base> tag to fix relative paths for assets.
-                      const baseHref = new URL('./', originalSrc).href;
-                      if (!html.includes('<base')) {
-                        // FIX: Rewrote a string replacement to use concatenation instead of a template literal. This prevents a potential misinterpretation by the TypeScript parser which was incorrectly flagging 'base' and 'href' as undefined variables within the string content.
-                        html = html.replace(/(<head[^>]*>)/i, '$1' + '<base href="' + baseHref + '">');
-                      }
-                      
-                      iframeNode.srcdoc = html;
+                      iframeNode.srcdoc = payload.html;
 
                       iframeNode.addEventListener('load', () => {
                         try {
@@ -258,7 +335,6 @@ export const previewHtml = `
                   };
                   window.addEventListener('message', onProxyResponse);
                 } else {
-                  // This is a same-origin or srcdoc iframe, apply original hijack logic on load.
                   const attemptHijack = () => {
                     try {
                       if (iframeNode.contentWindow) {
@@ -269,7 +345,7 @@ export const previewHtml = `
                     }
                   };
                   iframeNode.addEventListener('load', attemptHijack);
-                  if (iframeNode.contentWindow) { // Try immediately
+                  if (iframeNode.contentWindow) {
                     attemptHijack();
                   }
                 }

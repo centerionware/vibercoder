@@ -22,6 +22,7 @@ interface PreviewViewProps {
   onToggleFullScreen: () => void;
   onProxyFetch: (event: MessageEvent) => void;
   onProxyIframeLoad: (event: MessageEvent) => void;
+  onProxyNavigate: (event: MessageEvent) => void;
   onVirtualStorageRequest: (request: any) => void;
   consoleLogs: PreviewLogEntry[];
   onConsoleMessage: (log: Omit<PreviewLogEntry, 'id'>) => void;
@@ -40,6 +41,7 @@ const PreviewView: React.FC<PreviewViewProps> = (props) => {
     onToggleFullScreen,
     onProxyFetch,
     onProxyIframeLoad,
+    onProxyNavigate,
     onVirtualStorageRequest,
     consoleLogs,
     onConsoleMessage,
@@ -71,6 +73,7 @@ const PreviewView: React.FC<PreviewViewProps> = (props) => {
               builtCode={builtCode}
               onProxyFetch={onProxyFetch}
               onProxyIframeLoad={onProxyIframeLoad}
+              onProxyNavigate={onProxyNavigate}
               onVirtualStorageRequest={onVirtualStorageRequest}
               onConsoleMessage={onConsoleMessage}
             />
@@ -101,6 +104,7 @@ const PreviewView: React.FC<PreviewViewProps> = (props) => {
             builtCode={builtCode}
             onProxyFetch={onProxyFetch}
             onProxyIframeLoad={onProxyIframeLoad}
+            onProxyNavigate={onProxyNavigate}
             onVirtualStorageRequest={onVirtualStorageRequest}
             onConsoleMessage={onConsoleMessage}
           />
