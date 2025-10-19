@@ -1,4 +1,5 @@
 
+
 import React from 'react';
 import { Modality } from '@google/genai';
 import { UseAiLiveProps } from '../../types';
@@ -86,25 +87,13 @@ export const createSessionManager = ({
         }
     };
 
-
-    self.onError = (e: any) => {
-        console.error('Live session error:', e);
-
-        // Per user request, removed the check for 'isTrusted: false' as it was preventing
-        // proper recovery for some errors. All errors will now be evaluated for retry.
-
-        const errorMessage = (e as any).message || (typeof e === 'object' && e !== null ? JSON.stringify(e) : String(e));
-
-        // Broaden the retry logic. We will attempt to retry any error that doesn't
-        // appear to be a fatal configuration or permission issue.
-        const fatalKeywords = ['permission', 'api key', 'denied', 'quota', 'not found'];
-        const isFatal = fatalKeywords.some(kw => errorMessage.toLowerCase().includes(kw));
-        const isRetryable = !isFatal;
-
-        if (isRetryable && retryRef.current && retryRef.current.count < retryRef.current.maxRetries) {
+    const handleReconnect = (reason: string) => {
+        // This function contains the retry logic.
+        // It should only be called for non-fatal errors or unexpected closures.
+        if (retryRef.current && retryRef.current.count < retryRef.current.maxRetries) {
             retryRef.current.count++;
             const delay = retryRef.current.delay * Math.pow(2, retryRef.current.count - 1);
-            console.warn(`[AI Live] Retryable error occurred: "${errorMessage}". Reconnecting (attempt #${retryRef.current.count}) in ${delay}ms...`);
+            console.warn(`[AI Live] Session ended: "${reason}". Reconnecting (attempt #${retryRef.current.count}) in ${delay}ms...`);
             
             clearInactivityTimer();
             finalizeTurn();
@@ -114,14 +103,13 @@ export const createSessionManager = ({
                 if (retryRef.current) retryRef.current.timeoutId = null;
                 
                 // --- Robust Recovery Sequence ---
-                // 1. Close the old session object.
+                // 1. Close the old session object if it exists.
                 sessionRefs.current?.session?.close();
                 
-                // 2. Perform a FULL teardown of the audio pipeline, including releasing the old microphone stream.
+                // 2. Perform a FULL teardown of the audio pipeline.
                 await stopAudioProcessing(audioContextRefs, sessionRefs, { keepMicActive: false });
                 
-                // 3. Acquire a FRESH microphone stream and create a new source node.
-                //    This prevents state corruption from the old stream. It does NOT re-prompt for permission.
+                // 3. Acquire a FRESH microphone stream.
                 const micReady = await acquireAndSetupMic();
 
                 // 4. Only if the mic is successfully acquired, start a new session.
@@ -131,14 +119,25 @@ export const createSessionManager = ({
                 }
             }, delay);
         } else {
-            let userMessage = `A critical error occurred with the voice session: ${errorMessage}. Session closed.`;
-            if (isFatal) {
-                userMessage = `AI voice session failed due to a configuration or permission error: ${errorMessage}. Please check API key validity, ensure the "Generative Language API" is enabled, verify project billing, and check API key restrictions.`;
-            } else if (retryRef.current && retryRef.current.count >= retryRef.current.maxRetries) {
-                userMessage = `AI voice session failed to reconnect after multiple attempts. Please check your network connection or the service status. The session has been closed.`;
-            }
+            // This part handles the case where retries are exhausted.
+            const userMessage = `AI voice session failed to reconnect after multiple attempts. Please check your network connection or the service status. The session has been closed.`;
             propsRef.current?.onPermissionError(userMessage);
             self.performStop({});
+        }
+    };
+
+    self.onError = (e: any) => {
+        console.error('Live session error:', e);
+        const errorMessage = (e as any).message || (typeof e === 'object' && e !== null ? JSON.stringify(e) : String(e));
+        const fatalKeywords = ['permission', 'api key', 'denied', 'quota', 'not found'];
+        const isFatal = fatalKeywords.some(kw => errorMessage.toLowerCase().includes(kw));
+        
+        if (isFatal) {
+            const userMessage = `AI voice session failed due to a configuration or permission error: ${errorMessage}. Please check API key validity, ensure the "Generative Language API" is enabled, verify project billing, and check API key restrictions.`;
+            propsRef.current?.onPermissionError(userMessage);
+            self.performStop({});
+        } else {
+            handleReconnect(errorMessage);
         }
     };
     
@@ -175,8 +174,13 @@ export const createSessionManager = ({
             if (retryRef.current) retryRef.current.count = 0;
         };
 
-        const onclose = () => {
-            console.log('Live session closed.');
+        const onclose = (e: CloseEvent) => {
+            console.log(`Live session closed. Code: ${e.code}, Reason: ${e.reason}`);
+            // Don't try to reconnect if it was a clean close initiated by our code (code 1000),
+            // or if the session is no longer supposed to be live.
+            if (e.code !== 1000 && stateRef.current.isLive) {
+                handleReconnect('Connection closed unexpectedly.');
+            }
         };
 
         const sessionPromise = createLiveSession({
