@@ -1,3 +1,4 @@
+
 // This is the core of the CORS proxy serverless function.
 // It is designed to be platform-agnostic and can be deployed to Vercel, Netlify,
 // or Cloudflare Workers with minimal or no changes.
@@ -30,47 +31,48 @@ async function handleRequest(request) {
   const url = new URL(request.url);
   const proxyUrl = url.pathname.substring(1) + url.search;
 
-  // --- SECURITY CHECK ---
-  // This is a critical security measure. We ONLY want to proxy requests to GitHub.
-  // Without this, the user's proxy could be abused to access any site on the internet.
-  if (!proxyUrl.startsWith('https://github.com')) {
-    const response = new Response('Invalid request: This proxy only forwards to github.com', { status: 400 });
-    // Add CORS headers even to error responses so the browser can read them.
-    Object.entries(corsHeaders).forEach(([key, value]) => {
-      response.headers.set(key, value);
-    });
-    return response;
+  // --- URL VALIDATION ---
+  // A simple validation to ensure a valid URL is being requested.
+  try {
+      new URL(proxyUrl);
+  } catch (e) {
+      const response = new Response('Invalid target URL provided to proxy.', { status: 400 });
+      Object.entries(corsHeaders).forEach(([key, value]) => {
+          response.headers.set(key, value);
+      });
+      return response;
   }
-
-  // Create a new request object to forward to the target URL (GitHub).
+  
+  // Create a new request object to forward to the target URL.
   // We copy the method, headers, and body from the original request.
   const newRequest = new Request(proxyUrl, {
     method: request.method,
     headers: request.headers,
     body: request.body,
-    redirect: 'follow',
+    redirect: 'follow', // Follow redirects, important for general web browsing
   });
   
-  // Make the actual request to GitHub.
-  const githubResponse = await fetch(newRequest);
+  // Make the actual request to the target site.
+  const targetResponse = await fetch(newRequest);
 
   // Create a new response to send back to the browser.
-  // We copy the body, status, and status text from GitHub's response.
-  const response = new Response(githubResponse.body, {
-    status: githubResponse.status,
-    statusText: githubResponse.statusText,
+  // We pass the body, status, and status text from the target's response.
+  // We also pass the original headers, which we will then modify.
+  const response = new Response(targetResponse.body, {
+    status: targetResponse.status,
+    statusText: targetResponse.statusText,
+    headers: targetResponse.headers,
   });
 
-  // Copy the relevant headers from the GitHub response to our new response.
-  // We don't copy all headers, just the ones important for a Git client.
-  const headersToCopy = ['content-type', 'content-length', 'cache-control', 'expires', 'last-modified', 'etag'];
-  githubResponse.headers.forEach((value, key) => {
-    if (headersToCopy.includes(key.toLowerCase())) {
-      response.headers.set(key, value);
-    }
-  });
+  // --- HEADER STRIPPING ---
+  // This is the critical step. We remove headers that prevent the browser
+  // from embedding the page in an iframe.
+  response.headers.delete('X-Frame-Options');
+  response.headers.delete('Content-Security-Policy');
+  response.headers.delete('x-content-security-policy');
 
-  // Finally, add our permissive CORS headers to the response.
+  // Finally, add our permissive CORS headers to the response, overwriting any
+  // that may have come from the target.
   Object.entries(corsHeaders).forEach(([key, value]) => {
     response.headers.set(key, value);
   });

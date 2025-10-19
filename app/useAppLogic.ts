@@ -1,3 +1,4 @@
+
 // =================================================================================================
 // ARCHITECTURAL NOTE: This file is an ORCHESTRATOR.
 //
@@ -182,7 +183,14 @@ export const useAppLogic = () => {
         if (!source) return;
 
         try {
-            const response = await fetch(url);
+            const proxyUrl = settings.gitCorsProxy;
+            if (!proxyUrl) {
+                throw new Error("Cannot proxy iframe content: CORS Proxy URL is not configured in settings.");
+            }
+            // Combine the proxy URL with the target URL. e.g., https://my-proxy.com/https://example.com
+            const proxiedUrl = `${proxyUrl.replace(/\/$/, '')}/${url}`;
+
+            const response = await fetch(proxiedUrl);
 
             if (!response.ok) {
                 throw new Error(`Request failed with status ${response.status}`);
@@ -208,7 +216,7 @@ export const useAppLogic = () => {
                 payload: { error: error instanceof Error ? error.message : 'An unknown proxy error occurred.' },
             }, { targetOrigin: event.origin });
         }
-    }, []);
+    }, [settings.gitCorsProxy]);
     
     const handleProxyNavigate = useCallback(async (event: MessageEvent) => {
         const { requestId, payload } = event.data;
