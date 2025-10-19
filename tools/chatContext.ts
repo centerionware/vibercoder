@@ -20,8 +20,9 @@ export const getChatHistoryFunction: FunctionDeclaration = {
 export const declarations: FunctionDeclaration[] = [getChatHistoryFunction];
 
 // --- Implementations Factory ---
-export const getImplementations = ({ activeThread }: Pick<ToolImplementationsDependencies, 'activeThread'>) => ({
+export const getImplementations = ({ getActiveThread }: Pick<ToolImplementationsDependencies, 'getActiveThread'>) => ({
   getChatHistory: async (args: { last_n_turns?: number }) => {
+    const activeThread = getActiveThread();
     if (!activeThread) {
       throw new Error("No active chat thread found.");
     }

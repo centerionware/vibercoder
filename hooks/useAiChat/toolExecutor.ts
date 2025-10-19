@@ -23,7 +23,7 @@ export const executeTools = async ({
   turnStateRef.current.toolCalls.push(...newToolCallsForUi);
   updateMessage(modelMessageId, {
     toolCalls: [...turnStateRef.current.toolCalls],
-    thinking: 'Executing tools...',
+    thinking: `Preparing tools: ${newToolCallsForUi.map(t => t.name).join(', ')}...`,
   });
 
   // 2. Execute all tool calls in parallel
@@ -35,7 +35,20 @@ export const executeTools = async ({
         const toolFn = (toolImplementations as any)[fc.name!];
         if (!toolFn) throw new Error(`Tool "${fc.name}" not found.`);
 
+        turnStateRef.current.thinkingContent += `\n- Preparing to execute tool: \`${fc.name}\`...\n`;
+        updateMessage(modelMessageId, { thinkingContent: turnStateRef.current.thinkingContent });
+
         const result = await toolFn(fc.args);
+        
+        turnStateRef.current.thinkingContent += `- Tool \`${fc.name}\` finished with status: SUCCESS.\n`;
+        updateMessage(modelMessageId, { thinkingContent: turnStateRef.current.thinkingContent });
+        
+        if (fc.name === 'think' && result.thought) {
+            turnStateRef.current.thinkingContent += `> ${result.thought.replace(/\n/g, '\n> ')}\n\n`;
+            updateMessage(modelMessageId, { 
+                thinkingContent: turnStateRef.current.thinkingContent,
+            });
+        }
         
         // Handle side-effects for creative tools that add attachments
         if (fc.name === 'generateImage' && result.base64Image) {
@@ -85,9 +98,12 @@ export const executeTools = async ({
         console.error(`Error executing tool ${fc.name!}:`, e);
         const error = e instanceof Error ? e.message : String(e);
 
+        turnStateRef.current.thinkingContent += `- Tool \`${fc.name}\` finished with status: ERROR. Reason: ${error}\n`;
+        updateMessage(modelMessageId, { thinkingContent: turnStateRef.current.thinkingContent });
+        
         // Update UI to show error
         turnStateRef.current.toolCalls = turnStateRef.current.toolCalls.map(tc =>
-          tc.id === uiToolCall.id ? { ...tc, status: ToolCallStatus.ERROR } : tc
+          tc.id === uiToolCall.id ? { ...tc, status: ToolCallStatus.ERROR, args: { ...tc.args, errors: [error] } } : tc
         );
         updateMessage(modelMessageId, { toolCalls: [...turnStateRef.current.toolCalls] });
         

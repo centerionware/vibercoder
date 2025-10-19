@@ -44,7 +44,6 @@ export const useAiLive = (props: UseAiLiveProps) => {
     const { requestUiUpdate, cancelUiUpdate } = useUiUpdater(propsRef, refs.sessionRefs, refs.uiUpdateTimerRef);
 
     // 3. Inactivity Management Hook - needs a callback that uses sessionManager
-    // FIX: Changed the useRef declaration to a more standard and explicit form to avoid subtle type inference issues.
     const inactivityResetCallbackRef = useRef<(() => void) | null>(null);
     const { startTimer: startInactivityTimer, clearTimer: clearInactivityTimer } = useInactivityTimer(() => {
         inactivityResetCallbackRef.current?.();
@@ -72,7 +71,9 @@ export const useAiLive = (props: UseAiLiveProps) => {
         onMessage: messageProcessor.onMessage,
         finalizeTurn: messageProcessor.finalizeTurn,
         disableVideoStream,
-    }), [propsRef, stateRef, refs, setters, messageProcessor.onMessage, messageProcessor.finalizeTurn, disableVideoStream]);
+        // FIX: Pass the clearInactivityTimer function to the session manager. This allows the error handler to prevent a race condition where the inactivity timer and the error recovery logic would both try to reconnect the session.
+        clearInactivityTimer,
+    }), [propsRef, stateRef, refs, setters, messageProcessor.onMessage, messageProcessor.finalizeTurn, disableVideoStream, clearInactivityTimer]);
     
     // Define the callback for the inactivity timer, now that sessionManager exists.
     inactivityResetCallbackRef.current = () => {

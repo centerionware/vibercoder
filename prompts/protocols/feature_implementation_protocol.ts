@@ -57,7 +57,8 @@ When a user asks for a new feature (e.g., "add a dark mode toggle"), you must br
         <button onClick={playSound}>Play Sound</button>
         \`\`\`
 
-**Final Step:** After implementing all three parts, switch to the preview to verify the feature works as expected.
+**--- CRITICAL FINAL STEP ---**
+After implementing all three parts and verifying the feature works in the preview, your final action for this task MUST be to call \`commitToHead()\`. This saves all your file modifications. If you fail to call this tool, **all your work will be lost.**
 `;
 
 export default content;

@@ -8,6 +8,7 @@ export interface TurnState {
   toolCalls: ToolCall[];
   modelMessageId: string | null;
   textContent: string;
+  thinkingContent: string;
 }
 
 // Props required for managing the turn's state in the UI

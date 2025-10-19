@@ -1,40 +1,54 @@
 import React from 'react';
 import { AiMessage } from '../../types';
-import SpinnerIcon from '../icons/SpinnerIcon';
 import ToolCallDisplay from './ToolCallDisplay';
+import ThinkingDisplay from './ThinkingDisplay';
 
 const ChatMessage: React.FC<{ message: AiMessage }> = ({ message }) => {
     const isModel = message.role === 'model';
     
-    const livePulseClass = message.isLive 
+    const isWorking = !!message.thinking || !!message.isLive;
+    const pulseClass = isWorking 
       ? 'ring-2 ring-vibe-accent-hover ring-offset-2 ring-offset-vibe-bg-deep animate-pulse' 
       : '';
 
     return (
       <div className={`flex w-full ${isModel ? 'justify-start' : 'justify-end'}`}>
         <div 
-            className={`max-w-3xl p-3 rounded-lg transition-all ${isModel ? 'bg-vibe-panel' : 'bg-vibe-accent text-white'} ${livePulseClass}`}
+            className={`max-w-3xl p-3 rounded-lg transition-all ${isModel ? 'bg-vibe-panel' : 'bg-vibe-accent text-white'} ${pulseClass}`}
         >
-          {/* Using a div for content helps with prose styles and prevents markdown renderers from breaking on empty strings */}
-          <div className="prose prose-sm prose-invert" dangerouslySetInnerHTML={{ __html: message.content.replace(/\n/g, '<br />') || '&nbsp;' }} />
+          {/* Main content */}
+          <div 
+            className={`prose prose-sm prose-invert ${isModel ? '' : 'prose-p:text-white prose-strong:text-white'}`}
+            dangerouslySetInnerHTML={{ __html: message.content.replace(/\n/g, '<br />') || (message.thinkingContent || (message.toolCalls && message.toolCalls.length > 0) ? '' : '&nbsp;') }} 
+          />
           
-           {message.thinking && (
-            <div className="text-xs italic opacity-80 mt-2 flex items-center">
-                <SpinnerIcon className="w-4 h-4 mr-2"/>
-                {message.thinking}
-            </div>
-           )}
-
-           {message.toolCalls && message.toolCalls.length > 0 && (
-            <ToolCallDisplay toolCalls={message.toolCalls} />
-           )}
+          {/* Collapsible Thinking/Log Section */}
+          {message.thinkingContent && (
+             <ThinkingDisplay content={message.thinkingContent} />
+          )}
+          
+          {/* Always-visible Tool Call Section */}
+          {(message.toolCalls && message.toolCalls.length > 0) && (
+            <ToolCallDisplay 
+              toolCalls={message.toolCalls} 
+              thinkingStatus={message.thinking}
+            />
+          )}
            
+           {/* Attachments */}
            {message.attachments?.map((att, i) => (
              <div key={i} className="mt-2">
                {att.type === 'image' && <img src={`data:image/jpeg;base64,${att.data}`} alt="Generated" className="rounded-md max-w-xs"/>}
                {att.type === 'video' && <video src={att.data} controls className="rounded-md max-w-xs"/>}
              </div>
            ))}
+
+          {/* Token Count */}
+          {message.tokenCount && message.tokenCount > 0 && (
+            <div className="mt-2 text-right text-xs text-vibe-comment">
+              Tokens used: {message.tokenCount}
+            </div>
+          )}
         </div>
       </div>
     );

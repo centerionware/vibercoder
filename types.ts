@@ -1,4 +1,3 @@
-// FIX: Recreated the content of `types.ts` based on its usage across the entire application. This resolves numerous 'Cannot find name' and 'is not a module' errors in other files that depend on these type definitions.
 import { Content, FunctionCall } from '@google/genai';
 import React from 'react';
 
@@ -55,9 +54,11 @@ export interface AiMessage {
   role: 'user' | 'model';
   content: string;
   thinking?: string | null;
+  thinkingContent?: string | null;
   toolCalls?: ToolCall[];
   isLive?: boolean;
   attachments?: Attachment[];
+  tokenCount?: number;
 }
 
 export interface Attachment {
@@ -251,7 +252,9 @@ export interface UseWakeWordProps {
 }
 
 // --- Tooling ---
-export const DELETED_FILE_SENTINEL = Symbol('DELETED_FILE');
+// FIX: The DELETED_FILE_SENTINEL was a Symbol, which is not serializable and caused crashes
+// when saving the VFS session to IndexedDB. It has been replaced with a unique, constant string.
+export const DELETED_FILE_SENTINEL = '__VFS_DELETED__' as const;
 
 export interface AiVirtualFileSystem {
     originalFiles: Record<string, string>;
@@ -270,10 +273,11 @@ export interface ToolImplementationsDependencies {
     settings: AppSettings;
     onSettingsChange: (settings: AppSettings) => void;
     bundleLogs: string[];
-    sandboxErrors: string[];
+    previewConsoleLogs: PreviewLogEntry[];
     // FIX: Changed to a ref to solve a circular dependency in useAppLogic.
     liveSessionControlsRef: React.RefObject<LiveSessionControls | undefined>;
-    activeThread: ChatThread | undefined;
+    // FIX: Replaced 'activeThread' with a getter function 'getActiveThread' to prevent stale state issues in tool implementations.
+    getActiveThread: () => ChatThread | undefined;
     updateThread: (threadId: string, updates: Partial<ChatThread>) => void;
     setScreenshotPreview: (dataUrl: string | null) => void;
     isScreenshotPreviewDisabled: boolean;
@@ -305,6 +309,13 @@ export interface LogEntry {
 }
 
 // --- Preview ---
+export interface PreviewLogEntry {
+  id: string;
+  type: 'log' | 'warn' | 'error';
+  timestamp: number;
+  message: string;
+}
+
 export interface PreviewState {
   htmlContent: string;
   videoFrameDataUrl: string | null;

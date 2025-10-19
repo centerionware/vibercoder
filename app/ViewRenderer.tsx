@@ -31,14 +31,19 @@ const ViewRenderer: React.FC<AppLogic> = (props) => {
                 files={props.files}
                 entryPoint={props.activeProject.entryPoint || 'index.tsx'}
                 apiKey={props.settings.apiKey}
-                onLog={() => {}} // Placeholder
-                onRuntimeError={() => {}} // Placeholder
-                bundleLogs={[]} // Placeholder
-                onClearLogs={() => {}} // Placeholder
+                isBundling={props.isBundling}
+                bundleError={props.bundleError}
+                builtCode={props.builtCode}
+                buildId={props.buildId}
+                bundleLogs={props.bundleLogs}
+                onClearLogs={props.handleClearBundleLogs}
                 isFullScreen={props.isFullScreen}
                 onToggleFullScreen={props.onToggleFullScreen}
                 onProxyFetch={() => {}} // Placeholder
                 onVirtualStorageRequest={() => {}} // Placeholder
+                consoleLogs={props.previewConsoleLogs}
+                onConsoleMessage={props.handleConsoleMessage}
+                onClearConsole={props.handleClearConsoleLogs}
             />;
         case View.Ai:
             return <AiView 

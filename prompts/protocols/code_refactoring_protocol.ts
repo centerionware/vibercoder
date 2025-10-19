@@ -19,7 +19,10 @@ const content = `This protocol guides you when refactoring existing code to impr
 4.  **Verify:**
     a. After refactoring, you MUST call \`switchView('preview')\`.
     b. **Crucially, you must confirm that the application's appearance and behavior are identical to how they were before you started.** If you introduced any bugs or visual changes, you MUST use the \`self_correction_protocol\` to revert your changes and try again.
-5.  **Finalize:** Once you have verified that the refactoring is successful and introduced no regressions, call \`commitToHead()\` to save your work.
+5.  **Finalize:** Once you have verified that the refactoring is successful and introduced no regressions, you must proceed to the final step.
+
+**--- CRITICAL FINAL STEP ---**
+After you have verified the refactoring is successful, your final action for this task MUST be to call \`commitToHead()\`. This saves your work. If you fail to call this tool, **all your improvements will be lost.**
 `;
 
 export default content;

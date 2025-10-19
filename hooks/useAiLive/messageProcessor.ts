@@ -14,12 +14,13 @@ export const useUiUpdater = (
     const requestUiUpdate = React.useCallback(() => {
         if (uiUpdateTimerRef.current) return;
         uiUpdateTimerRef.current = window.setTimeout(() => {
-            const { liveMessageId, currentInputTranscription, currentOutputTranscription, currentToolCalls } = sessionRefs.current!;
+            const { liveMessageId, currentInputTranscription, currentOutputTranscription, currentToolCalls, currentThinkingContent } = sessionRefs.current!;
             if (liveMessageId) {
                 propsRef.current?.updateMessage(liveMessageId, { content: currentInputTranscription });
                 propsRef.current?.updateMessage(`${liveMessageId}-model`, { 
                     content: currentOutputTranscription,
-                    toolCalls: [...currentToolCalls] 
+                    toolCalls: [...currentToolCalls],
+                    thinkingContent: currentThinkingContent,
                 });
             }
             uiUpdateTimerRef.current = null;
@@ -84,13 +85,14 @@ export const createMessageProcessor = (deps: MessageProcessorDependencies) => {
         }
         
         ui.cancelUiUpdate();
-        const { liveMessageId, currentInputTranscription, currentOutputTranscription, currentToolCalls } = sessionRefs.current;
+        const { liveMessageId, currentInputTranscription, currentOutputTranscription, currentToolCalls, currentThinkingContent } = sessionRefs.current;
         if (liveMessageId) {
             propsRef.current?.updateMessage(liveMessageId, { content: currentInputTranscription, isLive: false });
             propsRef.current?.updateMessage(`${liveMessageId}-model`, { 
                 content: currentOutputTranscription, 
                 isLive: false,
-                toolCalls: [...currentToolCalls]
+                toolCalls: [...currentToolCalls],
+                thinkingContent: currentThinkingContent,
             });
             propsRef.current?.onEndAiRequest();
         }
@@ -98,6 +100,7 @@ export const createMessageProcessor = (deps: MessageProcessorDependencies) => {
         sessionRefs.current.liveMessageId = null;
         sessionRefs.current.currentInputTranscription = '';
         sessionRefs.current.currentOutputTranscription = '';
+        sessionRefs.current.currentThinkingContent = '';
         sessionRefs.current.currentToolCalls = [];
 
         inactivity.startInactivityTimer();
@@ -150,7 +153,19 @@ export const createMessageProcessor = (deps: MessageProcessorDependencies) => {
                 try {
                     const toolFn = propsRef.current!.toolImplementations[fc.name!];
                     if (!toolFn) throw new Error(`Tool "${fc.name}" not implemented.`);
+
+                    sessionRefs.current!.currentThinkingContent += `\n- Preparing to execute tool: \`${fc.name}\`...\n`;
+                    ui.requestUiUpdate();
+
                     const result = await toolFn(fc.args);
+                    
+                    sessionRefs.current!.currentThinkingContent += `- Tool \`${fc.name}\` finished with status: SUCCESS.\n`;
+
+                    if (fc.name === 'think' && result.thought) {
+                        sessionRefs.current!.currentThinkingContent += `> ${result.thought.replace(/\n/g, '\n> ')}\n\n`;
+                    }
+                    ui.requestUiUpdate();
+
                     const session = await sessionRefs.current?.sessionPromise;
                     if (!session) throw new Error("Live session not available for tool response.");
                     session.sendToolResponse({ functionResponses: { id: fc.id, name: fc.name, response: { result } } });
@@ -158,6 +173,10 @@ export const createMessageProcessor = (deps: MessageProcessorDependencies) => {
                 } catch (e) {
                     const error = e instanceof Error ? e.message : String(e);
                     errors.push(error);
+
+                    sessionRefs.current!.currentThinkingContent += `- Tool \`${fc.name}\` finished with status: ERROR. Reason: ${error}\n`;
+                    ui.requestUiUpdate();
+
                     const session = await sessionRefs.current?.sessionPromise;
                     session?.sendToolResponse({ functionResponses: { id: fc.id, name: fc.name, response: { result: { error } } } });
                     status = ToolCallStatus.ERROR;

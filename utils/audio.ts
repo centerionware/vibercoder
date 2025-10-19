@@ -67,13 +67,50 @@ export function createBlob(data: Float32Array): Blob {
 }
 
 /**
+ * Renders the two-tone "reconnect" sound to an AudioBuffer without playing it.
+ * This allows the buffer to be used for both user playback and AI injection.
+ * @param ctx The AudioContext to derive the sample rate from.
+ * @returns A promise that resolves to the generated AudioBuffer.
+ */
+export const generateReconnectBuffer = (ctx: AudioContext): Promise<AudioBuffer> => {
+    const firstNoteFreq = 1046.50; // C6
+    const secondNoteFreq = 783.99; // G5
+    const noteDuration = 0.1;
+    const gap = 0.05;
+    const totalDuration = (noteDuration * 2) + gap;
+
+    const offlineCtx = new OfflineAudioContext(1, Math.ceil(ctx.sampleRate * totalDuration), ctx.sampleRate);
+    const gainNode = offlineCtx.createGain();
+    gainNode.connect(offlineCtx.destination);
+    gainNode.gain.setValueAtTime(0.2, 0);
+
+    // First note
+    const osc1 = offlineCtx.createOscillator();
+    osc1.frequency.setValueAtTime(firstNoteFreq, 0);
+    osc1.connect(gainNode);
+    osc1.start(0);
+    osc1.stop(noteDuration);
+
+    // Second note
+    const osc2 = offlineCtx.createOscillator();
+    const secondStartTime = noteDuration + gap;
+    osc2.frequency.setValueAtTime(secondNoteFreq, secondStartTime);
+    osc2.connect(gainNode);
+    osc2.start(secondStartTime);
+    osc2.stop(totalDuration);
+    
+    return offlineCtx.startRendering();
+};
+
+
+/**
  * Plays a simple notification sound for user feedback.
  * @param type 'start' for activation, 'stop' for deactivation, 'thinking' for AI turn start, 'tool-call' for AI using a tool, 'ai-stop' for AI turn end, 'reconnect' for successful reconnection.
  * @param context The AudioContext to use for playback.
  * @returns A promise that resolves when the sound has finished playing.
  */
 export const playNotificationSound = (type: 'start' | 'stop' | 'thinking' | 'tool-call' | 'ai-stop' | 'reconnect' = 'start', context: AudioContext | null): Promise<void> => {
-  return new Promise((resolve) => {
+  return new Promise(async (resolve) => {
     if (!context || context.state === 'closed') {
       console.warn("Cannot play notification sound: AudioContext is not available or closed.");
       resolve();
@@ -86,46 +123,25 @@ export const playNotificationSound = (type: 'start' | 'stop' | 'thinking' | 'too
     }
     
     try {
-      const oscillator = context.createOscillator();
-      const gainNode = context.createGain();
-      oscillator.connect(gainNode);
-      gainNode.connect(context.destination);
-
-      gainNode.gain.setValueAtTime(0, context.currentTime);
-      gainNode.gain.linearRampToValueAtTime(0.2, context.currentTime + 0.01);
-
       if (type === 'reconnect') {
-        // Chime: two quick notes for a distinct "reconnected" sound
-        const firstNoteFreq = 1046.50; // C6
-        const secondNoteFreq = 783.99; // G5
-        const noteDuration = 0.1;
-        const gap = 0.05;
-
-        // First note
-        oscillator.frequency.setValueAtTime(firstNoteFreq, context.currentTime);
-        oscillator.start(context.currentTime);
-        oscillator.stop(context.currentTime + noteDuration);
-
-        // Second note (scheduled to play right after the first)
-        const secondOscillator = context.createOscillator();
-        const secondGain = context.createGain();
-        secondOscillator.connect(secondGain);
-        secondGain.connect(context.destination);
-        
-        const secondStartTime = context.currentTime + noteDuration + gap;
-        secondGain.gain.setValueAtTime(0, secondStartTime);
-        secondGain.gain.linearRampToValueAtTime(0.2, secondStartTime + 0.01);
-        secondOscillator.frequency.setValueAtTime(secondNoteFreq, secondStartTime);
-
-        secondOscillator.onended = () => resolve(); // Resolve when the second note finishes
-
-        secondOscillator.start(secondStartTime);
-        const secondEndTime = secondStartTime + noteDuration;
-        secondGain.gain.exponentialRampToValueAtTime(0.00001, secondEndTime);
-        secondOscillator.stop(secondEndTime);
-
+        const buffer = await generateReconnectBuffer(context);
+        const source = context.createBufferSource();
+        source.buffer = buffer;
+        const gainNode = context.createGain();
+        gainNode.gain.setValueAtTime(0.2, context.currentTime);
+        source.connect(gainNode);
+        gainNode.connect(context.destination);
+        source.onended = () => resolve();
+        source.start();
       } else {
-        // Standard logic for single-note sounds
+        const oscillator = context.createOscillator();
+        const gainNode = context.createGain();
+        oscillator.connect(gainNode);
+        gainNode.connect(context.destination);
+
+        gainNode.gain.setValueAtTime(0, context.currentTime);
+        gainNode.gain.linearRampToValueAtTime(0.2, context.currentTime + 0.01);
+        
         let frequency: number;
         let duration = 0.15;
 

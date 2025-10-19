@@ -48,6 +48,9 @@ const App = () => {
             projectName={app.activeProject.name}
             onProjectNameClick={() => app.setIsProjectModalOpen(true)}
             onTitleClick={() => window.location.reload()}
+            isLive={app.isLive}
+            isMuted={app.isMuted}
+            onToggleMute={app.toggleMute}
           />
         )}
         <main className={`flex-1 flex flex-col overflow-hidden ${app.isFullScreen ? '' : 'pb-20'}`}>

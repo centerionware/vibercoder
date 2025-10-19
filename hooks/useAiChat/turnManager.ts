@@ -15,6 +15,7 @@ export const startTurn = ({
     toolCalls: [],
     modelMessageId: uuidv4(),
     textContent: '',
+    thinkingContent: 'System: Turn initiated.\n',
   };
 
   // Add the user's message to the chat, unless it's a system message
@@ -28,6 +29,7 @@ export const startTurn = ({
     role: 'model',
     content: '',
     thinking: 'Thinking...',
+    thinkingContent: turnStateRef.current.thinkingContent,
   });
 };
 
@@ -45,26 +47,37 @@ export const updateTurn = ({
     turnStateRef.current.textContent += textUpdate;
   }
   
-  // Note: We don't add streaming function calls to the main toolCalls array here.
-  // We wait until the stream is complete to get the full function call objects.
-  const hasPendingTools = (functionCallUpdate && functionCallUpdate.length > 0) || toolCalls.some(tc => tc.status === 'in_progress');
+  let thinkingMessage = "Thinking...";
+  const inProgressTools = toolCalls.filter(tc => tc.status === 'in_progress');
+
+  if (inProgressTools.length > 0) {
+      thinkingMessage = `Executing: ${inProgressTools.map(t => t.name).join(', ')}...`;
+  } else if (functionCallUpdate && functionCallUpdate.length > 0) {
+      const lastFc = functionCallUpdate[functionCallUpdate.length - 1];
+      if (lastFc.name) {
+          thinkingMessage = `Preparing tool: ${lastFc.name}...`;
+      }
+  }
 
   updateMessage(modelMessageId, {
     content: turnStateRef.current.textContent,
     toolCalls: [...toolCalls],
-    thinking: hasPendingTools ? "Thinking about tools..." : "Thinking...",
+    thinking: thinkingMessage,
+    thinkingContent: turnStateRef.current.thinkingContent,
   });
 };
 
 
 // Finalizes the turn by removing the 'thinking' indicator.
-export const finalizeTurn = ({ turnStateRef, updateMessage }: TurnManagerProps) => {
-  const { modelMessageId, textContent, toolCalls } = turnStateRef.current;
+export const finalizeTurn = ({ turnStateRef, updateMessage, tokenCount }: TurnManagerProps & { tokenCount?: number }) => {
+  const { modelMessageId, textContent, toolCalls, thinkingContent } = turnStateRef.current;
   if (!modelMessageId) return;
 
   updateMessage(modelMessageId, {
     thinking: null,
     content: textContent,
     toolCalls: [...toolCalls],
+    thinkingContent: thinkingContent,
+    tokenCount: tokenCount,
   });
 };

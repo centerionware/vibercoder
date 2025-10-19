@@ -1,29 +1,12 @@
+
 import React from 'react';
 import { Modality } from '@google/genai';
 import { UseAiLiveProps } from '../../types';
-import { allTools } from '../../services/toolOrchestrator';
-import { stopAudioProcessing, setupScriptProcessor, connectMicSourceToProcessor } from './audioManager';
+import { allTools, systemInstruction } from '../../services/toolOrchestrator';
+import { stopAudioProcessing, setupScriptProcessor, connectMicSourceToProcessor, disconnectMicSourceFromProcessor } from './audioManager';
 import { playNotificationSound } from '../../utils/audio';
 import { AudioContextRefs, SessionRefs } from './types';
-
-const liveSystemInstruction = `You are Vibe, an autonomous AI agent in a real-time voice conversation. Your purpose is to fulfill user requests by executing tools efficiently. **Your responses must be direct and concise. Prioritize action over conversation.** For every new task, you MUST follow this cognitive cycle:
-
-1.  **Orient:** Call \`viewShortTermMemory\` to check for an 'active_task' and 'active_protocols'.
-    *   If both exist, you are continuing a task. Use the protocols from your memory to guide your next step. Proceed to step 5.
-    *   If they don't exist, you are starting a new task. Proceed to step 2.
-
-2.  **Analyze & Review Skills:** Understand the user's goal from their speech. Call \`listPrompts()\` to see your library of available protocols.
-
-3.  **Select & Load Knowledge:** Based on the user's request, call \`readPrompts()\` with the keys for the most relevant protocol(s) (e.g., 'full_stack_development_protocol').
-
-4.  **Memorize Knowledge:** You MUST immediately call \`updateShortTermMemory()\` to store the full, combined content of the protocols you just read under the key 'active_protocols'. This is your instruction set for the entire task.
-
-5.  **Formulate a Plan:**
-    *   If this is a new task, use \`think()\` to create a high-level plan, then call \`updateShortTermMemory()\` to set the 'active_task'.
-    *   If continuing a task, use \`think()\` to outline the single, specific next step.
-
-6.  **Execute:** Carry out your plan, following the instructions from your 'active_protocols' in memory.`;
-
+import { requestMediaPermissions } from '../../utils/permissions';
 
 const liveTools = allTools.filter(t => 
     t.name !== 'captureScreenshot' && 
@@ -55,47 +38,104 @@ interface SessionManagerDependencies {
     onMessage: (message: any) => void;
     finalizeTurn: () => void;
     disableVideoStream: () => void;
+    clearInactivityTimer: () => void;
 }
 
 export const createSessionManager = ({
-    propsRef, stateRef, refs, setters, onMessage, finalizeTurn, disableVideoStream
+    propsRef, stateRef, refs, setters, onMessage, finalizeTurn, disableVideoStream, clearInactivityTimer
 }: SessionManagerDependencies) => {
     
     const { audioContextRefs, sessionRefs, retryRef, isSessionDirty } = refs;
 
-    // Use a mutable object to hold functions that might need to be called by each other,
-    // avoiding the need for `useRef` and `useEffect` in a non-hook function.
     const self = {} as {
         initiateSession: () => void;
         performStop: (options?: { isUnmount?: boolean }) => Promise<void>;
-        onError: (e: ErrorEvent) => void;
+        onError: (e: any) => void;
     };
 
-    self.onError = (e: ErrorEvent) => {
+    const acquireAndSetupMic = async (): Promise<boolean> => {
+        try {
+            // It's crucial to ensure the AudioContexts are running before acquiring the mic.
+            // This is safe to call even if they are already running, and necessary for recovery.
+            const { input, output } = audioContextRefs.current;
+            if (input?.state === 'suspended') {
+                await input.resume();
+            }
+            if (output?.state === 'suspended') {
+                await output.resume();
+            }
+    
+            const hasPermissions = await requestMediaPermissions();
+            if (!hasPermissions) {
+                throw new Error('Permissions were not granted upon request.');
+            }
+    
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioContextRefs.current.micStream = stream;
+            if (!audioContextRefs.current.input) throw new Error("Input AudioContext not initialized.");
+            audioContextRefs.current.micSourceNode = audioContextRefs.current.input.createMediaStreamSource(stream);
+            console.log("[Audio Pipe] Fresh microphone stream acquired and source node created.");
+            return true;
+        } catch (e) {
+            console.error("Failed to acquire microphone stream:", e);
+            const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred while accessing the microphone.';
+            propsRef.current?.onPermissionError(`Could not access microphone: ${errorMessage}. Please check browser permissions.`);
+            // This is a fatal error for the session, so perform a full stop.
+            await self.performStop({});
+            return false;
+        }
+    };
+
+
+    self.onError = (e: any) => {
         console.error('Live session error:', e);
-        const isRetryable = !e.message?.toLowerCase().includes('permission');
+
+        // Per user request, removed the check for 'isTrusted: false' as it was preventing
+        // proper recovery for some errors. All errors will now be evaluated for retry.
+
+        const errorMessage = (e as any).message || (typeof e === 'object' && e !== null ? JSON.stringify(e) : String(e));
+
+        // Broaden the retry logic. We will attempt to retry any error that doesn't
+        // appear to be a fatal configuration or permission issue.
+        const fatalKeywords = ['permission', 'api key', 'denied', 'quota', 'not found'];
+        const isFatal = fatalKeywords.some(kw => errorMessage.toLowerCase().includes(kw));
+        const isRetryable = !isFatal;
+
         if (isRetryable && retryRef.current && retryRef.current.count < retryRef.current.maxRetries) {
             retryRef.current.count++;
             const delay = retryRef.current.delay * Math.pow(2, retryRef.current.count - 1);
-            console.warn(`[AI Live] Retryable error. Reconnect #${retryRef.current.count} in ${delay}ms...`);
+            console.warn(`[AI Live] Retryable error occurred: "${errorMessage}". Reconnecting (attempt #${retryRef.current.count}) in ${delay}ms...`);
             
+            clearInactivityTimer();
+            finalizeTurn();
+
             if (retryRef.current.timeoutId) clearTimeout(retryRef.current.timeoutId);
-            retryRef.current.timeoutId = window.setTimeout(() => {
+            retryRef.current.timeoutId = window.setTimeout(async () => {
                 if (retryRef.current) retryRef.current.timeoutId = null;
-                isSessionDirty.current = false;
+                
+                // --- Robust Recovery Sequence ---
+                // 1. Close the old session object.
                 sessionRefs.current?.session?.close();
-                if (audioContextRefs.current?.scriptProcessor) {
-                    audioContextRefs.current.scriptProcessor.disconnect();
-                    audioContextRefs.current.scriptProcessor = null;
+                
+                // 2. Perform a FULL teardown of the audio pipeline, including releasing the old microphone stream.
+                await stopAudioProcessing(audioContextRefs, sessionRefs, { keepMicActive: false });
+                
+                // 3. Acquire a FRESH microphone stream and create a new source node.
+                //    This prevents state corruption from the old stream. It does NOT re-prompt for permission.
+                const micReady = await acquireAndSetupMic();
+
+                // 4. Only if the mic is successfully acquired, start a new session.
+                if (micReady) {
+                    isSessionDirty.current = false;
+                    self.initiateSession();
                 }
-                self.initiateSession();
             }, delay);
         } else {
-            let userMessage = `An error occurred with the voice session: ${e.message || 'Unknown error'}. Session closed.`;
-            if (e.message?.toLowerCase().includes('permission')) {
-                userMessage = `AI voice session failed due to a permission error. Check API key validity, "Generative Language API" is enabled, and API key restrictions allow this domain.`;
+            let userMessage = `A critical error occurred with the voice session: ${errorMessage}. Session closed.`;
+            if (isFatal) {
+                userMessage = `AI voice session failed due to a configuration or permission error: ${errorMessage}. Please check API key validity, ensure the "Generative Language API" is enabled, verify project billing, and check API key restrictions.`;
             } else if (retryRef.current && retryRef.current.count >= retryRef.current.maxRetries) {
-                userMessage = `AI voice session failed to reconnect. Check network/service status. Session closed.`;
+                userMessage = `AI voice session failed to reconnect after multiple attempts. Please check your network connection or the service status. The session has been closed.`;
             }
             propsRef.current?.onPermissionError(userMessage);
             self.performStop({});
@@ -111,7 +151,7 @@ export const createSessionManager = ({
             config: {
                 responseModalities: [Modality.AUDIO], inputAudioTranscription: {}, outputAudioTranscription: {},
                 speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: settings.voiceName || 'Zephyr' } } },
-                tools: [{ functionDeclarations: liveTools }], systemInstruction: liveSystemInstruction,
+                tools: [{ functionDeclarations: liveTools }], systemInstruction: systemInstruction,
             },
         });
     };
@@ -119,91 +159,84 @@ export const createSessionManager = ({
     self.initiateSession = () => {
         const { aiRef, settings, activeThread } = propsRef.current!;
         const onOpen = () => {
-            if (retryRef.current) {
-                if (retryRef.current.count > 0) {
-                    playNotificationSound('reconnect', audioContextRefs.current?.output);
-                }
-                retryRef.current.count = 0;
-                if (retryRef.current.timeoutId) {
-                    clearTimeout(retryRef.current.timeoutId);
-                    retryRef.current.timeoutId = null;
-                }
-            }
-            // Set up the processor node for the session. This no longer needs stateRef.
             setupScriptProcessor(audioContextRefs, sessionRefs);
-            // Immediately connect the mic to the AI for the user's first turn.
-            connectMicSourceToProcessor(audioContextRefs);
+
+            const isReconnect = retryRef.current && retryRef.current.count > 0;
+            if (isReconnect) {
+                console.log("[AI Live] Reconnect successful.");
+                playNotificationSound('reconnect', audioContextRefs.current.output);
+            }
+            
+            console.log("[Audio Pipe] Ensuring microphone is connected post-session-open.");
+            if (!stateRef.current?.isMuted) {
+                connectMicSourceToProcessor(audioContextRefs);
+            }
+            
+            if (retryRef.current) retryRef.current.count = 0;
         };
-        const sessionPromise = createLiveSession({ aiRef, settings, activeThread, callbacks: { onopen: onOpen, onmessage: onMessage, onerror: self.onError, onclose: () => {} } });
-        if (sessionRefs.current) sessionRefs.current.sessionPromise = sessionPromise;
-        sessionPromise.then(session => {
-            if (sessionRefs.current) sessionRefs.current.session = session;
-        }).catch(err => {
-            propsRef.current?.onPermissionError("Could not connect to live AI service. Check API key/network.");
-            self.performStop({});
+
+        const onclose = () => {
+            console.log('Live session closed.');
+        };
+
+        const sessionPromise = createLiveSession({
+            aiRef, settings, activeThread,
+            callbacks: { onopen: onOpen, onmessage: onMessage, onerror: self.onError, onclose },
         });
+        
+        sessionPromise.then(session => {
+            sessionRefs.current.session = session;
+        }).catch(self.onError);
+
+        sessionRefs.current.sessionPromise = sessionPromise;
     };
 
-    self.performStop = async (options: { isUnmount?: boolean } = {}) => {
-        if (!stateRef.current.isLive) return;
-        const { isUnmount = false } = options;
-
-        if (retryRef.current) {
-            if (retryRef.current.timeoutId) clearTimeout(retryRef.current.timeoutId);
-            retryRef.current.timeoutId = null;
-            retryRef.current.count = 0;
-        }
-
+    const hotSwapSession = async () => {
+        console.log("[AI Live] Hot-swapping session due to config change.");
+        // Perform a full teardown and re-acquisition to ensure a clean state
+        await stopAudioProcessing(audioContextRefs, sessionRefs, { keepMicActive: false });
+        sessionRefs.current.session?.close();
         isSessionDirty.current = false;
-        setters.setIsLive(false);
-        disableVideoStream();
+        
+        const micReady = await acquireAndSetupMic();
+        if (micReady) {
+            self.initiateSession();
+        }
+    };
 
+    self.performStop = async (options = {}) => {
+        const { isUnmount = false } = options;
         if (!isUnmount) {
             await playNotificationSound('stop', audioContextRefs.current?.output);
         }
         
-        setters.setIsMuted(false);
-        setters.setIsSpeaking(false);
-        setters.setIsAiTurn(false);
-        
         sessionRefs.current?.session?.close();
+        if (retryRef.current?.timeoutId) {
+            clearTimeout(retryRef.current.timeoutId);
+            retryRef.current.timeoutId = null;
+        }
+
         await stopAudioProcessing(audioContextRefs, sessionRefs, { keepMicActive: false });
         
-        if (sessionRefs.current?.liveMessageId) finalizeTurn();
-
-        if (sessionRefs.current) {
-            sessionRefs.current.session = null;
-            sessionRefs.current.sessionPromise = null;
-            sessionRefs.current.liveMessageId = null;
-            sessionRefs.current.currentInputTranscription = '';
-            sessionRefs.current.currentOutputTranscription = '';
-            sessionRefs.current.currentToolCalls = [];
-            sessionRefs.current.isAiTurn = false;
-            sessionRefs.current.pendingMessageQueue = [];
-            sessionRefs.current.isTurnFinalizing = false;
-        }
+        setters.setIsLive(false);
+        setters.setIsMuted(false);
+        finalizeTurn();
+        disableVideoStream();
     };
     
-    const hotSwapSession = () => {
-        console.log("[AI Live] Performing session hot-swap...");
-        sessionRefs.current?.session?.close();
-        if (audioContextRefs.current?.scriptProcessor) {
-            audioContextRefs.current.scriptProcessor.disconnect();
-            audioContextRefs.current.scriptProcessor = null;
-        }
-        self.initiateSession();
-    };
-
-    const performPause = (durationInSeconds: number) => {
-        if (!stateRef.current.isLive || stateRef.current.isMuted) return;
-        setters.setIsMuted(true);
+    const performPause = (duration: number) => {
+        console.log(`[AI Live] Pausing listening for ${duration} seconds.`);
+        disconnectMicSourceFromProcessor(audioContextRefs);
         setTimeout(() => {
-            if (stateRef.current.isLive) setters.setIsMuted(false);
-        }, durationInSeconds * 1000);
+            if (stateRef.current?.isLive && !stateRef.current?.isMuted) {
+                console.log("[AI Live] Resuming listening after pause.");
+                connectMicSourceToProcessor(audioContextRefs);
+            }
+        }, duration * 1000);
     };
 
     const resetRetryState = () => {
-        if(retryRef.current) {
+        if (retryRef.current) {
             retryRef.current.count = 0;
             if (retryRef.current.timeoutId) {
                 clearTimeout(retryRef.current.timeoutId);
@@ -212,11 +245,13 @@ export const createSessionManager = ({
         }
     };
 
-    return { 
-        initiateSession: self.initiateSession, 
-        performStop: self.performStop, 
-        performPause, 
-        hotSwapSession, 
-        resetRetryState 
+
+    return {
+        initiateSession: self.initiateSession,
+        performStop: self.performStop,
+        performPause,
+        resetRetryState,
+        hotSwapSession,
+        acquireAndSetupMic,
     };
 };

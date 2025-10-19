@@ -1,6 +1,6 @@
 // FIX: Recreated the `useAiChat` hook. This file was missing, causing build errors. The new content provides the core logic for handling text-based AI chat sessions, including sending messages, processing streaming responses, and orchestrating multi-step tool calls, while correctly interacting with the Gemini API.
 import { useState, useRef, useCallback } from 'react';
-import { Part } from '@google/genai';
+import { Part, GenerateContentResponse } from '@google/genai';
 
 import { UseAiChatProps, GeminiFunctionCall } from '../types';
 import { createChatSession } from './useAiChat/chatSessionManager';
@@ -12,7 +12,7 @@ import { TurnState } from './useAiChat/types';
 export const useAiChat = (props: UseAiChatProps) => {
   const { onStartAiRequest, onEndAiRequest } = props;
   const [isResponding, setIsResponding] = useState(false);
-  const turnStateRef = useRef<TurnState>({ toolCalls: [], modelMessageId: null, textContent: '' });
+  const turnStateRef = useRef<TurnState>({ toolCalls: [], modelMessageId: null, textContent: '', thinkingContent: '' });
   
   const sendMessage = useCallback(async (message: string, isSystemMessage: boolean = false) => {
     if (isResponding) return;
@@ -21,21 +21,27 @@ export const useAiChat = (props: UseAiChatProps) => {
     onStartAiRequest();
     startTurn({ ...props, turnStateRef, userMessage: message, isSystemMessage });
 
+    let totalTokensForTurn = 0;
+
     try {
       const chat = await createChatSession(props);
       
-      let safetyStop = 5; // Prevent infinite loops
-      let stream = await chat.sendMessageStream({ message });
+      let safetyStop = 10; // Prevent infinite loops
+      let nextMessage: string | Part[] = message;
 
       while (safetyStop > 0) {
         safetyStop--;
 
+        const result = await chat.sendMessageStream({ message: nextMessage });
         const { accumulatedText, functionCalls } = await processStream({
-          stream,
+          stream: result.stream,
           onChunk: (text, functionCallUpdate) => {
             updateTurn({ ...props, turnStateRef, textUpdate: text, functionCallUpdate: functionCallUpdate as GeminiFunctionCall[] | null });
           },
         });
+        
+        const fullResponse = await result.response;
+        totalTokensForTurn += fullResponse.usageMetadata?.totalTokenCount || 0;
         
         turnStateRef.current.textContent = accumulatedText;
         updateTurn({ ...props, turnStateRef, textUpdate: null, functionCallUpdate: null });
@@ -46,9 +52,7 @@ export const useAiChat = (props: UseAiChatProps) => {
             functionCalls,
             turnStateRef,
           });
-          
-          // FIX: The parameter for sending multi-part content (like tool responses) to the chat stream is 'message', not 'parts'.
-          stream = await chat.sendMessageStream({ message: toolResponseParts });
+          nextMessage = toolResponseParts;
         } else {
           break; // No more tool calls, exit loop
         }
@@ -69,7 +73,7 @@ export const useAiChat = (props: UseAiChatProps) => {
         });
       }
     } finally {
-      finalizeTurn({ ...props, turnStateRef });
+      finalizeTurn({ ...props, turnStateRef, tokenCount: totalTokensForTurn });
       setIsResponding(false);
       onEndAiRequest();
     }

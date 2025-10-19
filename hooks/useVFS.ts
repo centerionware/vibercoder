@@ -35,15 +35,37 @@ export const useVFS = (activeThread: ChatThread | undefined, files: Record<strin
     }, [activeThread?.id]);
 
     const onCommitAiToHead = useCallback(() => {
-        if (!aiVirtualFiles) return;
+        if (!aiVirtualFiles) {
+            console.warn("onCommitAiToHead called but no VFS session is active.");
+            return;
+        }
+
+        // 1. Apply mutations to get the new file state
         const newFiles = { ...aiVirtualFiles.originalFiles };
         for (const [filepath, mutation] of Object.entries(aiVirtualFiles.mutations)) {
-            if (mutation === DELETED_FILE_SENTINEL) { delete newFiles[filepath]; } 
-            else { newFiles[filepath] = mutation as string; }
+            if (mutation === DELETED_FILE_SENTINEL) {
+                delete newFiles[filepath];
+            } else {
+                newFiles[filepath] = mutation as string;
+            }
         }
+        
+        // 2. Update the main application state
         setFiles(newFiles);
-        deleteVfsSession();
-    }, [aiVirtualFiles, setFiles, deleteVfsSession]);
+
+        // 3. Reset the in-memory VFS to a clean state with the new baseline
+        // This allows the AI to continue working in the same turn if needed.
+        setAiVirtualFiles({
+            originalFiles: { ...newFiles },
+            mutations: {},
+        });
+
+        // 4. Delete the now-stale VFS session from IndexedDB.
+        if (activeThread?.id) {
+            db.vfsSessions.delete(activeThread.id);
+        }
+    }, [aiVirtualFiles, setFiles, activeThread?.id]);
+
 
     return {
         aiVirtualFiles, setAiVirtualFiles,

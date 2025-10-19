@@ -1,42 +1,46 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { previewHtml } from './previewHtml';
+import { PreviewLogEntry } from '../../types';
 
 interface PreviewIframeProps {
   builtCode: string;
-  onRuntimeError: (error: string) => void;
   onProxyFetch: (request: any) => void;
   onVirtualStorageRequest: (request: any) => void;
+  onConsoleMessage: (log: Omit<PreviewLogEntry, 'id'>) => void;
 }
 
-const PreviewIframe: React.FC<PreviewIframeProps> = ({ builtCode, onRuntimeError, onProxyFetch, onVirtualStorageRequest }) => {
+const PreviewIframe: React.FC<PreviewIframeProps> = ({ builtCode, onProxyFetch, onVirtualStorageRequest, onConsoleMessage }) => {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [isReady, setIsReady] = useState(false);
 
   // This effect runs once to set up the message listener for the iframe's entire lifecycle.
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      // An iframe with a sandbox attribute (without 'allow-same-origin') has an opaque origin,
-      // so we can't do a strict origin check. We must rely on the source window being the one from our ref.
-      // After adding 'allow-same-origin', we could technically check event.origin, but checking the source window is more robust.
       if (event.source !== iframeRef.current?.contentWindow) {
         return;
       }
 
-      if (event.data.type === 'runtime-error') {
-        onRuntimeError(event.data.error);
-      } else if (event.data.type === 'preview-ready') {
-        // The iframe has loaded its initial content and is ready to receive code.
-        setIsReady(true);
-      } else if (event.data.type === 'proxy-fetch') {
-        onProxyFetch(event.data);
-      } else if (event.data.type === 'virtual-storage-request') {
-        onVirtualStorageRequest(event.data);
+      const { type, payload } = event.data;
+
+      switch(type) {
+        case 'preview-ready':
+          setIsReady(true);
+          break;
+        case 'proxy-fetch':
+          onProxyFetch(event.data);
+          break;
+        case 'virtual-storage-request':
+          onVirtualStorageRequest(event.data);
+          break;
+        case 'console-message':
+          onConsoleMessage(payload);
+          break;
       }
     };
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [onRuntimeError, onProxyFetch, onVirtualStorageRequest]);
+  }, [onProxyFetch, onVirtualStorageRequest, onConsoleMessage]);
 
   // This effect runs whenever the built code changes or the iframe becomes ready.
   // It sends the new code to the iframe for execution.

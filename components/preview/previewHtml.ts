@@ -34,7 +34,7 @@ export const previewHtml = `
     "monaco-editor": "https://aistudiocdn.com/monaco-editor@^0.54.0",
     "dexie": "https://aistudiocdn.com/dexie@^4.2.1",
     "buffer": "https://aistudiocdn.com/buffer@^6.0.3",
-    "esbuild-wasm": "https://aistudiocdn.com/esbuild-wasm@^0.25.10",
+    "esbuild-wasm": "https://aistudiocdn.com/esbuild-wasm@^0.25.11",
     "@capacitor/core": "https://aistudiocdn.com/@capacitor/core@^7.4.3",
     "isomorphic-git/": "https://aistudiocdn.com/isomorphic-git@^1.34.0/",
     "isomorphic-git": "https://aistudiocdn.com/isomorphic-git@^1.34.0",
@@ -49,8 +49,8 @@ export const previewHtml = `
 </script>
     <style>
       html, body, #root { height: 100%; width: 100%; }
-      body { margin: 0; background-color: #1a1b26; }
-      #root-error { color: white; font-family: sans-serif; padding: 1rem; }
+      body { margin: 0; background-color: #1a1b26; color: #c0caf5; font-family: sans-serif; }
+      #root-error { color: white; padding: 1rem; }
       #root-error h3 { color: #f87171; }
     </style>
   </head>
@@ -61,17 +61,69 @@ export const previewHtml = `
       const root = document.querySelector('#root');
       const parentWindow = window.parent;
 
+      const postLog = (level, message) => {
+        parentWindow.postMessage({ type: 'console-message', payload: { type: level, timestamp: Date.now(), message } }, '*');
+      };
+
       const handleError = (err) => {
-        const message = err ? (err.message || String(err)) : 'An unknown error occurred.';
+        const message = err ? (err.stack || err.message || String(err)) : 'An unknown error occurred.';
         if (root) {
             root.innerHTML = '<div id="root-error"><h3>Runtime Error</h3><pre>' + message + '</pre></div>';
         }
         console.error('Error in preview:', err);
-        parentWindow.postMessage({ type: 'runtime-error', error: message }, '*');
       };
       
-      window.addEventListener('error', (event) => handleError(event.error));
-      window.addEventListener('unhandledrejection', (event) => handleError(event.reason));
+      // --- Console Capture ---
+      const originalConsole = {
+        log: console.log.bind(console),
+        warn: console.warn.bind(console),
+        error: console.error.bind(console),
+        info: console.info.bind(console),
+      };
+
+      const safeStringify = (obj) => {
+        const cache = new Set();
+        return JSON.stringify(obj, (key, value) => {
+            if (typeof value === 'object' && value !== null) {
+                if (cache.has(value)) return '[Circular Reference]';
+                cache.add(value);
+            }
+            if (typeof value === 'bigint') return value.toString();
+            return value;
+        }, 2);
+      };
+
+      const captureConsole = (level, ...args) => {
+        originalConsole[level](...args);
+        
+        const message = args.map(arg => {
+            try {
+                if (arg instanceof Error) return \`\${arg.message}\n\${arg.stack}\`;
+                if (typeof arg === 'object' && arg !== null) return safeStringify(arg);
+                return String(arg);
+            } catch (e) {
+                return '[Unserializable object]';
+            }
+        }).join(' ');
+        
+        postLog(level, message);
+      };
+
+      console.log = (...args) => captureConsole('log', ...args);
+      console.warn = (...args) => captureConsole('warn', ...args);
+      console.error = (...args) => captureConsole('error', ...args);
+      console.info = (...args) => captureConsole('log', ...args); // Treat info as log
+      
+      window.addEventListener('error', (event) => {
+          const message = event.error ? (event.error.stack || event.error.message) : event.message;
+          postLog('error', message);
+      });
+      window.addEventListener('unhandledrejection', (event) => {
+          const reason = event.reason;
+          const message = reason ? (reason.stack || reason.message || String(reason)) : 'Unhandled promise rejection';
+          postLog('error', \`Unhandled Rejection: \${message}\`);
+      });
+
 
       const handleCaptureState = (event) => {
           const { requestId } = event.data;
@@ -141,184 +193,6 @@ export const previewHtml = `
               parentWindow.postMessage({ type: 'interaction-error', requestId, message: e.message }, '*');
           }
       };
-
-      // --- Virtualization & Proxy Logic ---
-      (function() {
-          const uuid = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-              const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
-              return v.toString(16);
-          });
-
-          const pendingRequests = new Map();
-          window.addEventListener('message', (event) => {
-              const { type, requestId, response, error, payload } = event.data;
-              if (type === 'proxy-fetch-response' || type === 'virtual-storage-response') {
-                  if (pendingRequests.has(requestId)) {
-                      const { resolve, reject } = pendingRequests.get(requestId);
-                      pendingRequests.delete(requestId);
-                      if (error) {
-                          reject(new Error(error.message));
-                      } else {
-                          resolve(response || payload);
-                      }
-                  }
-              }
-          });
-
-          function postToParent(type, storageKey, api, payload) {
-              return new Promise((resolve, reject) => {
-                  const requestId = uuid();
-                  pendingRequests.set(requestId, { resolve, reject });
-                  parent.postMessage({ type, requestId, storageKey, api, payload }, '*');
-              });
-          }
-
-          function proxyFetch(input, init) {
-              const url = input instanceof Request ? input.url : String(input);
-              const absoluteUrl = new URL(url, this.location.href).href;
-              if (!absoluteUrl.startsWith('http')) return this._originalFetch.apply(this, arguments);
-              
-              const serializableInit = init ? {
-                  method: init.method,
-                  headers: init.headers instanceof Headers ? Object.fromEntries(init.headers.entries()) : init.headers,
-                  body: typeof init.body === 'string' ? init.body : undefined,
-                  mode: init.mode, credentials: init.credentials, cache: init.cache,
-                  redirect: init.redirect, referrerPolicy: init.referrerPolicy,
-              } : undefined;
-
-              return postToParent('proxy-fetch', null, null, { url: absoluteUrl, options: serializableInit })
-                  .then(response => new Response(response.body, { status: response.status, statusText: response.statusText, headers: response.headers }));
-          }
-
-          function createLocalStorageProxy(storageKey) {
-              let storage = {};
-              postToParent('virtual-storage-request', storageKey, 'localStorage', { method: 'init' })
-                  .then(response => { storage = response.data || {}; console.log(\`[Virtual LS] Initialized for \${storageKey}\`); })
-                  .catch(e => console.error(\`[Virtual LS] Init failed for \${storageKey}:\`, e));
-
-              return new Proxy({}, {
-                  get(target, prop) {
-                      if (prop === 'getItem') return (key) => storage[key] ?? null;
-                      if (prop === 'setItem') return (key, value) => {
-                          const strValue = String(value);
-                          storage[key] = strValue;
-                          postToParent('virtual-storage-request', storageKey, 'localStorage', { method: 'setItem', key, value: strValue }).catch(console.error);
-                      };
-                      if (prop === 'removeItem') return (key) => {
-                          delete storage[key];
-                          postToParent('virtual-storage-request', storageKey, 'localStorage', { method: 'removeItem', key }).catch(console.error);
-                      };
-                      if (prop === 'clear') return () => {
-                          storage = {};
-                          postToParent('virtual-storage-request', storageKey, 'localStorage', { method: 'clear' }).catch(console.error);
-                      };
-                      if (prop === 'length') return Object.keys(storage).length;
-                      if (prop === 'key') return (index) => Object.keys(storage)[index] || null;
-                      return storage[prop];
-                  },
-                  set(target, prop, value) {
-                      const strValue = String(value);
-                      storage[prop] = strValue;
-                      postToParent('virtual-storage-request', storageKey, 'localStorage', { method: 'setItem', key: prop, value: strValue }).catch(console.error);
-                      return true;
-                  },
-                  deleteProperty(target, prop) {
-                      delete storage[prop];
-                      postToParent('virtual-storage-request', storageKey, 'localStorage', { method: 'removeItem', key: prop }).catch(console.error);
-                      return true;
-                  },
-                  ownKeys() { return Object.keys(storage); },
-                  getOwnPropertyDescriptor(target, prop) { return { value: storage[prop], writable: true, enumerable: true, configurable: true }; }
-              });
-          }
-
-          function createIndexedDBProxy(storageKey) {
-            return {
-                open: function(dbName, dbVersion) {
-                    const mockRequest = new EventTarget();
-                    mockRequest.readyState = 'pending';
-                    postToParent('virtual-storage-request', storageKey, 'indexedDB', { method: 'open', dbName, dbVersion })
-                        .then(response => {
-                            if (response.event === 'upgradeneeded') {
-                                mockRequest.dispatchEvent(new CustomEvent('upgradeneeded', { detail: response }));
-                            }
-                            mockRequest.result = { name: response.result.name, version: response.result.version };
-                            mockRequest.readyState = 'done';
-                            mockRequest.dispatchEvent(new Event('success'));
-                        }).catch(e => {
-                            mockRequest.error = e;
-                            mockRequest.readyState = 'done';
-                            mockRequest.dispatchEvent(new Event('error'));
-                        });
-                    return mockRequest;
-                },
-                deleteDatabase: function(dbName) { /* Proxy logic here */ }
-            };
-          }
-
-          function getStorageKeyForIframe(iframe) {
-              try {
-                  if (iframe.src && iframe.src !== 'about:blank') {
-                      return new URL(iframe.src).origin;
-                  }
-              } catch (e) {
-                  // Invalid URL in src, ignore
-              }
-              return iframe.dataset.vibeId || 'vibe-iframe-unknown-' + uuid();
-          }
-
-          function patchWindow(win, storageKey) {
-              if (!win || win._vibePatched === storageKey) return;
-              win._originalFetch = win.fetch;
-              win.fetch = proxyFetch.bind(win);
-              Object.defineProperty(win, 'localStorage', { value: createLocalStorageProxy(storageKey), writable: false, configurable: true });
-              Object.defineProperty(win, 'indexedDB', { value: createIndexedDBProxy(storageKey), writable: false, configurable: true });
-              win._vibePatched = storageKey;
-              console.log(\`[Virtualization] Patched window for storage key: \${storageKey}\`);
-          }
-
-          function handleIframe(iframe) {
-              iframe.dataset.vibeId = iframe.dataset.vibeId || 'vibe-iframe-' + uuid();
-              const attemptPatch = () => {
-                  try {
-                      if (iframe.contentWindow) {
-                          const key = getStorageKeyForIframe(iframe);
-                          patchWindow(iframe.contentWindow, key);
-                      }
-                  } catch (e) {
-                      console.warn('[Virtualization] Could not patch cross-origin iframe.', iframe.src, e.message);
-                  }
-              };
-              iframe.addEventListener('load', attemptPatch, { once: true });
-              if (iframe.contentWindow) attemptPatch(); // Attempt patch immediately if already available
-          }
-
-          const originalCreateElement = document.createElement;
-          document.createElement = function(tagName) {
-              const element = originalCreateElement.apply(document, arguments);
-              if (tagName.toLowerCase() === 'iframe') {
-                  handleIframe(element);
-              }
-              return element;
-          };
-
-          const observer = new MutationObserver((mutations) => {
-              for (const mutation of mutations) {
-                  if (mutation.type === 'childList') {
-                      mutation.addedNodes.forEach(node => {
-                          if (node.tagName === 'IFRAME') {
-                              handleIframe(node);
-                          }
-                      });
-                  } else if (mutation.type === 'attributes' && mutation.attributeName === 'src' && mutation.target.tagName === 'IFRAME') {
-                      handleIframe(mutation.target);
-                  }
-              }
-          });
-
-          observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] });
-          patchWindow(window, 'vibe-iframe-main');
-      })();
 
       // --- Main Message Listener ---
       window.addEventListener('message', (event) => {

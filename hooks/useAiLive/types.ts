@@ -24,6 +24,7 @@ export interface SessionRefs {
     liveMessageId: string | null;
     currentInputTranscription: string;
     currentOutputTranscription: string;
+    currentThinkingContent: string;
     currentToolCalls: ToolCall[];
     isAiTurn: boolean;
     pendingMessageQueue: any[];

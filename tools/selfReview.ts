@@ -20,13 +20,17 @@ export const initiateSelfReviewFunction: FunctionDeclaration = {
 export const advanceSelfReviewFunction: FunctionDeclaration = {
   name: 'advanceSelfReview',
   description: 'Advances the internal code review cycle to the next persona or concludes it if all personas have completed their review.',
+  parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const declarations = [initiateSelfReviewFunction, advanceSelfReviewFunction];
 
-export const getImplementations = ({ activeThread, updateThread }: Pick<ToolImplementationsDependencies, 'activeThread' | 'updateThread'>) => {
+// FIX: The getImplementations function was destructuring 'activeThread', which is not in ToolImplementationsDependencies. Changed to use 'getActiveThread' to fetch the current thread, resolving type errors.
+export const getImplementations = ({ getActiveThread, updateThread }: Pick<ToolImplementationsDependencies, 'getActiveThread' | 'updateThread'>) => {
     
     const ensureThread = () => {
+        // FIX: Called getActiveThread() to retrieve the active chat thread.
+        const activeThread = getActiveThread();
         if (!activeThread) throw new Error("No active thread found. Cannot manage self-review cycle.");
         return activeThread;
     };

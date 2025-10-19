@@ -7,6 +7,7 @@ import { normalizePath } from '../utils/path';
 export const listFilesFunction: FunctionDeclaration = {
   name: 'listFiles',
   description: 'List all files in the current workspace directory.',
+  parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const readFileFunction: FunctionDeclaration = {

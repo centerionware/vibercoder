@@ -1,52 +1,51 @@
-
 import React, { useState, useEffect } from 'react';
 import { Capacitor } from '@capacitor/core';
-import { usePreviewBundler } from '../../hooks/usePreviewBundler';
 import ExpandIcon from '../icons/ExpandIcon';
 import BuildLogDisplay from '../preview/BuildLogDisplay';
 import PreviewIframe from '../preview/PreviewIframe';
 import PreviewOverlays from '../preview/PreviewOverlays';
 import FullScreenPreviewHeader from '../preview/FullScreenPreviewHeader';
+import { PreviewLogEntry } from '../../types';
+import PreviewConsole from '../preview/PreviewConsole';
 
 interface PreviewViewProps {
   files: Record<string, string>;
   entryPoint: string;
   apiKey: string;
-  onLog: (log: string) => void;
-  onRuntimeError: (error: string) => void;
+  isBundling: boolean;
+  bundleError: string | null;
+  builtCode: string | null;
+  buildId: string | null;
   bundleLogs: string[];
   onClearLogs: () => void;
   isFullScreen: boolean;
   onToggleFullScreen: () => void;
   onProxyFetch: (request: any) => void;
   onVirtualStorageRequest: (request: any) => void;
+  consoleLogs: PreviewLogEntry[];
+  onConsoleMessage: (log: Omit<PreviewLogEntry, 'id'>) => void;
+  onClearConsole: () => void;
 }
 
 const PreviewView: React.FC<PreviewViewProps> = (props) => {
   const {
-    files,
-    entryPoint,
-    apiKey,
-    onLog,
-    onClearLogs,
-    onRuntimeError,
+    isBundling,
+    bundleError,
+    builtCode,
+    buildId,
     bundleLogs,
+    onClearLogs,
     isFullScreen,
     onToggleFullScreen,
     onProxyFetch,
     onVirtualStorageRequest,
+    consoleLogs,
+    onConsoleMessage,
+    onClearConsole,
   } = props;
 
-  const { isBundling, bundleError, builtCode } = usePreviewBundler({
-    files,
-    entryPoint,
-    apiKey,
-    onLog,
-    onClearLogs,
-  });
-
   const [isNative, setIsNative] = useState(false);
-
+  
   useEffect(() => {
     setIsNative(Capacitor.isNativePlatform());
   }, []);
@@ -66,10 +65,11 @@ const PreviewView: React.FC<PreviewViewProps> = (props) => {
           />
           {builtCode && (
             <PreviewIframe
+              key={buildId}
               builtCode={builtCode}
-              onRuntimeError={onRuntimeError}
               onProxyFetch={onProxyFetch}
               onVirtualStorageRequest={onVirtualStorageRequest}
+              onConsoleMessage={onConsoleMessage}
             />
           )}
         </div>
@@ -94,19 +94,27 @@ const PreviewView: React.FC<PreviewViewProps> = (props) => {
         />
         {builtCode && (
           <PreviewIframe
+            key={buildId}
             builtCode={builtCode}
-            onRuntimeError={onRuntimeError}
             onProxyFetch={onProxyFetch}
             onVirtualStorageRequest={onVirtualStorageRequest}
+            onConsoleMessage={onConsoleMessage}
           />
         )}
       </div>
 
-      <BuildLogDisplay
-        logs={bundleLogs}
-        error={bundleError}
-        onClear={onClearLogs}
-      />
+      <div className="flex-shrink-0">
+        <PreviewConsole
+          logs={consoleLogs}
+          onClear={onClearConsole}
+        />
+
+        <BuildLogDisplay
+          logs={bundleLogs}
+          error={bundleError}
+          onClear={onClearLogs}
+        />
+      </div>
     </div>
   );
 };

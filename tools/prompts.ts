@@ -6,6 +6,7 @@ import { ToolImplementationsDependencies, Prompt } from '../types';
 export const listPromptsFunction: FunctionDeclaration = {
   name: 'listPrompts',
   description: 'List all available prompts in the library that you can read for instructions.',
+  parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const readPromptsFunction: FunctionDeclaration = {

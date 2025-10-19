@@ -67,7 +67,7 @@ export const useThreads = (activeProjectId: string | null) => {
     // Save thread whenever its messages/history change
     useEffect(() => {
         saveActiveThread();
-    }, [activeThread?.messages, activeThread?.history, saveActiveThread]);
+    }, [activeThread?.messages, activeThread?.history, activeThread?.shortTermMemory, saveActiveThread]);
 
     const createNewThread = useCallback(() => {
         if (!activeProjectId) return '';

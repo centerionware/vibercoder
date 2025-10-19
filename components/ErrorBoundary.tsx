@@ -10,7 +10,7 @@ interface State {
   error: Error | null;
 }
 
-// FIX: A class component must extend React.Component to inherit core functionalities like 'props', 'state', and 'setState'.
+// FIX: A class component must extend React.Component to inherit core functionalities like 'props', 'state', and 'setState'. This resolves errors where 'setState' and 'props' were not found on the ErrorBoundary class instance.
 class ErrorBoundary extends React.Component<Props, State> {
   public state: State = {
     hasError: false,

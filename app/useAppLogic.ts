@@ -16,8 +16,9 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
+import { v4 as uuidv4 } from 'uuid';
 // FIX: Import `LiveSessionControls` to correctly type the ref for live session methods.
-import { View, GitService, UseAiLiveProps, GitCredential, AppSettings, GitAuthor, LiveSessionControls } from '../types';
+import { View, GitService, UseAiLiveProps, GitCredential, AppSettings, GitAuthor, LiveSessionControls, PreviewLogEntry } from '../types';
 
 // Core Data Hooks
 import { useFiles } from '../hooks/useFiles';
@@ -31,6 +32,7 @@ import { usePrompts } from '../hooks/usePrompts';
 import { useAiChat } from '../hooks/useAiChat';
 import { useAiLive } from '../hooks/useAiLive';
 import { useWakeWord } from '../hooks/useWakeWord';
+import { usePreviewBundler } from '../hooks/usePreviewBundler';
 
 // Services
 import { createGitService } from '../services/gitService';
@@ -108,8 +110,33 @@ export const useAppLogic = () => {
         gitServiceRef, activeProject, files, setFiles, setActiveFile, createNewProject,
     });
 
-    // --- 4. Main UI State ---
+    // --- 4. Main UI State & Bundler ---
     const [activeView, setActiveView] = useState<View>(View.Ai);
+    const [previewConsoleLogs, setPreviewConsoleLogs] = useState<PreviewLogEntry[]>([]);
+    const [bundleLogs, setBundleLogs] = useState<string[]>([]);
+
+    const handleConsoleMessage = useCallback((log: Omit<PreviewLogEntry, 'id'>) => {
+        setPreviewConsoleLogs(prev => [...prev.slice(-100), { ...log, id: uuidv4() }]);
+    }, []);
+    const handleClearConsoleLogs = useCallback(() => {
+        setPreviewConsoleLogs([]);
+    }, []);
+
+    const handleBundleLog = useCallback((log: string) => {
+      setBundleLogs(prev => [...prev, log]);
+    }, []);
+
+    const handleClearBundleLogs = useCallback(() => {
+        setBundleLogs([]);
+    }, []);
+
+    const { isBundling, bundleError, builtCode, buildId } = usePreviewBundler({
+        files,
+        entryPoint: activeProject?.entryPoint || 'index.tsx',
+        apiKey: settings.apiKey,
+        onLog: handleBundleLog,
+        onClearLogs: handleClearBundleLogs,
+    });
 
     // --- 5. AI Services ---
     const aiRef = useRef<GoogleGenAI | null>(null);
@@ -122,13 +149,22 @@ export const useAppLogic = () => {
     // FIX: Correctly type the ref that holds the live session controls.
     const liveControlsRef = useRef<LiveSessionControls>();
     
+    // FIX: Create a stable getter for the active thread to prevent stale state in tools.
+    const activeThreadRef = useRef(activeThread);
+    useEffect(() => {
+        activeThreadRef.current = activeThread;
+    }, [activeThread]);
+    const getActiveThread = useCallback(() => activeThreadRef.current, []);
+    
     // FIX: Pass the ref itself to `createToolImplementations` to break the circular dependency. The tool functions will access `.current` at execution time.
     const toolImplementations = createToolImplementations({
         files, setFiles, activeFile, setActiveFile, activeView, setActiveView,
         aiRef, gitServiceRef, settings, onSettingsChange: setSettings,
-        bundleLogs: [], sandboxErrors: [],
+        bundleLogs, 
+        previewConsoleLogs,
         liveSessionControlsRef: liveControlsRef,
-        activeThread, updateThread,
+        getActiveThread, 
+        updateThread,
         setScreenshotPreview: uiState.setScreenshotPreview,
         isScreenshotPreviewDisabled: uiState.isScreenshotPreviewDisabled,
         setIsScreenshotPreviewDisabled: uiState.setIsScreenshotPreviewDisabled,
@@ -197,5 +233,9 @@ export const useAppLogic = () => {
         onFileRemove: onRemoveFile,
         // Prompt Management
         createPrompt, updatePrompt, revertToVersion, deletePrompt: deletePromptHook,
+        // Preview & Bundler State
+        isBundling, bundleError, builtCode, buildId,
+        bundleLogs, handleClearBundleLogs,
+        previewConsoleLogs, handleConsoleMessage, handleClearConsoleLogs,
     };
 };

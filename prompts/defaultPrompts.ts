@@ -36,6 +36,7 @@ import TASK_MANAGEMENT_PROTOCOL from './protocols/task_management_protocol';
 import UI_UX_DESIGN_PROTOCOL from './protocols/ui_ux_design_protocol';
 import VISION_PROTOCOL from './protocols/vision_protocol';
 import ASSET_MANAGEMENT_PROTOCOL from './protocols/asset_management_protocol';
+import CONTEXT_GATHERING_PROTOCOL from './protocols/context_gathering_protocol';
 
 
 interface DefaultPrompt {
@@ -205,5 +206,10 @@ export const defaultPrompts: DefaultPrompt[] = [
         id: 'asset_management_protocol',
         description: 'A protocol for handling and organizing generated assets like images within the project.',
         content: ASSET_MANAGEMENT_PROTOCOL,
+    },
+    {
+        id: 'context_gathering_protocol',
+        description: 'A protocol for using the gatherContextForTask tool to efficiently research the codebase.',
+        content: CONTEXT_GATHERING_PROTOCOL,
     }
 ];

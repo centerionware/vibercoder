@@ -1,6 +1,6 @@
 import { FunctionDeclaration, Type } from '@google/genai';
 import html2canvas from 'html2canvas';
-import { ToolImplementationsDependencies, View, AppSettings } from '../types';
+import { ToolImplementationsDependencies, View, AppSettings, PreviewLogEntry } from '../types';
 import { normalizePath } from '../utils/path';
 // FIX: Import `postMessageToPreviewAndWait` to make it available for the `interactWithPreview` tool.
 import { getPreviewState, postMessageToPreviewAndWait } from '../utils/preview';
@@ -44,26 +44,49 @@ export const openFileFunction: FunctionDeclaration = {
 export const viewActiveFileFunction: FunctionDeclaration = {
     name: 'viewActiveFile',
     description: 'Check which file the user is currently viewing in the code editor.',
+    parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const viewBuildOutputFunction: FunctionDeclaration = {
     name: 'viewBuildOutput',
     description: 'View the logs from the last build process to help diagnose bundling errors.',
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            level: {
+                type: Type.STRING,
+                description: "Optional. Filter logs to show only errors or all logs.",
+                enum: ['error', 'all']
+            }
+        },
+    },
 };
 
-export const viewRuntimeErrorsFunction: FunctionDeclaration = {
-    name: 'viewRuntimeErrors',
-    description: 'View the runtime errors captured from the preview pane from the last execution.',
+export const viewConsoleLogsFunction: FunctionDeclaration = {
+  name: 'viewConsoleLogs',
+  description: 'View console logs (log, warn, error) captured from the running application preview. This is the primary tool for debugging runtime issues.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+        level: {
+            type: Type.STRING,
+            description: "Optional. Filter logs by a specific level.",
+            enum: ['error', 'warn', 'log', 'all']
+        }
+    },
+  },
 };
 
 export const viewBuildEnvironmentFunction: FunctionDeclaration = {
     name: 'viewBuildEnvironment',
     description: 'Inspect the configuration of the in-browser bundler (esbuild-wasm) to understand the build environment, such as JSX settings, module resolution logic, and entry point conventions.',
+    parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const viewSettingsFunction: FunctionDeclaration = {
     name: 'viewSettings',
     description: "View the application's current settings and the available options for each setting.",
+    parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const updateSettingsFunction: FunctionDeclaration = {
@@ -104,16 +127,19 @@ export const pauseListeningFunction: FunctionDeclaration = {
 export const stopListeningFunction: FunctionDeclaration = {
     name: 'stopListening',
     description: 'Stops the voice assistant session completely. The microphone will be turned off.',
+    parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const captureScreenshotFunction: FunctionDeclaration = {
   name: 'captureScreenshot',
   description: "Captures a real-time screenshot of the user's entire application window, exactly as they see it. Use this tool as your 'eyes' to analyze the UI, read text, inspect layouts, or see the output of code. Your subsequent analysis MUST be grounded exclusively in the content of the image provided by this tool.",
+  parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const enableScreenshotPreviewFunction: FunctionDeclaration = {
     name: 'enableScreenshotPreview',
     description: 'Re-enables the screenshot preview modal if the user has previously disabled it for the session. Use this if the user asks to see the screenshots again.',
+    parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const interactWithPreviewFunction: FunctionDeclaration = {
@@ -143,11 +169,13 @@ export const interactWithPreviewFunction: FunctionDeclaration = {
 export const enableLiveVideoFunction: FunctionDeclaration = {
   name: 'enableLiveVideo',
   description: 'Enables the live video stream of the user\'s screen. The stream provides a 1 FPS feed and acts as your "eyes", providing visual context for your next turn. It will automatically disable after 30 seconds to save resources. Use this when you need to see the UI to perform a task or answer a visual question.',
+  parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const disableLiveVideoFunction: FunctionDeclaration = {
   name: 'disableLiveVideo',
   description: 'Manually disables the live video stream. The stream also disables automatically after a short period, so this is only needed for explicit control.',
+  parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const declarations = [
@@ -155,7 +183,7 @@ export const declarations = [
     openFileFunction,
     viewActiveFileFunction,
     viewBuildOutputFunction,
-    viewRuntimeErrorsFunction,
+    viewConsoleLogsFunction,
     viewBuildEnvironmentFunction,
     viewSettingsFunction,
     updateSettingsFunction,
@@ -177,7 +205,7 @@ export const getImplementations = ({
     settings,
     onSettingsChange,
     files,
-    sandboxErrors,
+    previewConsoleLogs,
     // FIX: Destructure the ref instead of the value to break a circular dependency.
     liveSessionControlsRef,
     activeView,
@@ -208,12 +236,24 @@ export const getImplementations = ({
     viewActiveFile: async () => {
         return { activeFile: activeFile || null };
     },
-    viewBuildOutput: async () => {
-        // FIX: Corrected a reference error. The `bundleLogs` variable is in scope, not `buildLogs`. The property name is also corrected to `bundleLogs`.
-        return { bundleLogs };
+    viewBuildOutput: async (args: { level?: 'error' | 'all' }) => {
+        const level = args.level || 'all';
+        if (level === 'error') {
+            const errors = bundleLogs.filter(log => /error/i.test(log) || /failed/i.test(log));
+            return { buildErrors: errors };
+        }
+        return { buildLogs: bundleLogs };
     },
-    viewRuntimeErrors: async () => {
-        return { runtimeErrors: sandboxErrors };
+    viewConsoleLogs: async (args: { level?: 'error' | 'warn' | 'log' | 'all' }) => {
+        const level = args.level || 'all';
+        if (level === 'all') {
+            const formattedLogs = previewConsoleLogs.map(log => `[${log.type.toUpperCase()}] ${log.message}`);
+            return { consoleLogs: formattedLogs };
+        }
+        const filteredLogs = previewConsoleLogs
+            .filter(log => log.type === level)
+            .map(log => log.message);
+        return { consoleLogs: filteredLogs };
     },
     viewBuildEnvironment: async () => {
         const convention = "Each HTML file (e.g., 'index.html') must have a corresponding TypeScript entry point (e.g., 'index.tsx').";
@@ -355,7 +395,7 @@ export const getImplementations = ({
     },
     disableLiveVideo: async () => {
         // FIX: Access the controls via the ref's `.current` property.
-        liveSessionControlsRef.current?.disableVideoStream();
+        liveSessionControlsRef.current?.disableLiveVideo();
         return { success: true, message: 'Live video stream disabled.' };
     },
 });
