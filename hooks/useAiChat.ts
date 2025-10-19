@@ -33,14 +33,13 @@ export const useAiChat = (props: UseAiChatProps) => {
         safetyStop--;
 
         const result = await chat.sendMessageStream({ message: nextMessage });
-        const { accumulatedText, functionCalls } = await processStream({
-          stream: result.stream,
+        const { accumulatedText, functionCalls, fullResponse } = await processStream({
+          stream: result,
           onChunk: (text, functionCallUpdate) => {
             updateTurn({ ...props, turnStateRef, textUpdate: text, functionCallUpdate: functionCallUpdate as GeminiFunctionCall[] | null });
           },
         });
         
-        const fullResponse = await result.response;
         totalTokensForTurn += fullResponse.usageMetadata?.totalTokenCount || 0;
         
         turnStateRef.current.textContent = accumulatedText;

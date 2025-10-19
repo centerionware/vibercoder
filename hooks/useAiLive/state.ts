@@ -19,6 +19,7 @@ export const useLiveState = () => {
         session: null, sessionPromise: null, audioQueue: new Set(),
         nextStartTime: 0, liveMessageId: null,
         currentInputTranscription: '', currentOutputTranscription: '',
+        currentThinkingContent: '',
         currentToolCalls: [],
         isAiTurn: false,
         pendingMessageQueue: [],
