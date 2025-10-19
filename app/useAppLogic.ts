@@ -1,4 +1,5 @@
 
+
 // =================================================================================================
 // ARCHITECTURAL NOTE: This file is an ORCHESTRATOR.
 //
@@ -146,8 +147,12 @@ export const useAppLogic = () => {
 
         if (!source) return;
 
+        console.log(`[Proxy] Received fetch request from preview for URL: ${url}`);
+
         try {
             const response = await fetch(url, options);
+            console.log(`[Proxy] Main thread fetch for ${url} completed with status: ${response.status}`);
+            
             const responseBody = await response.arrayBuffer();
             
             const headers: Record<string, string> = {};
@@ -182,21 +187,27 @@ export const useAppLogic = () => {
         const source = event.source as Window;
         if (!source) return;
 
+        console.log(`[Proxy] Received iframe load request from preview for URL: ${url}`);
+
         try {
             const proxyUrl = settings.gitCorsProxy;
             if (!proxyUrl) {
+                console.error('[Proxy] Cannot proxy iframe content: CORS Proxy URL is not configured in settings.');
                 throw new Error("Cannot proxy iframe content: CORS Proxy URL is not configured in settings.");
             }
             // Combine the proxy URL with the target URL. e.g., https://my-proxy.com/https://example.com
             const proxiedUrl = `${proxyUrl.replace(/\/$/, '')}/${url}`;
+            console.log(`[Proxy] Fetching proxied iframe content from: ${proxiedUrl}`);
 
             const response = await fetch(proxiedUrl);
+            console.log(`[Proxy] Fetch for ${proxiedUrl} completed with status: ${response.status}`);
 
             if (!response.ok) {
                 throw new Error(`Request failed with status ${response.status}`);
             }
 
             let html = await response.text();
+            console.log(`[Proxy] Successfully fetched HTML content (${html.length} bytes). Sending back to preview.`);
             
             const baseHref = new URL('./', response.url).href;
             if (!html.includes('<base')) {
@@ -224,6 +235,8 @@ export const useAppLogic = () => {
         const source = event.source as Window;
         if (!source) return;
 
+        console.log(`[Proxy] Received navigation request from preview for URL: ${url} with method: ${method || 'GET'}`);
+
         try {
             const fetchOptions: RequestInit = { method: method || 'GET', headers: {} };
 
@@ -243,7 +256,9 @@ export const useAppLogic = () => {
                 }
             }
             
+            console.log(`[Proxy] Executing navigation fetch to: ${url}`, fetchOptions);
             const response = await fetch(url, fetchOptions);
+            console.log(`[Proxy] Navigation fetch for ${url} completed with status: ${response.status}`);
 
             if (!response.ok) {
                 throw new Error(`Navigation request failed with status ${response.status}`);
@@ -255,6 +270,7 @@ export const useAppLogic = () => {
             }
 
             let html = await response.text();
+            console.log(`[Proxy] Successfully fetched navigation HTML content (${html.length} bytes). Sending back to preview.`);
             
             const baseHref = new URL('./', response.url).href; // Use final URL after redirects
             if (!html.includes('<base')) {
