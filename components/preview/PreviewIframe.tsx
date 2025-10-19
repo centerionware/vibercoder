@@ -4,7 +4,7 @@ import { PreviewLogEntry } from '../../types';
 
 interface PreviewIframeProps {
   builtCode: string;
-  onProxyFetch: (request: any) => void;
+  onProxyFetch: (event: MessageEvent) => void;
   onVirtualStorageRequest: (request: any) => void;
   onConsoleMessage: (log: Omit<PreviewLogEntry, 'id'>) => void;
 }
@@ -27,7 +27,7 @@ const PreviewIframe: React.FC<PreviewIframeProps> = ({ builtCode, onProxyFetch, 
           setIsReady(true);
           break;
         case 'proxy-fetch':
-          onProxyFetch(event.data);
+          onProxyFetch(event);
           break;
         case 'virtual-storage-request':
           onVirtualStorageRequest(event.data);

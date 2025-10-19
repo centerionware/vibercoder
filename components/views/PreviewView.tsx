@@ -20,7 +20,7 @@ interface PreviewViewProps {
   onClearLogs: () => void;
   isFullScreen: boolean;
   onToggleFullScreen: () => void;
-  onProxyFetch: (request: any) => void;
+  onProxyFetch: (event: MessageEvent) => void;
   onVirtualStorageRequest: (request: any) => void;
   consoleLogs: PreviewLogEntry[];
   onConsoleMessage: (log: Omit<PreviewLogEntry, 'id'>) => void;
@@ -111,6 +111,7 @@ const PreviewView: React.FC<PreviewViewProps> = (props) => {
 
         <BuildLogDisplay
           logs={bundleLogs}
+          // FIX: The 'error' prop was not defined. Corrected to use 'bundleError' from the component's props.
           error={bundleError}
           onClear={onClearLogs}
         />

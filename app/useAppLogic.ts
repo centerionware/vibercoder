@@ -137,6 +137,43 @@ export const useAppLogic = () => {
         onLog: handleBundleLog,
         onClearLogs: handleClearBundleLogs,
     });
+    
+    const handleProxyFetch = useCallback(async (event: MessageEvent) => {
+        const { requestId, payload } = event.data;
+        const { url, options } = payload;
+        const source = event.source as Window;
+
+        if (!source) return;
+
+        try {
+            const response = await fetch(url, options);
+            const responseBody = await response.arrayBuffer();
+            
+            const headers: Record<string, string> = {};
+            response.headers.forEach((value, key) => {
+                headers[key] = value;
+            });
+            
+            source.postMessage({
+                type: 'proxy-fetch-response',
+                requestId,
+                payload: {
+                    body: responseBody,
+                    status: response.status,
+                    statusText: response.statusText,
+                    headers,
+                }
+            }, { targetOrigin: event.origin, transfer: [responseBody] });
+
+        } catch (error) {
+            console.error('Proxy fetch failed in main app:', error);
+            source.postMessage({
+                type: 'proxy-fetch-error',
+                requestId,
+                error: error instanceof Error ? error.message : 'An unknown proxy error occurred.',
+            }, { targetOrigin: event.origin });
+        }
+    }, []);
 
     // --- 5. AI Services ---
     const aiRef = useRef<GoogleGenAI | null>(null);
@@ -237,5 +274,6 @@ export const useAppLogic = () => {
         isBundling, bundleError, builtCode, buildId,
         bundleLogs, handleClearBundleLogs,
         previewConsoleLogs, handleConsoleMessage, handleClearConsoleLogs,
+        onProxyFetch: handleProxyFetch,
     };
 };

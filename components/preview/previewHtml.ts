@@ -124,6 +124,99 @@ export const previewHtml = `
           postLog('error', \`Unhandled Rejection: \${message}\`);
       });
 
+      // --- Fetch Hijacking ---
+      const hijackFetch = (win) => {
+          if (win.fetch.name === 'proxiedFetch') { return; }
+          const original = win.fetch;
+
+          win.fetch = async function proxiedFetch(resource, options) {
+              const url = resource instanceof Request ? resource.url : resource;
+
+              if (typeof url !== 'string' || !url.startsWith('http')) {
+                  return original.apply(win, arguments);
+              }
+
+              try {
+                  const requestId = 'proxy-' + Math.random().toString(36).substr(2, 9);
+                  
+                  const responsePromise = new Promise((resolve, reject) => {
+                      const timeout = setTimeout(() => {
+                        window.removeEventListener('message', messageHandler);
+                        reject(new Error(\`Proxy fetch timed out for \${url}\`));
+                      }, 20000);
+
+                      const messageHandler = (event) => {
+                          const { type, requestId: responseId, payload, error } = event.data;
+                          if (responseId !== requestId) return;
+                          
+                          clearTimeout(timeout);
+                          window.removeEventListener('message', messageHandler);
+
+                          if (type === 'proxy-fetch-response') resolve(payload);
+                          else if (type === 'proxy-fetch-error') reject(new Error(error));
+                      };
+                      window.addEventListener('message', messageHandler);
+                  });
+                  
+                  let bodyToSend = options?.body;
+                  const transferable = [];
+                  if (bodyToSend instanceof Blob) {
+                      bodyToSend = await bodyToSend.arrayBuffer();
+                  }
+                  if (bodyToSend instanceof ArrayBuffer) {
+                      transferable.push(bodyToSend);
+                  }
+
+                  parentWindow.postMessage({
+                      type: 'proxy-fetch',
+                      requestId,
+                      payload: { url, options: { ...options, body: bodyToSend } }
+                  }, '*', transferable);
+
+                  const responseData = await responsePromise;
+                  return new Response(responseData.body, {
+                      status: responseData.status,
+                      statusText: responseData.statusText,
+                      headers: responseData.headers,
+                  });
+              } catch (err) {
+                  postLog('error', \`Fetch proxy failed for \${url}: \${err.message}\`);
+                  throw err;
+              }
+          };
+      };
+
+      try {
+        hijackFetch(window);
+      } catch(e) {
+        postLog('error', \`Failed to hijack top-level fetch: \${e.message}\`);
+      }
+
+      const observer = new MutationObserver((mutationsList) => {
+          for (const mutation of mutationsList) {
+              if (mutation.type === 'childList') {
+                  mutation.addedNodes.forEach(node => {
+                      if (node.tagName === 'IFRAME') {
+                          const iframeNode = node;
+                          const attemptHijack = () => {
+                            try {
+                                if (iframeNode.contentWindow) {
+                                    hijackFetch(iframeNode.contentWindow);
+                                    postLog('log', \`Hijacked fetch in new iframe: \${iframeNode.src || '(no src)'}\`);
+                                }
+                            } catch (e) {
+                                postLog('warn', \`Could not hijack fetch in cross-origin iframe: \${e.message}\`);
+                            }
+                          };
+                          iframeNode.addEventListener('load', attemptHijack);
+                          if(iframeNode.contentWindow) attemptHijack();
+                      }
+                  });
+              }
+          }
+      });
+      observer.observe(document.documentElement, { childList: true, subtree: true });
+
 
       const handleCaptureState = (event) => {
           const { requestId } = event.data;
