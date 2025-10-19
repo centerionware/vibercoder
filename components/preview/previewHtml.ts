@@ -126,13 +126,14 @@ export const previewHtml = `
 
       // --- Fetch Hijacking ---
       const hijackFetch = (win) => {
-          if (win.fetch.name === 'proxiedFetch') { return; }
+          if (!win || win.fetch.name === 'proxiedFetch') { return; }
           const original = win.fetch;
 
           win.fetch = async function proxiedFetch(resource, options) {
-              const url = resource instanceof Request ? resource.url : resource;
+              const url = resource instanceof Request ? resource.url : String(resource);
 
-              if (typeof url !== 'string' || !url.startsWith('http')) {
+              // Only proxy absolute HTTP/HTTPS URLs. Let other schemes (like data:, blob:) pass through.
+              if (!url.startsWith('http')) {
                   return original.apply(win, arguments);
               }
 
@@ -185,7 +186,7 @@ export const previewHtml = `
               }
           };
       };
-
+      
       try {
         hijackFetch(window);
       } catch(e) {
@@ -193,28 +194,91 @@ export const previewHtml = `
       }
 
       const observer = new MutationObserver((mutationsList) => {
-          for (const mutation of mutationsList) {
-              if (mutation.type === 'childList') {
-                  mutation.addedNodes.forEach(node => {
-                      if (node.tagName === 'IFRAME') {
-                          const iframeNode = node;
-                          const attemptHijack = () => {
-                            try {
-                                if (iframeNode.contentWindow) {
-                                    hijackFetch(iframeNode.contentWindow);
-                                    postLog('log', \`Hijacked fetch in new iframe: \${iframeNode.src || '(no src)'}\`);
-                                }
-                            } catch (e) {
-                                postLog('warn', \`Could not hijack fetch in cross-origin iframe: \${e.message}\`);
-                            }
-                          };
-                          iframeNode.addEventListener('load', attemptHijack);
-                          if(iframeNode.contentWindow) attemptHijack();
+        for (const mutation of mutationsList) {
+          if (mutation.type === 'childList') {
+            mutation.addedNodes.forEach(node => {
+              if (node.tagName === 'IFRAME') {
+                const iframeNode = node;
+                const originalSrc = iframeNode.getAttribute('src');
+
+                if (originalSrc && originalSrc.startsWith('http')) {
+                  // This is a cross-origin iframe, so we need to proxy its content.
+                  iframeNode.removeAttribute('src');
+
+                  try {
+                    if (iframeNode.contentDocument) {
+                      iframeNode.contentDocument.body.innerHTML = '<div style="color: #c0caf5; font-family: sans-serif; padding: 1rem; text-align: center;">Proxying iframe content...</div>';
+                    }
+                  } catch (e) { /* This may fail due to timing, it is acceptable. */ }
+
+                  const requestId = 'iframe-proxy-' + Math.random().toString(36).substr(2, 9);
+                  
+                  parentWindow.postMessage({
+                      type: 'proxy-iframe-load',
+                      requestId,
+                      payload: { url: originalSrc }
+                  }, '*');
+
+                  const onProxyResponse = (event) => {
+                    const { type, requestId: responseId, payload } = event.data;
+                    if (responseId !== requestId) return;
+                    
+                    window.removeEventListener('message', onProxyResponse);
+
+                    if (type === 'proxy-iframe-response') {
+                      let html = payload.html;
+                      // Inject a <base> tag to fix relative paths for assets.
+                      const baseHref = new URL('./', originalSrc).href;
+                      if (!html.includes('<base')) {
+                        // FIX: Rewrote a string replacement to use concatenation instead of a template literal. This prevents a potential misinterpretation by the TypeScript parser which was incorrectly flagging 'base' and 'href' as undefined variables within the string content.
+                        html = html.replace(/(<head[^>]*>)/i, '$1' + '<base href="' + baseHref + '">');
                       }
-                  });
+                      
+                      iframeNode.srcdoc = html;
+
+                      iframeNode.addEventListener('load', () => {
+                        try {
+                          if (iframeNode.contentWindow) {
+                            hijackFetch(iframeNode.contentWindow);
+                            postLog('log', \`Hijacked fetch in proxied iframe (src=\${originalSrc})\`);
+                          }
+                        } catch (e) {
+                           postLog('warn', \`Could not hijack fetch in proxied iframe: \${e.message}\`);
+                        }
+                      }, { once: true });
+
+                    } else if (type === 'proxy-iframe-error') {
+                      postLog('error', \`Failed to proxy-load iframe src=\${originalSrc}: \${payload.error}\`);
+                      try {
+                        if (iframeNode.contentDocument) {
+                          iframeNode.contentDocument.body.innerHTML = \`<div style="color: #f87171; font-family: sans-serif; padding: 1rem;"><h3>Iframe Proxy Load Failed</h3><p>\${payload.error}</p></div>\`;
+                        }
+                      } catch(e) { /* ignore */ }
+                    }
+                  };
+                  window.addEventListener('message', onProxyResponse);
+                } else {
+                  // This is a same-origin or srcdoc iframe, apply original hijack logic on load.
+                  const attemptHijack = () => {
+                    try {
+                      if (iframeNode.contentWindow) {
+                        hijackFetch(iframeNode.contentWindow);
+                      }
+                    } catch (e) {
+                      // Silently fail, likely a sandboxed iframe we can't access anyway.
+                    }
+                  };
+                  iframeNode.addEventListener('load', attemptHijack);
+                  if (iframeNode.contentWindow) { // Try immediately
+                    attemptHijack();
+                  }
+                }
               }
+            });
           }
+        }
       });
+
       observer.observe(document.documentElement, { childList: true, subtree: true });
 
 

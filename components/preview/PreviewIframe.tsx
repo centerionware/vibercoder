@@ -5,11 +5,12 @@ import { PreviewLogEntry } from '../../types';
 interface PreviewIframeProps {
   builtCode: string;
   onProxyFetch: (event: MessageEvent) => void;
+  onProxyIframeLoad: (event: MessageEvent) => void;
   onVirtualStorageRequest: (request: any) => void;
   onConsoleMessage: (log: Omit<PreviewLogEntry, 'id'>) => void;
 }
 
-const PreviewIframe: React.FC<PreviewIframeProps> = ({ builtCode, onProxyFetch, onVirtualStorageRequest, onConsoleMessage }) => {
+const PreviewIframe: React.FC<PreviewIframeProps> = ({ builtCode, onProxyFetch, onProxyIframeLoad, onVirtualStorageRequest, onConsoleMessage }) => {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [isReady, setIsReady] = useState(false);
 
@@ -29,6 +30,9 @@ const PreviewIframe: React.FC<PreviewIframeProps> = ({ builtCode, onProxyFetch, 
         case 'proxy-fetch':
           onProxyFetch(event);
           break;
+        case 'proxy-iframe-load':
+          onProxyIframeLoad(event);
+          break;
         case 'virtual-storage-request':
           onVirtualStorageRequest(event.data);
           break;
@@ -40,7 +44,7 @@ const PreviewIframe: React.FC<PreviewIframeProps> = ({ builtCode, onProxyFetch, 
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [onProxyFetch, onVirtualStorageRequest, onConsoleMessage]);
+  }, [onProxyFetch, onProxyIframeLoad, onVirtualStorageRequest, onConsoleMessage]);
 
   // This effect runs whenever the built code changes or the iframe becomes ready.
   // It sends the new code to the iframe for execution.

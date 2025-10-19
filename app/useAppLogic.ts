@@ -175,6 +175,36 @@ export const useAppLogic = () => {
         }
     }, []);
 
+    const handleProxyIframeLoad = useCallback(async (event: MessageEvent) => {
+        const { requestId, payload } = event.data;
+        const { url } = payload;
+        const source = event.source as Window;
+        if (!source) return;
+
+        try {
+            const response = await fetch(url);
+
+            if (!response.ok) {
+                throw new Error(`Request failed with status ${response.status}`);
+            }
+
+            const html = await response.text();
+
+            source.postMessage({
+                type: 'proxy-iframe-response',
+                requestId,
+                payload: { html },
+            }, { targetOrigin: event.origin });
+        } catch (error) {
+            console.error('Proxy iframe load failed in main app:', error);
+            source.postMessage({
+                type: 'proxy-iframe-error',
+                requestId,
+                payload: { error: error instanceof Error ? error.message : 'An unknown proxy error occurred.' },
+            }, { targetOrigin: event.origin });
+        }
+    }, []);
+
     // --- 5. AI Services ---
     const aiRef = useRef<GoogleGenAI | null>(null);
     useEffect(() => {
@@ -275,5 +305,6 @@ export const useAppLogic = () => {
         bundleLogs, handleClearBundleLogs,
         previewConsoleLogs, handleConsoleMessage, handleClearConsoleLogs,
         onProxyFetch: handleProxyFetch,
+        onProxyIframeLoad: handleProxyIframeLoad,
     };
 };
