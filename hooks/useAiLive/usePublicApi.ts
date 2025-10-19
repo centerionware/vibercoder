@@ -31,6 +31,11 @@ export const usePublicApi = (deps: PublicApiProps) => {
 
     const startLiveSession = useCallback(async (): Promise<boolean> => {
         if (stateRef.current.isLive) return false;
+
+        if (!propsRef.current?.settings.apiKey) {
+            propsRef.current?.onPermissionError("API key is missing. Please open Settings and add your Google Gemini API key to use voice chat.");
+            return false;
+        }
         
         // Explicitly resume contexts here, inside the user gesture handler. This is the most
         // reliable way to ensure the audio pipeline is not in a suspended state.
@@ -54,7 +59,7 @@ export const usePublicApi = (deps: PublicApiProps) => {
         setters.setIsLive(true);
         sessionManager.initiateSession();
         return true;
-    }, [sessionManager, refs.audioContextRefs, refs.isSessionDirty, setters, stateRef]);
+    }, [sessionManager, refs.audioContextRefs, refs.isSessionDirty, setters, stateRef, propsRef]);
 
     const stopLiveSession = useCallback((options: { immediate?: boolean; isUnmount?: boolean } = {}) => {
         const { immediate = true, isUnmount = false } = options;
