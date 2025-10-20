@@ -16,27 +16,6 @@ if (typeof self !== 'undefined' && !('global' in self)) {
 let fs: any = null;
 const dir = '/';
 
-async function rmrf(filepath: string) {
-    let stat;
-    try {
-        stat = await fs.promises.lstat(filepath);
-    } catch (e: any) {
-        if (e.code === 'ENOENT') return; // File or directory does not exist, so we are good.
-        throw e;
-    }
-
-    if (stat.isDirectory()) {
-        const files = await fs.promises.readdir(filepath);
-        for (const file of files) {
-            const subpath = filepath === '/' ? `/${file}` : `${filepath}/${file}`;
-            await rmrf(subpath);
-        }
-        await fs.promises.rmdir(filepath);
-    } else {
-        await fs.promises.unlink(filepath);
-    }
-}
-
 // This is a proxy function. The actual `getGitAuth` lives on the main thread.
 // The main thread will pass the *result* of its `getGitAuth` call with each command.
 const getAuthFromPayload = (payload: any): { token: string | undefined; author: GitAuthor; proxyUrl: string; } => {
@@ -70,7 +49,7 @@ self.onmessage = async (event: MessageEvent) => {
         const cloneAuth = getAuthFromPayload(payload);
         const filesInRoot = await fs.promises.readdir(dir);
         for (const file of filesInRoot) {
-            await rmrf(`${dir}${file}`);
+            await (fs.promises as any).rm(`${dir}${file}`, { recursive: true, force: true });
         }
 
         await git.clone({
