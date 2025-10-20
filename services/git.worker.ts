@@ -16,6 +16,37 @@ if (typeof self !== 'undefined' && !('global' in self)) {
 let fs: any = null;
 const dir = '/';
 
+async function rmrf(filepath: string): Promise<void> {
+    let stat;
+    try {
+        stat = await fs.promises.stat(filepath);
+    } catch (err) {
+        if (err.code === 'ENOENT') return; // File doesn't exist, we're done.
+        throw err;
+    }
+
+    if (stat.isDirectory()) {
+        const files = await fs.promises.readdir(filepath);
+        await Promise.all(
+            files.map((file: string) => {
+                const childPath = filepath === '/' ? `/${file}` : `${filepath}/${file}`;
+                return rmrf(childPath);
+            })
+        );
+        await fs.promises.rmdir(filepath);
+    } else {
+        await fs.promises.unlink(filepath);
+    }
+}
+
+async function clearFs(): Promise<void> {
+    const filesInRoot = await fs.promises.readdir('/');
+    for (const file of filesInRoot) {
+        // We call rmrf on the path starting with a slash
+        await rmrf(`/${file}`);
+    }
+}
+
 // This is a proxy function. The actual `getGitAuth` lives on the main thread.
 // The main thread will pass the *result* of its `getGitAuth` call with each command.
 const getAuthFromPayload = (payload: any): { token: string | undefined; author: GitAuthor; proxyUrl: string; } => {
@@ -47,10 +78,7 @@ self.onmessage = async (event: MessageEvent) => {
     switch (type) {
       case 'clone':
         const cloneAuth = getAuthFromPayload(payload);
-        const filesInRoot = await fs.promises.readdir(dir);
-        for (const file of filesInRoot) {
-            await (fs.promises as any).rm(`${dir}${file}`, { recursive: true, force: true });
-        }
+        await clearFs();
 
         await git.clone({
           fs, http, dir, corsProxy: cloneAuth.proxyUrl, url: payload.url,

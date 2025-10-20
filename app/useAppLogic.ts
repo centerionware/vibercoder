@@ -1,5 +1,6 @@
 
 
+
 // =================================================================================================
 // ARCHITECTURAL NOTE: This file is an ORCHESTRATOR.
 //
@@ -19,8 +20,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { v4 as uuidv4 } from 'uuid';
+// FIX: Import `Project` to resolve the 'Cannot find name' error.
 // FIX: Import `LiveSessionControls` to correctly type the ref for live session methods.
-import { View, GitService, UseAiLiveProps, GitCredential, AppSettings, GitAuthor, LiveSessionControls, PreviewLogEntry } from '../types';
+import { View, GitService, UseAiLiveProps, GitCredential, AppSettings, GitAuthor, LiveSessionControls, PreviewLogEntry, Project } from '../types';
 
 // Core Data Hooks
 import { useFiles } from '../hooks/useFiles';
@@ -63,6 +65,8 @@ export const useAppLogic = () => {
     
     // --- 3. Git Service and Logic ---
     const gitServiceRef = useRef<GitService | null>(null);
+    const [isCloning, setIsCloning] = useState(false);
+    const [cloningProgress, setCloningProgress] = useState<string | null>(null);
     
     const getAuth = useCallback((operation: 'read' | 'write'): ({ token: string | undefined; author: GitAuthor; proxyUrl: string; }) | null => {
         const projectGitSettings = activeProject?.gitSettings || { source: 'global' };
@@ -110,8 +114,52 @@ export const useAppLogic = () => {
     }, [activeProject?.id, getAuth]);
 
     const gitLogic = useGitLogic({
-        gitServiceRef, activeProject, files, setFiles, setActiveFile, createNewProject,
+        gitServiceRef, activeProject, files, setFiles, setActiveFile,
     });
+    
+    const handleClone = async (url: string, name: string, credentialId?: string | null) => {
+        setIsCloning(true);
+        setCloningProgress("Creating new project...");
+        let tempGitService: GitService | null = null;
+        let newProject: Project | null = null;
+        try {
+            // Create the project entry first, but don't switch to it yet.
+            newProject = await createNewProject(name, false, url, { source: 'specific', credentialId: credentialId || undefined });
+            
+            // Create a temporary, dedicated git service for this new project ID.
+            tempGitService = createGitService(true, newProject.id, (op) => getAuth(op)); // Pass getAuth to create a valid closure
+            if (!tempGitService || !tempGitService.isReal) {
+                throw new Error("Git is not initialized. Cannot clone.");
+            }
+            
+            setCloningProgress("Initializing clone...");
+            const { files: clonedFiles } = await tempGitService.clone(url, (progress) => {
+                setCloningProgress(`${progress.phase} (${progress.loaded}/${progress.total})`);
+            });
+            
+            // Now, switch to the project and set the files.
+            switchProject(newProject.id);
+            setFiles(clonedFiles);
+
+        } catch (e) {
+            console.error("Clone failed:", e);
+            let errorMessage = e instanceof Error ? e.message : String(e);
+            
+            // If the project was created but clone failed, delete it to avoid leaving an empty project.
+            if (newProject) {
+                deleteProject(newProject.id);
+            }
+
+            if (errorMessage.toLowerCase().includes('network error')) {
+                errorMessage += '\n\nThis often means the CORS proxy is unavailable, rate-limiting requests, or being blocked. \n\n1. Please check your network connection and try again. \n2. For a more reliable connection, we highly recommend deploying your own CORS proxy and configuring its URL in Settings > Git Configuration.';
+            }
+            
+            alert(`Clone failed: ${errorMessage}`);
+        } finally {
+            setIsCloning(false);
+            setCloningProgress(null);
+        }
+    };
 
     // --- 4. Main UI State & Bundler ---
     const [activeView, setActiveView] = useState<View>(View.Ai);
@@ -398,7 +446,7 @@ export const useAppLogic = () => {
         threads, activeThreadId, activeThread,
         onNewThread: createNewThread, onSwitchThread: switchThread, onDeleteThread: deleteThread,
         // Git State & Actions
-        ...gitLogic, gitService: gitServiceRef.current,
+        ...gitLogic, gitService: gitServiceRef.current, handleClone, isCloning, cloningProgress,
         onOpenFileInEditor: setActiveFile,
         // Debug
         debugLogs, handleClearDebugLogs,

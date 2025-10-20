@@ -10,12 +10,9 @@ interface UseGitLogicProps {
     setFiles: (files: Record<string, string>) => void;
     // FIX: Changed the type of 'setActiveFile' to correctly represent a React state setter, which can accept a value or an updater function.
     setActiveFile: React.Dispatch<React.SetStateAction<string | null>>;
-    createNewProject: (name: string, setActive: boolean, remoteUrl: string, gitSettings?: any) => Promise<Project>;
 }
 
-export const useGitLogic = ({ gitServiceRef, activeProject, files, setFiles, setActiveFile, createNewProject }: UseGitLogicProps) => {
-    const [isCloning, setIsCloning] = useState(false);
-    const [cloningProgress, setCloningProgress] = useState<string | null>(null);
+export const useGitLogic = ({ gitServiceRef, activeProject, files, setFiles, setActiveFile }: UseGitLogicProps) => {
     const [isCommitting, setIsCommitting] = useState(false);
     const [isGitNetworkActivity, setIsGitNetworkActivity] = useState(false);
     const [gitNetworkProgress, setGitNetworkProgress] = useState<string | null>(null);
@@ -41,37 +38,6 @@ export const useGitLogic = ({ gitServiceRef, activeProject, files, setFiles, set
         const debounce = setTimeout(() => updateStatus(), 500);
         return () => clearTimeout(debounce);
     }, [files, activeProject, updateStatus]);
-
-    const handleClone = async (url: string, name: string, credentialId?: string | null) => {
-        const svc = gitServiceRef.current;
-        if (!svc || !svc.isReal) {
-            alert("Git is not initialized. Cannot clone.");
-            return;
-        }
-
-        setIsCloning(true);
-        setCloningProgress("Initializing clone...");
-        try {
-            const { files: clonedFiles } = await svc.clone(url, (progress) => {
-                setCloningProgress(`${progress.phase} (${progress.loaded}/${progress.total})`);
-            });
-            await createNewProject(name, true, url, { source: 'specific', credentialId: credentialId || undefined });
-            setFiles(clonedFiles);
-        } catch (e) {
-            console.error("Clone failed:", e);
-            let errorMessage = e instanceof Error ? e.message : String(e);
-
-            // Isomorphic-git's web http client throws a generic "network error" for CORS, proxy, or actual network failures.
-            if (errorMessage.toLowerCase().includes('network error')) {
-                errorMessage += '\n\nThis often means the CORS proxy is unavailable, rate-limiting requests, or being blocked. \n\n1. Please check your network connection and try again. \n2. For a more reliable connection, we highly recommend deploying your own CORS proxy and configuring its URL in Settings > Git Configuration.';
-            }
-            
-            alert(`Clone failed: ${errorMessage}`);
-        } finally {
-            setIsCloning(false);
-            setCloningProgress(null);
-        }
-    };
     
     const performNetworkOp = async (op: () => Promise<any>) => {
         const svc = gitServiceRef.current;
@@ -159,8 +125,8 @@ export const useGitLogic = ({ gitServiceRef, activeProject, files, setFiles, set
     };
 
     return {
-        isCloning, cloningProgress, isCommitting, isGitNetworkActivity, gitNetworkProgress, changedFiles, commitMessage, setCommitMessage,
-        handleClone, onCommit, onCommitAndPush, onPush, onPull, onRebase, onDiscardChanges, onBranchSwitch,
+        isCommitting, isGitNetworkActivity, gitNetworkProgress, changedFiles, commitMessage, setCommitMessage,
+        onCommit, onCommitAndPush, onPush, onPull, onRebase, onDiscardChanges, onBranchSwitch,
         updateStatus,
     };
 };
