@@ -5,7 +5,6 @@ import PreviewIcon from './icons/PreviewIcon';
 import AiIcon from './icons/AiIcon';
 import GitIcon from './icons/GitIcon';
 import SettingsIcon from './icons/SettingsIcon';
-import LightbulbIcon from './icons/LightbulbIcon';
 
 interface BottomNavProps {
   activeView: View;

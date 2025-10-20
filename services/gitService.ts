@@ -84,12 +84,13 @@ class MainThreadGitService implements GitService {
 
     async clone(url: string, onProgress?: (progress: GitProgress) => void): Promise<{ files: Record<string, string> }> {
         const auth = this.getAuth('read');
+        const isNative = Capacitor.isNativePlatform() || !!window.electron?.isElectron;
         await this.clearFs();
         await git.clone({
             fs: this.fs,
             http: this.http,
             dir: this.dir,
-            corsProxy: (Capacitor.isNativePlatform() || !!window.electron?.isElectron) ? undefined : auth?.proxyUrl,
+            corsProxy: isNative ? undefined : auth?.proxyUrl,
             url,
             onAuth: () => ({ username: auth?.token }),
             onProgress,
@@ -226,11 +227,12 @@ class MainThreadGitService implements GitService {
         if (!branch) {
             throw new Error("Cannot push: Not currently on a branch.");
         }
+        const isNative = Capacitor.isNativePlatform() || !!window.electron?.isElectron;
         return git.push({
             fs: this.fs,
             http: this.http,
             dir: this.dir,
-            corsProxy: (Capacitor.isNativePlatform() || !!window.electron?.isElectron) ? undefined : auth.proxyUrl,
+            corsProxy: isNative ? undefined : auth.proxyUrl,
             onAuth: () => ({ username: auth.token }),
             onProgress,
             ref: branch,
@@ -243,11 +245,12 @@ class MainThreadGitService implements GitService {
         if (!author) throw new Error("Cannot pull: Git author information is not configured.");
         const branch = await git.currentBranch({ fs: this.fs, dir: this.dir });
         if (!branch) throw new Error("Not on a branch, cannot pull.");
+        const isNative = Capacitor.isNativePlatform() || !!window.electron?.isElectron;
         await git.pull({
             fs: this.fs,
             http: this.http,
             dir: this.dir,
-            corsProxy: (Capacitor.isNativePlatform() || !!window.electron?.isElectron) ? undefined : auth?.proxyUrl,
+            corsProxy: isNative ? undefined : auth?.proxyUrl,
             author,
             ref: branch,
             singleBranch: true,
@@ -376,8 +379,8 @@ class WorkerGitService implements GitService {
         const auth = this.getAuth(operation);
         const finalPayload = { ...payload, auth };
 
-        const isNative = Capacitor.isNativePlatform() || !!window.electron?.isElectron;
-        if (isNative && finalPayload.auth) {
+        const isElectron = !!window.electron?.isElectron;
+        if (isElectron && finalPayload.auth) {
             delete (finalPayload.auth as any).proxyUrl;
         }
 
