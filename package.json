@@ -25,6 +25,7 @@
     "@capacitor/core": "^7.0.0",
     "@capacitor/geolocation": "^7.0.0",
     "@capacitor/ios": "^7.0.0",
+    "@capacitor/webview": "^7.0.0",
     "@google/genai": "^1.24.0",
     "@isomorphic-git/lightning-fs": "^4.6.2",
     "@monaco-editor/react": "^4.7.0",

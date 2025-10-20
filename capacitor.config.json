@@ -6,8 +6,7 @@
     "androidScheme": "https",
     "allowNavigation": [
       "github.com",
-      "*.github.com",
-      "*"
+      "*.github.com"
     ]
   },
   "plugins": {
