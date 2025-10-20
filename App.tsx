@@ -27,7 +27,8 @@ const App = () => {
     setIsNative(Capacitor.isNativePlatform());
   }, []);
 
-  if (!app.isProjectLoaded) {
+  // FIX: Added a check for `app.activeProject`. The component was attempting to render before an active project was loaded, causing a crash. This ensures we show the loading screen until a project is fully initialized.
+  if (!app.isProjectLoaded || !app.activeProject) {
     return (
       <div className="bg-vibe-bg-deep h-screen w-screen flex flex-col items-center justify-center">
         <SpinnerIcon className="w-8 h-8 text-vibe-accent" />
