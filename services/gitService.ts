@@ -8,6 +8,7 @@ import {
   GitFileChange, GitProgress, GitFileStatus
 } from '../types';
 import { Buffer } from 'buffer';
+import { Capacitor } from '@capacitor/core';
 
 // Helper for recursive reading in LightningFS
 async function recursiveReadDir(fs: any, currentPath: string): Promise<string[]> {
@@ -84,11 +85,12 @@ class MainThreadGitService implements GitService {
     async clone(url: string, onProgress?: (progress: GitProgress) => void): Promise<{ files: Record<string, string> }> {
         const auth = this.getAuth('read');
         await this.clearFs();
+        const isNative = Capacitor.isNativePlatform();
         await git.clone({
             fs: this.fs,
             http: this.http,
             dir: this.dir,
-            corsProxy: this.http === http ? auth?.proxyUrl : undefined,
+            corsProxy: (this.http === http && !isNative) ? auth?.proxyUrl : undefined,
             url,
             onAuth: () => ({ username: auth?.token }),
             onProgress,
@@ -159,8 +161,18 @@ class MainThreadGitService implements GitService {
     }
 
     async log(ref?: string): Promise<GitCommit[]> {
-        const commits = await git.log({ fs: this.fs, dir: this.dir, ref: ref || 'HEAD' });
-        return commits.map(c => ({ oid: c.oid, message: c.commit.message, author: { ...c.commit.author, timestamp: c.commit.author.timestamp }, parent: c.commit.parent }));
+        try {
+            const commits = await git.log({ fs: this.fs, dir: this.dir, ref: ref || 'HEAD' });
+            return commits.map(c => ({ oid: c.oid, message: c.commit.message, author: { ...c.commit.author, timestamp: c.commit.author.timestamp }, parent: c.commit.parent }));
+        } catch (e: any) {
+            // FIX: Gracefully handle empty repositories. If `git.log` fails with a NotFoundError, it likely means no commits or branches exist yet. Return an empty array, which is the correct state.
+            if (e.name === 'NotFoundError' || e.code === 'NotFoundError') {
+                console.warn(`git.log failed, likely an empty repo: ${e.message}`);
+                return []; // Return empty array for empty/new repo
+            } else {
+                throw e; // Re-throw other unexpected errors
+            }
+        }
     }
 
     async listBranches(): Promise<string[]> {
@@ -215,11 +227,12 @@ class MainThreadGitService implements GitService {
         if (!branch) {
             throw new Error("Cannot push: Not currently on a branch.");
         }
+        const isNative = Capacitor.isNativePlatform();
         return git.push({
             fs: this.fs,
             http: this.http,
             dir: this.dir,
-            corsProxy: this.http === http ? auth.proxyUrl : undefined,
+            corsProxy: (this.http === http && !isNative) ? auth.proxyUrl : undefined,
             onAuth: () => ({ username: auth.token }),
             onProgress,
             ref: branch,
@@ -232,11 +245,12 @@ class MainThreadGitService implements GitService {
         if (!author) throw new Error("Cannot pull: Git author information is not configured.");
         const branch = await git.currentBranch({ fs: this.fs, dir: this.dir });
         if (!branch) throw new Error("Not on a branch, cannot pull.");
+        const isNative = Capacitor.isNativePlatform();
         await git.pull({
             fs: this.fs,
             http: this.http,
             dir: this.dir,
-            corsProxy: this.http === http ? auth?.proxyUrl : undefined,
+            corsProxy: (this.http === http && !isNative) ? auth?.proxyUrl : undefined,
             author,
             ref: branch,
             singleBranch: true,
@@ -359,11 +373,16 @@ class WorkerGitService implements GitService {
             throw new Error("Git worker is not available.");
         }
 
-        const isWrite = ['commit', 'push', 'rebase'].includes(type);
+        const isWrite = ['commit', 'push', 'rebase', 'pull'].includes(type);
         const operation = isWrite ? 'write' : 'read';
 
         const auth = this.getAuth(operation);
         const finalPayload = { ...payload, auth };
+
+        const isNative = Capacitor.isNativePlatform() || !!window.electron?.isElectron;
+        if (isNative && finalPayload.auth) {
+            delete (finalPayload.auth as any).proxyUrl;
+        }
 
         const id = uuidv4();
         

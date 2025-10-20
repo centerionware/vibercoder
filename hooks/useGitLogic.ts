@@ -59,7 +59,14 @@ export const useGitLogic = ({ gitServiceRef, activeProject, files, setFiles, set
             setFiles(clonedFiles);
         } catch (e) {
             console.error("Clone failed:", e);
-            alert(`Clone failed: ${(e as Error).message}`);
+            let errorMessage = e instanceof Error ? e.message : String(e);
+
+            // Isomorphic-git's web http client throws a generic "network error" for CORS, proxy, or actual network failures.
+            if (errorMessage.toLowerCase().includes('network error')) {
+                errorMessage += '\n\nThis often means the CORS proxy is unavailable, rate-limiting requests, or being blocked. \n\n1. Please check your network connection and try again. \n2. For a more reliable connection, we highly recommend deploying your own CORS proxy and configuring its URL in Settings > Git Configuration.';
+            }
+            
+            alert(`Clone failed: ${errorMessage}`);
         } finally {
             setIsCloning(false);
             setCloningProgress(null);

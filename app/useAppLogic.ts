@@ -45,6 +45,7 @@ import { useUIState } from '../hooks/useUIState';
 import { useVFS } from '../hooks/useVFS';
 import { useGitLogic } from '../hooks/useGitLogic';
 import { useDebug } from '../hooks/useDebug';
+import { isNativeEnvironment } from '../utils/environment';
 
 export const useAppLogic = () => {
     // --- 1. Core Data Hooks ---
@@ -150,8 +151,18 @@ export const useAppLogic = () => {
         console.log(`[Proxy] Received fetch request from preview for URL: ${url}`);
 
         try {
-            const response = await fetch(url, options);
-            console.log(`[Proxy] Main thread fetch for ${url} completed with status: ${response.status}`);
+            const isNative = isNativeEnvironment();
+            const proxyUrl = settings.gitCorsProxy;
+
+            if (!isNative && !proxyUrl) {
+                throw new Error("Cannot proxy fetch: CORS Proxy URL is not configured in settings for web environment.");
+            }
+
+            const finalUrl = isNative ? url : `${proxyUrl.replace(/\/$/, '')}/${url}`;
+            console.log(`[Proxy] Fetching final URL: ${finalUrl}`);
+            
+            const response = await fetch(finalUrl, options);
+            console.log(`[Proxy] Main thread fetch for ${finalUrl} completed with status: ${response.status}`);
             
             const responseBody = await response.arrayBuffer();
             
@@ -179,7 +190,7 @@ export const useAppLogic = () => {
                 error: error instanceof Error ? error.message : 'An unknown proxy error occurred.',
             }, { targetOrigin: event.origin });
         }
-    }, []);
+    }, [settings.gitCorsProxy]);
 
     const handleProxyIframeLoad = useCallback(async (event: MessageEvent) => {
         const { requestId, payload } = event.data;
@@ -190,17 +201,21 @@ export const useAppLogic = () => {
         console.log(`[Proxy] Received iframe load request from preview for URL: ${url}`);
 
         try {
-            const proxyUrl = settings.gitCorsProxy;
-            if (!proxyUrl) {
-                console.error('[Proxy] Cannot proxy iframe content: CORS Proxy URL is not configured in settings.');
-                throw new Error("Cannot proxy iframe content: CORS Proxy URL is not configured in settings.");
-            }
-            // Combine the proxy URL with the target URL. e.g., https://my-proxy.com/https://example.com
-            const proxiedUrl = `${proxyUrl.replace(/\/$/, '')}/${url}`;
-            console.log(`[Proxy] Fetching proxied iframe content from: ${proxiedUrl}`);
+            const isNative = isNativeEnvironment();
+            let finalUrl = url;
 
-            const response = await fetch(proxiedUrl);
-            console.log(`[Proxy] Fetch for ${proxiedUrl} completed with status: ${response.status}`);
+            if (!isNative) {
+                const proxyUrl = settings.gitCorsProxy;
+                if (!proxyUrl) {
+                    throw new Error("Cannot proxy iframe content: CORS Proxy URL is not configured in settings for web environment.");
+                }
+                finalUrl = `${proxyUrl.replace(/\/$/, '')}/${url}`;
+            }
+
+            console.log(`[Proxy] Fetching proxied iframe content from: ${finalUrl}`);
+
+            const response = await fetch(finalUrl);
+            console.log(`[Proxy] Fetch for ${finalUrl} completed with status: ${response.status}`);
 
             if (!response.ok) {
                 throw new Error(`Request failed with status ${response.status}`);
@@ -238,6 +253,14 @@ export const useAppLogic = () => {
         console.log(`[Proxy] Received navigation request from preview for URL: ${url} with method: ${method || 'GET'}`);
 
         try {
+            const isNative = isNativeEnvironment();
+            const proxyUrl = settings.gitCorsProxy;
+            if (!isNative && !proxyUrl) {
+                throw new Error("Cannot proxy navigation: CORS Proxy URL is not configured in settings for web environment.");
+            }
+            
+            const finalUrl = isNative ? url : `${proxyUrl.replace(/\/$/, '')}/${url}`;
+
             const fetchOptions: RequestInit = { method: method || 'GET', headers: {} };
 
             if (method === 'POST' && body) {
@@ -256,9 +279,9 @@ export const useAppLogic = () => {
                 }
             }
             
-            console.log(`[Proxy] Executing navigation fetch to: ${url}`, fetchOptions);
-            const response = await fetch(url, fetchOptions);
-            console.log(`[Proxy] Navigation fetch for ${url} completed with status: ${response.status}`);
+            console.log(`[Proxy] Executing navigation fetch to: ${finalUrl}`, fetchOptions);
+            const response = await fetch(finalUrl, fetchOptions);
+            console.log(`[Proxy] Navigation fetch for ${finalUrl} completed with status: ${response.status}`);
 
             if (!response.ok) {
                 throw new Error(`Navigation request failed with status ${response.status}`);
@@ -291,7 +314,7 @@ export const useAppLogic = () => {
                 payload: { error: error instanceof Error ? error.message : 'An unknown proxy error occurred.' },
             }, { targetOrigin: event.origin });
         }
-    }, []);
+    }, [settings.gitCorsProxy]);
 
     // --- 5. AI Services ---
     const aiRef = useRef<GoogleGenAI | null>(null);

@@ -39,9 +39,9 @@ async function rmrf(filepath: string) {
 
 // This is a proxy function. The actual `getGitAuth` lives on the main thread.
 // The main thread will pass the *result* of its `getGitAuth` call with each command.
-const getAuthFromPayload = (payload: any, operation: 'read' | 'write'): { token: string | undefined; author: GitAuthor; proxyUrl: string; } => {
+const getAuthFromPayload = (payload: any): { token: string | undefined; author: GitAuthor; proxyUrl: string; } => {
     if (!payload.auth) {
-        throw new Error(`Authentication details not provided for Git ${operation} operation.`);
+        throw new Error(`Authentication details not provided for Git operation.`);
     }
     return payload.auth;
 }
@@ -67,7 +67,7 @@ self.onmessage = async (event: MessageEvent) => {
     let result: any;
     switch (type) {
       case 'clone':
-        const cloneAuth = getAuthFromPayload(payload, 'read');
+        const cloneAuth = getAuthFromPayload(payload);
         const filesInRoot = await fs.promises.readdir(dir);
         for (const file of filesInRoot) {
             await rmrf(`${dir}${file}`);
@@ -93,7 +93,7 @@ self.onmessage = async (event: MessageEvent) => {
         break;
       
       case 'commit':
-        const commitAuth = getAuthFromPayload(payload, 'write');
+        const commitAuth = getAuthFromPayload(payload);
         await writeAppFilesToFs(payload.appFiles);
         const statusMatrix = await git.statusMatrix({ fs, dir, filter: f => !f.startsWith('.git/') });
         for (const [filepath, head, workdir] of statusMatrix) {
@@ -109,8 +109,18 @@ self.onmessage = async (event: MessageEvent) => {
         break;
       
       case 'log':
-        const commits = await git.log({ fs, dir, ref: payload.ref || 'HEAD' });
-        result = commits.map(c => ({ oid: c.oid, message: c.commit.message, author: { ...c.commit.author, timestamp: c.commit.author.timestamp }, parent: c.commit.parent, }));
+        try {
+            const commits = await git.log({ fs, dir, ref: payload.ref || 'HEAD' });
+            result = commits.map(c => ({ oid: c.oid, message: c.commit.message, author: { ...c.commit.author, timestamp: c.commit.author.timestamp }, parent: c.commit.parent, }));
+        } catch (e: any) {
+            // FIX: Gracefully handle empty repositories. If `git.log` fails with a NotFoundError, it likely means no commits or branches exist yet. Return an empty array, which is the correct state.
+            if (e.name === 'NotFoundError' || e.code === 'NotFoundError') {
+                console.warn(`git.log failed, likely an empty repo: ${e.message}`);
+                result = []; // Return empty array for empty/new repo
+            } else {
+                throw e; // Re-throw other unexpected errors
+            }
+        }
         break;
 
       case 'listBranches':
@@ -196,7 +206,7 @@ self.onmessage = async (event: MessageEvent) => {
         break;
         
       case 'push':
-        const pushAuth = getAuthFromPayload(payload, 'write');
+        const pushAuth = getAuthFromPayload(payload);
         const branch = await git.currentBranch({ fs, dir });
         if (!branch) {
             throw new Error("Cannot push: Not currently on a branch.");
@@ -212,16 +222,15 @@ self.onmessage = async (event: MessageEvent) => {
         break;
       
       case 'pull':
-        const pullReadAuth = getAuthFromPayload(payload, 'read');
-        const pullWriteAuth = getAuthFromPayload(payload, 'write');
+        const pullAuth = getAuthFromPayload(payload);
         const currentBranch = await git.currentBranch({ fs, dir });
         if (!currentBranch) {
           throw new Error("Not on a branch, cannot pull. Please checkout a branch first.");
         }
         await git.pull({
-            fs, http, dir, corsProxy: pullReadAuth.proxyUrl,
-            onAuth: () => ({ username: pullReadAuth.token }),
-            author: pullWriteAuth.author,
+            fs, http, dir, corsProxy: pullAuth.proxyUrl,
+            onAuth: () => ({ username: pullAuth.token }),
+            author: pullAuth.author,
             ref: currentBranch,
             singleBranch: true,
             rebase: payload.rebase,
@@ -235,7 +244,7 @@ self.onmessage = async (event: MessageEvent) => {
         break;
 
       case 'rebase':
-        const rebaseAuth = getAuthFromPayload(payload, 'write');
+        const rebaseAuth = getAuthFromPayload(payload);
         await (git as any).rebase({
             fs, dir,
             branch: payload.branch,
