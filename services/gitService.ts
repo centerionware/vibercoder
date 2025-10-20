@@ -65,15 +65,21 @@ class MainThreadGitService implements GitService {
         const auth = this.getAuth('read');
         const isNative = Capacitor.isNativePlatform() || !!window.electron?.isElectron;
         await this.clearFs();
-        await git.clone({
+
+        const options = {
             fs: this.fs,
             http: this.http,
             dir: this.dir,
-            corsProxy: isNative ? undefined : auth?.proxyUrl,
             url,
             onAuth: () => ({ username: auth?.token }),
             onProgress,
-        });
+        };
+
+        if (!isNative) {
+            (options as any).corsProxy = auth?.proxyUrl;
+        }
+
+        await git.clone(options as any);
         const files = await this.getWorkingDirFiles();
         return { files };
     }
@@ -207,15 +213,21 @@ class MainThreadGitService implements GitService {
             throw new Error("Cannot push: Not currently on a branch.");
         }
         const isNative = Capacitor.isNativePlatform() || !!window.electron?.isElectron;
-        return git.push({
+
+        const options = {
             fs: this.fs,
             http: this.http,
             dir: this.dir,
-            corsProxy: isNative ? undefined : auth.proxyUrl,
             onAuth: () => ({ username: auth.token }),
             onProgress,
             ref: branch,
-        });
+        };
+
+        if (!isNative) {
+            (options as any).corsProxy = auth.proxyUrl;
+        }
+
+        return git.push(options as any);
     }
 
     async pull(rebase: boolean, onProgress?: (progress: GitProgress) => void): Promise<{ files: Record<string, string>; status: GitStatus[] }> {
@@ -225,18 +237,24 @@ class MainThreadGitService implements GitService {
         const branch = await git.currentBranch({ fs: this.fs, dir: this.dir });
         if (!branch) throw new Error("Not on a branch, cannot pull.");
         const isNative = Capacitor.isNativePlatform() || !!window.electron?.isElectron;
-        await git.pull({
+        
+        const options = {
             fs: this.fs,
             http: this.http,
             dir: this.dir,
-            corsProxy: isNative ? undefined : auth?.proxyUrl,
             author,
             ref: branch,
             singleBranch: true,
             rebase,
             onAuth: () => ({ username: auth?.token }),
             onProgress,
-        } as any);
+        };
+
+        if (!isNative) {
+            (options as any).corsProxy = auth?.proxyUrl;
+        }
+
+        await git.pull(options as any);
         const newFiles = await this.getWorkingDirFiles();
         const newStatus = await this.status(newFiles);
         return { files: newFiles, status: newStatus };
