@@ -55,9 +55,33 @@ class MainThreadGitService implements GitService {
         }
     }
     
+    private async rmrf(filepath: string) {
+        let stat;
+        try {
+            stat = await this.fs.promises.stat(filepath);
+        } catch (err) {
+            if (err.code === 'ENOENT') return; // File doesn't exist, we're done.
+            throw err;
+        }
+
+        if (stat.isDirectory()) {
+            const files = await this.fs.promises.readdir(filepath);
+            await Promise.all(
+                files.map(file => {
+                    const childPath = filepath === '/' ? `/${file}` : `${filepath}/${file}`;
+                    return this.rmrf(childPath);
+                })
+            );
+            await this.fs.promises.rmdir(filepath);
+        } else {
+            await this.fs.promises.unlink(filepath);
+        }
+    }
+
     private async clearFs() {
-        for (const file of await this.fs.promises.readdir(this.dir)) {
-            await (this.fs.promises as any).rm(`${this.dir}${file}`, { recursive: true, force: true });
+        const filesInRoot = await this.fs.promises.readdir(this.dir);
+        for (const file of filesInRoot) {
+            await this.rmrf(`/${file}`);
         }
     }
 

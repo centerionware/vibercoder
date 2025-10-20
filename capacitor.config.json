@@ -3,7 +3,11 @@
   "appName": "VibeCode",
   "webDir": "www",
   "server": {
-    "androidScheme": "https"
+    "androidScheme": "https",
+    "allowNavigation": [
+      "github.com",
+      "*.github.com"
+    ]
   },
   "plugins": {
     "SplashScreen": {
