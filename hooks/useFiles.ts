@@ -50,7 +50,7 @@ h1 {
 };
 
 export const useFiles = () => {
-    const [files, setFiles] = useState<Record<string, string>>(initialFiles);
+    const [files, setFiles] = useState<Record<string, string>>({});
     const [activeFile, setActiveFile] = useState<string | null>('index.tsx');
 
     const handleWriteFile = useCallback((filename: string, content: string) => {

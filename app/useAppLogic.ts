@@ -1,6 +1,5 @@
 
 
-
 // =================================================================================================
 // ARCHITECTURAL NOTE: This file is an ORCHESTRATOR.
 //
@@ -25,7 +24,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { View, GitService, UseAiLiveProps, GitCredential, AppSettings, GitAuthor, LiveSessionControls, PreviewLogEntry, Project } from '../types';
 
 // Core Data Hooks
-import { useFiles } from '../hooks/useFiles';
+import { useFiles, initialFiles } from '../hooks/useFiles';
 import { useThreads } from '../hooks/useThreads';
 import { useSettings } from '../hooks/useSettings';
 import { useProjects } from '../hooks/useProjects';
@@ -67,6 +66,7 @@ export const useAppLogic = () => {
     const gitServiceRef = useRef<GitService | null>(null);
     const [isCloning, setIsCloning] = useState(false);
     const [cloningProgress, setCloningProgress] = useState<string | null>(null);
+    const [isProjectLoaded, setIsProjectLoaded] = useState(false);
     
     const getAuth = useCallback((operation: 'read' | 'write'): ({ token: string | undefined; author: GitAuthor; proxyUrl: string; }) | null => {
         const projectGitSettings = activeProject?.gitSettings || { source: 'global' };
@@ -113,48 +113,84 @@ export const useAppLogic = () => {
         gitServiceRef.current = createGitService(true, activeProject?.id || null, getAuth);
     }, [activeProject?.id, getAuth]);
 
+    // Effect to load files when the active project changes.
+    useEffect(() => {
+        if (!activeProject) {
+            setIsProjectLoaded(true); // No project, but loading is "done".
+            return;
+        }
+
+        const loadFilesForProject = async () => {
+            setIsProjectLoaded(false);
+            const svc = gitServiceRef.current;
+            if (svc && svc.isReal) {
+                console.log(`Loading files for project: ${activeProject.name}`);
+                try {
+                    const projectFiles = await svc.getWorkingDirFiles();
+                    if (Object.keys(projectFiles).length > 0) {
+                        setFiles(projectFiles);
+                    } else {
+                        const headFiles = await svc.getHeadFiles();
+                        if (Object.keys(headFiles).length > 0) {
+                            setFiles(headFiles);
+                        } else {
+                            setFiles(initialFiles); // Empty repo
+                        }
+                    }
+                } catch (e) {
+                    console.error("Failed to load project files from git:", e);
+                    setFiles(initialFiles); // Fallback
+                }
+            } else {
+                setFiles(initialFiles); // Not a git project or service not ready
+            }
+            setIsProjectLoaded(true);
+        };
+
+        loadFilesForProject();
+    }, [activeProject?.id]);
+
+
     const gitLogic = useGitLogic({
         gitServiceRef, activeProject, files, setFiles, setActiveFile,
     });
     
     const handleClone = async (url: string, name: string, credentialId?: string | null) => {
         setIsCloning(true);
-        setCloningProgress("Creating new project...");
-        let tempGitService: GitService | null = null;
-        let newProject: Project | null = null;
+        setCloningProgress("Creating project entry...");
+        
+        // 1. Create the project entry, but DO NOT switch to it yet.
+        const newProject = await createNewProject(name, false, url, { source: 'specific', credentialId: credentialId || undefined });
+
+        // 2. Create a temporary, isolated Git service for the new project's ID.
+        const cloneService = createGitService(true, newProject.id, getAuth);
+
+        if (!cloneService.isReal) {
+            setIsCloning(false);
+            setCloningProgress(null);
+            alert("Git service could not be initialized. Cannot clone.");
+            await deleteProject(newProject.id); // Cleanup
+            return;
+        }
+
         try {
-            // Create the project entry first, but don't switch to it yet.
-            newProject = await createNewProject(name, false, url, { source: 'specific', credentialId: credentialId || undefined });
-            
-            // Create a temporary, dedicated git service for this new project ID.
-            tempGitService = createGitService(true, newProject.id, (op) => getAuth(op)); // Pass getAuth to create a valid closure
-            if (!tempGitService || !tempGitService.isReal) {
-                throw new Error("Git is not initialized. Cannot clone.");
-            }
-            
             setCloningProgress("Initializing clone...");
-            const { files: clonedFiles } = await tempGitService.clone(url, (progress) => {
+            // 3. Perform the clone. This populates the FS for the new project.
+            await cloneService.clone(url, (progress) => {
                 setCloningProgress(`${progress.phase} (${progress.loaded}/${progress.total})`);
             });
+
+            setCloningProgress("Clone complete. Finalizing...");
             
-            // Now, switch to the project and set the files.
+            // 4. Now that files are ready, switch to the project.
+            // The file loading useEffect will then automatically pick up the cloned files.
             switchProject(newProject.id);
-            setFiles(clonedFiles);
-
-        } catch (e) {
-            console.error("Clone failed:", e);
-            let errorMessage = e instanceof Error ? e.message : String(e);
             
-            // If the project was created but clone failed, delete it to avoid leaving an empty project.
-            if (newProject) {
-                deleteProject(newProject.id);
-            }
-
-            if (errorMessage.toLowerCase().includes('network error')) {
-                errorMessage += '\n\nThis often means the CORS proxy is unavailable, rate-limiting requests, or being blocked. \n\n1. Please check your network connection and try again. \n2. For a more reliable connection, we highly recommend deploying your own CORS proxy and configuring its URL in Settings > Git Configuration.';
-            }
-            
-            alert(`Clone failed: ${errorMessage}`);
+        } catch (error) {
+            console.error("Clone failed:", error);
+            alert(`Clone failed: ${error instanceof Error ? error.message : String(error)}`);
+            // Cleanup the failed project entry.
+            await deleteProject(newProject.id);
         } finally {
             setIsCloning(false);
             setCloningProgress(null);
@@ -434,7 +470,7 @@ export const useAppLogic = () => {
     // --- 6. Return Aggregated State ---
     return {
         // Project & File State
-        activeProject, projects, files, activeFile,
+        activeProject, projects, files, activeFile, isProjectLoaded,
         // UI State & Navigation
         activeView, onNavigate: setActiveView, ...uiState,
         isFullScreen: uiState.isFullScreen, onToggleFullScreen: () => uiState.setIsFullScreen(p => !p),

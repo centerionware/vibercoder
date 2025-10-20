@@ -522,17 +522,17 @@ export function createGitService(isReal: boolean, projectId: string | null, getA
   }
   
   const isInIframe = window.self !== window.top;
-  const isNative = Capacitor.isNativePlatform() || !!window.electron?.isElectron;
+  const isElectron = !!window.electron?.isElectron;
 
-  // Use the main-thread service for Electron, Capacitor, OR if inside the preview iframe where workers fail.
-  // Main thread is needed for native platforms to access their specific http bridges (Electron IPC) or to avoid fetch issues in Capacitor workers.
-  if (isNative || isInIframe) {
-    console.log(`Initializing main-thread Git Service for project ${projectId}. Is native: ${isNative}, In iframe: ${isInIframe}`);
+  // Use the main-thread service for Electron (needs IPC bridge) or if inside the preview iframe (where workers fail).
+  // Capacitor (isNativePlatform()) will now fall through and use the worker, preventing UI freezes.
+  if (isElectron || isInIframe) {
+    console.log(`Initializing main-thread Git Service for project ${projectId}. Is Electron: ${isElectron}, In iframe: ${isInIframe}`);
     return new MainThreadGitService(projectId, getAuthCallback);
   }
   
-  // Use the worker-based service for standard web environments for performance
-  console.log(`Initializing worker-based Git Service for project ${projectId} (Web Environment).`);
+  // Use the worker-based service for standard web and Capacitor environments for performance
+  console.log(`Initializing worker-based Git Service for project ${projectId}.`);
   const workerService = new WorkerGitService(projectId);
   // Pass the auth callback to the worker. It will be passed back with every command.
   (workerService as any).getAuth = getAuthCallback;

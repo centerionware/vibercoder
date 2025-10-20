@@ -27,7 +27,7 @@ const App = () => {
     setIsNative(Capacitor.isNativePlatform());
   }, []);
 
-  if (!app.activeProject) {
+  if (!app.isProjectLoaded) {
     return (
       <div className="bg-vibe-bg-deep h-screen w-screen flex flex-col items-center justify-center">
         <SpinnerIcon className="w-8 h-8 text-vibe-accent" />
