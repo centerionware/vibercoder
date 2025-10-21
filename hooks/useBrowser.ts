@@ -114,10 +114,11 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
         return;
     }
     // Find all iframes not belonging to our app UI
-    const allIframes = Array.from(document.querySelectorAll('iframe:not(#preview-iframe)'));
+    // FIX: Specify HTMLIFrameElement as the generic type for querySelectorAll to resolve the type mismatch.
+    const allIframes = Array.from(document.querySelectorAll<HTMLIFrameElement>('iframe:not(#preview-iframe)'));
     const knownElements = Object.values(browserElements.current);
     // FIX: Explicitly type `el` as HTMLElement to allow calling .querySelector().
-    const knownIframes = knownElements.map((el: HTMLElement) => el.querySelector('iframe')).filter(Boolean);
+    const knownIframes = knownElements.map((el: HTMLElement) => el.querySelector<HTMLIFrameElement>('iframe')).filter((el): el is HTMLIFrameElement => !!el);
     const newIframe = allIframes.find(iframe => !knownIframes.includes(iframe));
 
     if (newIframe) {
@@ -220,7 +221,7 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
             });
         }
     }
-  }, [activeTabId, isBrowserViewActive, tabs, containerRef.current]);
+  }, [activeTabId, isBrowserViewActive, tabs, containerRef]);
 
 
   const openNewTab = useCallback((url: string = 'https://google.com') => {
