@@ -37,7 +37,6 @@ interface InAppBrowser {
 
 const BROWSER_TABS_KEY = 'vibecode_browserTabs';
 const ACTIVE_TAB_ID_KEY = 'vibecode_activeTabId';
-const STYLE_OVERRIDE_ID = 'inappbrowser-style-override';
 
 const getFaviconUrl = (url: string): string => {
   try {
@@ -48,44 +47,16 @@ const getFaviconUrl = (url: string): string => {
   }
 };
 
-const updateBrowserStyles = (containerEl: HTMLElement | null, isActive: boolean) => {
-    let styleEl = document.getElementById(STYLE_OVERRIDE_ID);
-    if (!styleEl) {
-        styleEl = document.createElement('style');
-        styleEl.id = STYLE_OVERRIDE_ID;
-        document.head.appendChild(styleEl);
-    }
-    
-    if (containerEl && isActive) {
-        const rect = containerEl.getBoundingClientRect();
-        // The plugin creates a div wrapper around the iframe. We must target this wrapper.
-        // It often has a high z-index and fixed position.
-        // This selector is a bit brittle but targets the likely wrapper div.
-        styleEl.innerHTML = `
-            div[style*="z-index: 20"] {
-                position: fixed !important;
-                top: ${rect.top}px !important;
-                left: ${rect.left}px !important;
-                width: ${rect.width}px !important;
-                height: ${rect.height}px !important;
-                z-index: 1 !important; /* Lower z-index to be below headers */
-                display: block !important;
-            }
-        `;
-    } else {
-        // Hide the browser when not active or if the container doesn't exist.
-        styleEl.innerHTML = `div[style*="z-index: 20"] { display: none !important; }`;
-    }
-};
-
 
 export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
   const [tabs, setTabs] = useState<BrowserTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [isTabBarCollapsed, setIsTabBarCollapsed] = useState(false);
   const browserInstances = useRef<Record<string, InAppBrowser>>({});
+  const browserElements = useRef<Record<string, HTMLElement>>({});
   const containerRef = useRef<HTMLDivElement>(null);
-  
+  const [, forceUpdate] = useState({}); // To trigger re-renders for layout effects
+
   // Load tabs from localStorage on initial mount
   useEffect(() => {
     try {
@@ -93,11 +64,13 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
       const savedActiveTabId = safeLocalStorage.getItem(ACTIVE_TAB_ID_KEY);
       if (savedTabs) {
         const parsedTabs = JSON.parse(savedTabs);
-        setTabs(parsedTabs);
-        if (savedActiveTabId && parsedTabs.some((t: BrowserTab) => t.id === savedActiveTabId)) {
-          setActiveTabId(savedActiveTabId);
-        } else if (parsedTabs.length > 0) {
-          setActiveTabId(parsedTabs[0].id);
+        if (Array.isArray(parsedTabs) && parsedTabs.length > 0) {
+            setTabs(parsedTabs);
+            if (savedActiveTabId && parsedTabs.some((t: BrowserTab) => t.id === savedActiveTabId)) {
+            setActiveTabId(savedActiveTabId);
+            } else {
+            setActiveTabId(parsedTabs[0].id);
+            }
         }
       }
     } catch (e) {
@@ -122,8 +95,8 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
     return () => {
       // FIX: The Object.values method was returning an array of 'unknown' type. Explicitly typing the instance to the 'InAppBrowser' interface resolves the type error and allows access to the 'close' method.
       Object.values(browserInstances.current).forEach((instance: InAppBrowser) => instance.close());
-      const styleEl = document.getElementById(STYLE_OVERRIDE_ID);
-      if (styleEl) styleEl.remove();
+      // FIX: Explicitly type `el` as HTMLElement to allow calling the .remove() method.
+      Object.values(browserElements.current).forEach((el: HTMLElement) => el.remove());
     };
   }, []);
 
@@ -135,25 +108,35 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
     );
   }, []);
 
-  // Effect to manage the position and visibility of the browser view
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
+  const findAndAssociateElement = useCallback((tabId: string, attempt = 0) => {
+    if (attempt > 20) { // Give up after 2 seconds
+        console.error(`Could not find browser element for tab ${tabId}`);
+        return;
+    }
+    // Find all iframes not belonging to our app UI
+    const allIframes = Array.from(document.querySelectorAll('iframe:not(#preview-iframe)'));
+    const knownElements = Object.values(browserElements.current);
+    // FIX: Explicitly type `el` as HTMLElement to allow calling .querySelector().
+    const knownIframes = knownElements.map((el: HTMLElement) => el.querySelector('iframe')).filter(Boolean);
+    const newIframe = allIframes.find(iframe => !knownIframes.includes(iframe));
 
-    // This observer will automatically update the browser's position when the layout changes.
-    const resizeObserver = new ResizeObserver(() => {
-        updateBrowserStyles(container, isBrowserViewActive);
-    });
-
-    resizeObserver.observe(container);
-    updateBrowserStyles(container, isBrowserViewActive);
-
-    return () => {
-      resizeObserver.unobserve(container);
-      // Hide the browser when the component unmounts
-      updateBrowserStyles(null, false);
-    };
-  }, [isBrowserViewActive]);
+    if (newIframe) {
+        let wrapper = newIframe.parentElement;
+        // The cordova-plugin-inappbrowser on web platform creates a div wrapper that is a direct child of body
+        while(wrapper && wrapper.parentElement !== document.body) {
+            wrapper = wrapper.parentElement;
+        }
+        if (wrapper && wrapper.tagName === 'DIV') {
+            console.log(`Associated browser DOM element for tab ${tabId}`);
+            browserElements.current[tabId] = wrapper;
+            forceUpdate({}); // Trigger layout effect to position it
+        } else {
+            setTimeout(() => findAndAssociateElement(tabId, attempt + 1), 100);
+        }
+    } else {
+        setTimeout(() => findAndAssociateElement(tabId, attempt + 1), 100);
+    }
+  }, []);
   
   // Effect to manage the browser instances themselves (creating/destroying)
   useEffect(() => {
@@ -161,14 +144,15 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
       const openTabIds = new Set(tabs.map(t => t.id));
       Object.keys(browserInstances.current).forEach(tabId => {
           if (!openTabIds.has(tabId)) {
-              browserInstances.current[tabId].close();
+              browserInstances.current[tabId]?.close();
+              browserElements.current[tabId]?.remove();
               delete browserInstances.current[tabId];
+              delete browserElements.current[tabId];
           }
       });
 
       const activeTab = tabs.find(t => t.id === activeTabId);
 
-      // Create instance for active tab if it doesn't exist
       if (activeTab && !browserInstances.current[activeTab.id]) {
           if (!window.cordova || !window.cordova.InAppBrowser) {
               console.error("Cordova InAppBrowser plugin not found. Browser functionality is disabled.");
@@ -178,9 +162,9 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
 
           updateTab(activeTab.id, { isLoading: true });
           
-          // 'hidden=no' is important. We control visibility with our CSS override.
-          const iab = window.cordova.InAppBrowser.open(activeTab.url, '_blank', 'location=no,toolbar=no,zoom=no');
+          const iab = window.cordova.InAppBrowser.open(activeTab.url, '_blank', 'location=no,toolbar=no,zoom=no,hidden=yes');
           browserInstances.current[activeTab.id] = iab;
+          findAndAssociateElement(activeTab.id);
 
           const onLoadStart = (event: InAppBrowserEvent) => updateTab(activeTab.id, { isLoading: true, url: event.url });
           const onLoadStop = (event: InAppBrowserEvent) => {
@@ -196,9 +180,47 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
           iab.addEventListener('loaderror', onLoadError);
       }
       
-      // We no longer call show/hide here; it's all handled by the style override logic.
+  }, [tabs, activeTabId, updateTab, findAndAssociateElement]);
 
-  }, [tabs, activeTabId, updateTab]);
+  // Main layout effect for DOM manipulation
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const activeElement = activeTabId ? browserElements.current[activeTabId] : null;
+
+    // Hide all browser elements first
+    // FIX: Explicitly type `el` as HTMLElement to allow accessing the .style property.
+    Object.values(browserElements.current).forEach((el: HTMLElement) => {
+        el.style.display = 'none';
+    });
+
+    if (activeElement && isBrowserViewActive) {
+        // This is the element we want to show. Move it into our container.
+        if (activeElement.parentElement !== container) {
+            container.appendChild(activeElement);
+        }
+        
+        // Force styles to make it behave
+        Object.assign(activeElement.style, {
+            position: 'relative',
+            top: '0', left: '0',
+            width: '100%', height: '100%',
+            zIndex: '1',
+            display: 'block'
+        });
+
+        // Also style the iframe within it
+        const iframe = activeElement.querySelector('iframe');
+        if (iframe) {
+            Object.assign(iframe.style, {
+                width: '100%',
+                height: '100%',
+                border: 'none'
+            });
+        }
+    }
+  }, [activeTabId, isBrowserViewActive, tabs, containerRef.current]);
 
 
   const openNewTab = useCallback((url: string = 'https://google.com') => {
@@ -217,18 +239,11 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
 
   const switchToTab = useCallback((tabId: string) => {
     if (tabId !== activeTabId) {
-      // Hide old instance before switching, to prevent flicker.
-      const oldInstance = browserInstances.current[activeTabId!];
-      if (oldInstance) oldInstance.hide();
-      
       setActiveTabId(tabId);
     }
   }, [activeTabId]);
 
   const closeTab = useCallback((tabId: string) => {
-    const instance = browserInstances.current[tabId];
-    if (instance) instance.close();
-    // The instance removal from the ref is handled by the main useEffect
     setTabs(prev => {
       const remainingTabs = prev.filter(t => t.id !== tabId);
       if (tabId === activeTabId) {
@@ -240,12 +255,22 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
   }, [activeTabId]);
   
   const navigateTo = (tabId: string, url: string) => {
+      // Re-create the instance to navigate, which is how IAB works
       const instance = browserInstances.current[tabId];
-      if (instance) instance.close();
+      if (instance) {
+        instance.close();
+        delete browserInstances.current[tabId];
+      }
+      const element = browserElements.current[tabId];
+      if(element) {
+        element.remove();
+        delete browserElements.current[tabId];
+      }
       
       updateTab(tabId, { url, title: 'Loading...', favicon: getFaviconUrl(url), isLoading: true });
 
       if (tabId !== activeTabId) setActiveTabId(tabId);
+      else forceUpdate({}); // Force re-creation if already active
   };
   
   const executeScriptOnTab = <T extends any>(tabId: string, script: string): Promise<T> => {
