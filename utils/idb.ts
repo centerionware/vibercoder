@@ -1,6 +1,6 @@
 import { Dexie, Table } from 'dexie';
 import { v4 as uuidv4 } from 'uuid';
-import { Project, ChatThread, GitCredential, Prompt } from '../types';
+import { Project, ChatThread, GitCredential, Prompt, ProjectFile } from '../types';
 import { defaultPrompts } from '../prompts/defaultPrompts';
 
 export class VibeCodeDB extends Dexie {
@@ -10,10 +10,22 @@ export class VibeCodeDB extends Dexie {
   prompts!: Table<Prompt>;
   virtualStorage!: Table<any>;
   vfsSessions!: Table<any>;
+  projectFiles!: Table<ProjectFile>;
 
   constructor() {
     super('vibecodeDB');
-    // Bump version to 9 for VFS sessions table
+    // Bump version to 10 for projectFiles table
+    // FIX: Cast `this` to `any` to call the `version` method, resolving a TypeScript type error with Dexie's dynamic methods.
+    (this as any).version(10).stores({
+      projects: '++id, &name, gitRemoteUrl, gitSettings',
+      threads: '++id, projectId',
+      gitCredentials: '++id, name, isDefault',
+      prompts: '&id', // 'id' is the prompt key
+      virtualStorage: '++id, &[storageKey+api+key], storageKey',
+      vfsSessions: '&threadId, lastUpdatedAt', // Primary key is threadId
+      projectFiles: '++id, &[projectId+filepath], projectId',
+    });
+    // Migrate from version 9
     (this as any).version(9).stores({
       projects: '++id, &name, gitRemoteUrl, gitSettings',
       threads: '++id, projectId',

@@ -1,5 +1,3 @@
-
-
 // =================================================================================================
 // ARCHITECTURAL NOTE: This file is an ORCHESTRATOR.
 //
@@ -22,6 +20,7 @@ import { v4 as uuidv4 } from 'uuid';
 // FIX: Import `Project` to resolve the 'Cannot find name' error.
 // FIX: Import `LiveSessionControls` to correctly type the ref for live session methods.
 import { View, GitService, UseAiLiveProps, GitCredential, AppSettings, GitAuthor, LiveSessionControls, PreviewLogEntry, Project } from '../types';
+import { db } from '../utils/idb';
 
 // Core Data Hooks
 import { useFiles, initialFiles } from '../hooks/useFiles';
@@ -52,7 +51,7 @@ export const useAppLogic = () => {
     // --- 1. Core Data Hooks ---
     const { settings, setSettings, isSettingsLoaded } = useSettings();
     const { projects, activeProject, createNewProject, switchProject, deleteProject, updateProject } = useProjects();
-    const { files, setFiles, activeFile, setActiveFile, onWriteFile, onRemoveFile } = useFiles();
+    const { files, setFiles, activeFile, setActiveFile, onWriteFile, onRemoveFile } = useFiles(activeProject?.id || null);
     const { gitCredentials, createGitCredential, deleteGitCredential, setDefaultGitCredential } = useGitCredentials();
     const { prompts, createPrompt, updatePrompt, revertToVersion, deletePrompt: deletePromptHook } = usePrompts();
     const { threads, activeThread, activeThreadId, createNewThread, switchThread, deleteThread, addMessage, updateMessage, updateHistory, updateThread } = useThreads(activeProject?.id || null);
@@ -115,40 +114,70 @@ export const useAppLogic = () => {
 
     // Effect to load files when the active project changes.
     useEffect(() => {
-        if (!activeProject) {
-            setIsProjectLoaded(true); // No project, but loading is "done".
+        if (!activeProject || !isSettingsLoaded) {
+            if (!activeProject) setIsProjectLoaded(true); // If there are no projects, we are "loaded"
             return;
         }
 
         const loadFilesForProject = async () => {
             setIsProjectLoaded(false);
-            const svc = gitServiceRef.current;
-            if (svc && svc.isReal) {
-                console.log(`Loading files for project: ${activeProject.name}`);
-                try {
-                    const projectFiles = await svc.getWorkingDirFiles();
-                    if (Object.keys(projectFiles).length > 0) {
-                        setFiles(projectFiles);
-                    } else {
-                        const headFiles = await svc.getHeadFiles();
-                        if (Object.keys(headFiles).length > 0) {
-                            setFiles(headFiles);
-                        } else {
-                            setFiles(initialFiles); // Empty repo
-                        }
-                    }
-                } catch (e) {
-                    console.error("Failed to load project files from git:", e);
-                    setFiles(initialFiles); // Fallback
-                }
+            setActiveFile(null);
+
+            // 1. Check for local changes first.
+            const dbFiles = await db.projectFiles.where('projectId').equals(activeProject.id).toArray();
+            
+            let finalFiles: Record<string, string>;
+
+            if (dbFiles.length > 0) {
+                // 2. If local files exist, they are the complete source of truth. No Git needed.
+                console.log(`Loading project '${activeProject.name}' from IndexedDB.`);
+                finalFiles = dbFiles.reduce((acc, file) => {
+                    acc[file.filepath] = file.content;
+                    return acc;
+                }, {} as Record<string, string>);
+                // This call just updates the in-memory state. It will trigger the `useFiles` `handleSetFiles`,
+                // but since the content is identical, it's a quick operation.
+                setFiles(finalFiles);
             } else {
-                setFiles(initialFiles); // Not a git project or service not ready
+                // 3. If NO local files exist, establish a baseline from Git or defaults.
+                console.log(`No local data for '${activeProject.name}'. Establishing baseline.`);
+                const svc = gitServiceRef.current;
+                if (svc && svc.isReal && activeProject.gitRemoteUrl) {
+                    console.log(`Fetching from Git HEAD for '${activeProject.name}'.`);
+                    try {
+                        finalFiles = await svc.getHeadFiles();
+                        if (Object.keys(finalFiles).length === 0) {
+                            console.log("Git repository is empty. Initializing with default files.");
+                            finalFiles = initialFiles;
+                        }
+                    } catch (e) {
+                        console.error("Failed to fetch from git, using initial files as fallback:", e);
+                        finalFiles = initialFiles;
+                    }
+                } else {
+                    console.log(`Initializing project '${activeProject.name}' with default files.`);
+                    finalFiles = initialFiles;
+                }
+                
+                // 4. CRITICAL: Persist this complete baseline to IndexedDB for future loads.
+                // The `setFiles` hook will handle wiping any old entries and bulk-adding the new set.
+                console.log(`Persisting baseline for '${activeProject.name}' to IndexedDB.`);
+                setFiles(finalFiles);
             }
+            
+            // 5. Set the active file for the UI.
+            if (finalFiles[activeProject.entryPoint]) {
+                setActiveFile(activeProject.entryPoint);
+            } else if (Object.keys(finalFiles).length > 0) {
+                // Sort to get a predictable file if entryPoint is missing
+                setActiveFile(Object.keys(finalFiles).sort()[0]);
+            }
+            
             setIsProjectLoaded(true);
         };
 
         loadFilesForProject();
-    }, [activeProject?.id]);
+    }, [activeProject, isSettingsLoaded]);
 
 
     const gitLogic = useGitLogic({
@@ -176,14 +205,20 @@ export const useAppLogic = () => {
         try {
             setCloningProgress("Initializing clone...");
             // 3. Perform the clone. This populates the FS for the new project.
-            await cloneService.clone(url, (progress) => {
+            const { files: clonedFiles } = await cloneService.clone(url, (progress) => {
                 setCloningProgress(`${progress.phase} (${progress.loaded}/${progress.total})`);
             });
+            
+            // 4. Manually save the cloned files to the database for the new project ID.
+            const filesToBulkAdd = Object.entries(clonedFiles).map(([filepath, content]) => ({ projectId: newProject.id, filepath, content }));
+            if (filesToBulkAdd.length > 0) {
+                await db.projectFiles.bulkAdd(filesToBulkAdd);
+            }
 
             setCloningProgress("Clone complete. Finalizing...");
             
-            // 4. Now that files are ready, switch to the project.
-            // The file loading useEffect will then automatically pick up the cloned files.
+            // 5. Now that files are persisted, switch to the project.
+            // The file loading useEffect will then automatically pick up the files from the DB.
             switchProject(newProject.id);
             
         } catch (error) {

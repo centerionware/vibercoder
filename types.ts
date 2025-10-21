@@ -37,6 +37,13 @@ export interface Project {
   gitSettings: GitSettings;
 }
 
+export interface ProjectFile {
+    id?: number;
+    projectId: string;
+    filepath: string;
+    content: string;
+}
+
 // --- AI & Chat ---
 
 export interface ChatThread {
