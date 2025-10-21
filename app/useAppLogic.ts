@@ -444,7 +444,7 @@ export const useAppLogic = () => {
         }
     }, [settings.apiKey, isSettingsLoaded]);
 
-    const browserControls = useBrowser();
+    const browserControls = useBrowser(activeView === View.Browser);
     const browserControlsRef = useRef<BrowserControls>();
     browserControlsRef.current = browserControls;
 

@@ -285,6 +285,7 @@ export interface BrowserControls {
   toggleTabBar: () => void;
   getPageContent: (tabId: string) => Promise<string>;
   interactWithPage: (tabId: string, selector: string, action: 'click' | 'type', value?: string) => Promise<string>;
+  containerRef: React.RefObject<HTMLDivElement>;
 }
 
 
