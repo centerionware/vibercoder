@@ -11,55 +11,92 @@ const log = (message) => console.log(`[Permissions] ${message}`);
 
 // --- Android Configuration ---
 function configureAndroid() {
+    // Part 1: Configure AndroidManifest.xml for permissions
     const manifestPath = path.resolve(__dirname, '..', 'android/app/src/main/AndroidManifest.xml');
     if (!fs.existsSync(manifestPath)) {
-        log('AndroidManifest.xml not found, skipping Android configuration.');
-        return;
-    }
-    log(`Configuring AndroidManifest.xml at: ${manifestPath}`);
+        log('AndroidManifest.xml not found, skipping manifest configuration.');
+    } else {
+        log(`Configuring AndroidManifest.xml at: ${manifestPath}`);
+        let manifest = fs.readFileSync(manifestPath, 'utf8');
+        let manifestChangesMade = false;
 
-    let manifest = fs.readFileSync(manifestPath, 'utf8');
+        const permissions = [
+            'android.permission.INTERNET',
+            'android.permission.CAMERA',
+            'android.permission.RECORD_AUDIO',
+            'android.permission.MODIFY_AUDIO_SETTINGS' // Useful for audio routing
+        ];
 
-    const permissions = [
-        'android.permission.INTERNET',
-        'android.permission.CAMERA',
-        'android.permission.RECORD_AUDIO',
-        'android.permission.MODIFY_AUDIO_SETTINGS' // Useful for audio routing
-    ];
-
-    let changesMade = false;
-    // Add permissions just before the <application> tag for convention
-    const manifestMarker = '<application';
-    for (const permission of permissions) {
-        const permissionTag = `<uses-permission android:name="${permission}" />`;
-        if (!manifest.includes(permissionTag)) {
+        const manifestMarker = '<application';
+        for (const permission of permissions) {
+            const permissionTag = `<uses-permission android:name="${permission}" />`;
+            if (!manifest.includes(permissionTag)) {
+                manifest = manifest.replace(
+                    manifestMarker,
+                    `    ${permissionTag}\n    ${manifestMarker}`
+                );
+                log(`  + Added permission: ${permission}`);
+                manifestChangesMade = true;
+            } else {
+                log(`  ✓ Permission already exists: ${permission}`);
+            }
+        }
+        
+        if (!manifest.includes('android:usesCleartextTraffic="true"')) {
             manifest = manifest.replace(
-                manifestMarker,
-                `    ${permissionTag}\n    ${manifestMarker}`
+                '<application',
+                '<application android:usesCleartextTraffic="true"'
             );
-            log(`  + Added permission: ${permission}`);
-            changesMade = true;
+            log('  + Added usesCleartextTraffic="true" to application tag.');
+            manifestChangesMade = true;
+        }
+
+        if (manifestChangesMade) {
+            fs.writeFileSync(manifestPath, manifest, 'utf8');
+            log('AndroidManifest.xml updated successfully.');
         } else {
-            log(`  ✓ Permission already exists: ${permission}`);
+            log('AndroidManifest.xml already up-to-date.');
         }
     }
-    
-    // Add usesCleartextTraffic for local development and connecting to local servers if needed
-    if (!manifest.includes('android:usesCleartextTraffic="true"')) {
-        manifest = manifest.replace(
-            '<application',
-            '<application android:usesCleartextTraffic="true"'
-        );
-        log('  + Added usesCleartextTraffic="true" to application tag.');
-        changesMade = true;
+
+    // Part 2: Configure variables.gradle for minSdkVersion
+    const variablesGradlePath = path.resolve(__dirname, '..', 'android/variables.gradle');
+    if (!fs.existsSync(variablesGradlePath)) {
+        log('variables.gradle not found, skipping minSdkVersion configuration. This may be an error if an Android project exists.');
+        return; 
     }
 
-
-    if (changesMade) {
-        fs.writeFileSync(manifestPath, manifest, 'utf8');
-        log('AndroidManifest.xml updated successfully.');
+    log(`Configuring variables.gradle at: ${variablesGradlePath}`);
+    let gradleFile = fs.readFileSync(variablesGradlePath, 'utf8');
+    let gradleChangesMade = false;
+    const newMinSdkVersion = 26;
+    const minSdkVersionRegex = /(minSdkVersion\s*=\s*)(\d+)/;
+    
+    if (minSdkVersionRegex.test(gradleFile)) {
+        const currentVersion = parseInt(gradleFile.match(minSdkVersionRegex)[2], 10);
+        if (currentVersion !== newMinSdkVersion) {
+            gradleFile = gradleFile.replace(minSdkVersionRegex, `$1${newMinSdkVersion}`);
+            log(`  + Updated minSdkVersion from ${currentVersion} to ${newMinSdkVersion} in variables.gradle.`);
+            gradleChangesMade = true;
+        } else {
+            log(`  ✓ minSdkVersion is already ${newMinSdkVersion} in variables.gradle.`);
+        }
     } else {
-        log('AndroidManifest.xml already up-to-date.');
+        const extBlockRegex = /(ext\s*{)([\s\S]*?)(})/;
+        if (extBlockRegex.test(gradleFile)) {
+            gradleFile = gradleFile.replace(extBlockRegex, `$1$2\n    minSdkVersion = ${newMinSdkVersion}\n$3`);
+            log(`  + Added minSdkVersion = ${newMinSdkVersion} to ext block in variables.gradle.`);
+            gradleChangesMade = true;
+        } else {
+             log('  ! Could not find ext { ... } block in variables.gradle to add minSdkVersion. Creating it.');
+             gradleFile += `\next {\n    minSdkVersion = ${newMinSdkVersion}\n}\n`;
+             gradleChangesMade = true;
+        }
+    }
+
+    if (gradleChangesMade) {
+        fs.writeFileSync(variablesGradlePath, gradleFile, 'utf8');
+        log('variables.gradle updated successfully.');
     }
 }
 
