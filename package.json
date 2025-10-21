@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@capacitor/android": "^7.0.0",
-    "@capacitor/inappbrowser": "*",
+    "cordova-plugin-inappbrowser": "^6.0.0",
     "@capacitor/camera": "*",
     "@capacitor/core": "^7.0.0",
     "@capacitor/geolocation": "^7.0.0",
@@ -40,6 +40,7 @@
   },
   "devDependencies": {
     "@capacitor/cli": "^7.0.0",
+    "@types/cordova-plugin-inappbrowser": "^1.2.5",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@types/uuid": "^10.0.0",

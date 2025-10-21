@@ -33,13 +33,13 @@ const BrowserContentPanel: React.FC<BrowserControls> = (props) => {
   return (
     <div className="flex-1 flex flex-col bg-vibe-bg-deep">
       <div className="flex-shrink-0 bg-vibe-panel p-2 flex items-center gap-2 border-b border-vibe-bg">
-        <button onClick={() => goBack(activeTabId)} disabled className="p-2 hover:bg-vibe-bg-deep rounded-full disabled:opacity-50 disabled:cursor-not-allowed" title="Back (Not available)">
+        <button onClick={() => goBack(activeTabId)} className="p-2 hover:bg-vibe-bg-deep rounded-full" title="Back">
           <ChevronLeftIcon className="w-5 h-5" />
         </button>
-        <button onClick={() => goForward(activeTabId)} disabled className="p-2 hover:bg-vibe-bg-deep rounded-full disabled:opacity-50 disabled:cursor-not-allowed" title="Forward (Not available)">
+        <button onClick={() => goForward(activeTabId)} className="p-2 hover:bg-vibe-bg-deep rounded-full" title="Forward">
           <ChevronRightIcon className="w-5 h-5" />
         </button>
-        <button onClick={() => reload(activeTabId)} disabled className="p-2 hover:bg-vibe-bg-deep rounded-full disabled:opacity-50 disabled:cursor-not-allowed" title="Reload (Not available)">
+        <button onClick={() => reload(activeTabId)} className="p-2 hover:bg-vibe-bg-deep rounded-full" title="Reload">
           <RotateCcwIcon className="w-5 h-5" />
         </button>
         <form onSubmit={handleNavigate} className="flex-1">

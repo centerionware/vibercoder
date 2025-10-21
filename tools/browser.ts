@@ -61,11 +61,11 @@ export const navigateToFunction: FunctionDeclaration = {
 
 export const getBrowserPageContentFunction: FunctionDeclaration = {
   name: 'getBrowserPageContent',
-  description: "Retrieves all visible text content from the specified browser tab. This is how you 'read' the page.",
+  description: 'Retrieves the visible text content from the currently active web page in the browser.',
   parameters: {
     type: Type.OBJECT,
     properties: {
-      tabId: { type: Type.STRING, description: 'The ID of the tab to read.' },
+      tabId: { type: Type.STRING, description: 'The ID of the tab to get content from.' },
     },
     required: ['tabId'],
   },
@@ -73,24 +73,14 @@ export const getBrowserPageContentFunction: FunctionDeclaration = {
 
 export const interactWithBrowserPageFunction: FunctionDeclaration = {
   name: 'interactWithBrowserPage',
-  description: 'Interacts with an element inside a specific browser tab, like clicking a button or typing in an input field.',
+  description: 'Interacts with an element on a web page, like clicking a button or typing into a field.',
   parameters: {
     type: Type.OBJECT,
     properties: {
       tabId: { type: Type.STRING, description: 'The ID of the tab to interact with.' },
-      selector: {
-        type: Type.STRING,
-        description: 'A CSS selector to identify the target element (e.g., "#my-button", "input[name=q]").',
-      },
-      action: {
-        type: Type.STRING,
-        description: 'The action to perform.',
-        enum: ['click', 'type'],
-      },
-      value: {
-        type: Type.STRING,
-        description: 'Optional. The text value to type into the element. Required for the "type" action.',
-      },
+      selector: { type: Type.STRING, description: 'A CSS selector to find the element.' },
+      action: { type: Type.STRING, description: 'The action to perform.', enum: ['click', 'type'] },
+      value: { type: Type.STRING, description: 'The text to type (required for "type" action).' },
     },
     required: ['tabId', 'selector', 'action'],
   },
@@ -138,11 +128,13 @@ export const getImplementations = ({ browserControlsRef }: Pick<ToolImplementati
             return { success: true };
         },
         getBrowserPageContent: async (args: { tabId: string }) => {
-            const content = await getControls().getPageContent(args.tabId);
+            const controls = getControls();
+            const content = await controls.getPageContent(args.tabId);
             return { content };
         },
-        interactWithBrowserPage: async (args: { tabId: string; selector: string; action: 'click' | 'type'; value?: string }) => {
-            const result = await getControls().interactWithPage(args.tabId, args.selector, args.action, args.value);
+        interactWithBrowserPage: async (args: { tabId: string, selector: string, action: 'click' | 'type', value?: string }) => {
+            const controls = getControls();
+            const result = await controls.interactWithPage(args.tabId, args.selector, args.action, args.value);
             return { result };
         },
     };
