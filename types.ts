@@ -10,6 +10,7 @@ export enum View {
   Git = 'git',
   Settings = 'settings',
   Prompts = 'prompts',
+  Browser = 'browser',
 }
 
 export interface AppSettings {
@@ -43,6 +44,17 @@ export interface ProjectFile {
     filepath: string;
     content: string;
 }
+
+// --- Browser ---
+export interface BrowserTab {
+  id: string;
+  url: string;
+  title: string;
+  favicon: string | null;
+  isLoading: boolean;
+  lastUpdated: number;
+}
+
 
 // --- AI & Chat ---
 
@@ -258,6 +270,24 @@ export interface UseWakeWordProps {
   onPermissionError: (message: string) => void;
 }
 
+// --- Browser Tool ---
+export interface BrowserControls {
+  tabs: BrowserTab[];
+  activeTabId: string | null;
+  isTabBarCollapsed: boolean;
+  openNewTab: (url?: string) => string;
+  closeTab: (tabId: string) => void;
+  switchToTab: (tabId: string) => void;
+  navigateTo: (tabId: string, url: string) => void;
+  goBack: (tabId: string) => void;
+  goForward: (tabId: string) => void;
+  reload: (tabId: string) => void;
+  toggleTabBar: () => void;
+  getPageContent: (tabId: string) => Promise<string>;
+  interactWithPage: (tabId: string, selector: string, action: 'click' | 'type', value?: string) => Promise<string>;
+}
+
+
 // --- Tooling ---
 // FIX: The DELETED_FILE_SENTINEL was a Symbol, which is not serializable and caused crashes
 // when saving the VFS session to IndexedDB. It has been replaced with a unique, constant string.
@@ -283,6 +313,7 @@ export interface ToolImplementationsDependencies {
     previewConsoleLogs: PreviewLogEntry[];
     // FIX: Changed to a ref to solve a circular dependency in useAppLogic.
     liveSessionControlsRef: React.RefObject<LiveSessionControls | undefined>;
+    browserControlsRef: React.RefObject<BrowserControls | undefined>;
     // FIX: Replaced 'activeThread' with a getter function 'getActiveThread' to prevent stale state issues in tool implementations.
     getActiveThread: () => ChatThread | undefined;
     updateThread: (threadId: string, updates: Partial<ChatThread>) => void;

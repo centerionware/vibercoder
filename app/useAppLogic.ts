@@ -19,7 +19,7 @@ import { GoogleGenAI } from '@google/genai';
 import { v4 as uuidv4 } from 'uuid';
 // FIX: Import `Project` to resolve the 'Cannot find name' error.
 // FIX: Import `LiveSessionControls` to correctly type the ref for live session methods.
-import { View, GitService, UseAiLiveProps, GitCredential, AppSettings, GitAuthor, LiveSessionControls, PreviewLogEntry, Project } from '../types';
+import { View, GitService, UseAiLiveProps, GitCredential, AppSettings, GitAuthor, LiveSessionControls, PreviewLogEntry, Project, BrowserControls } from '../types';
 import { db } from '../utils/idb';
 
 // Core Data Hooks
@@ -35,6 +35,7 @@ import { useAiChat } from '../hooks/useAiChat';
 import { useAiLive } from '../hooks/useAiLive';
 import { useWakeWord } from '../hooks/useWakeWord';
 import { usePreviewBundler } from '../hooks/usePreviewBundler';
+import { useBrowser } from '../hooks/useBrowser';
 
 // Services
 import { createGitService } from '../services/gitService';
@@ -443,6 +444,10 @@ export const useAppLogic = () => {
         }
     }, [settings.apiKey, isSettingsLoaded]);
 
+    const browserControls = useBrowser();
+    const browserControlsRef = useRef<BrowserControls>();
+    browserControlsRef.current = browserControls;
+
     // FIX: Correctly type the ref that holds the live session controls.
     const liveControlsRef = useRef<LiveSessionControls>();
     
@@ -460,6 +465,7 @@ export const useAppLogic = () => {
         bundleLogs, 
         previewConsoleLogs,
         liveSessionControlsRef: liveControlsRef,
+        browserControlsRef: browserControlsRef,
         getActiveThread, 
         updateThread,
         setScreenshotPreview: uiState.setScreenshotPreview,
@@ -537,5 +543,7 @@ export const useAppLogic = () => {
         onProxyFetch: handleProxyFetch,
         onProxyIframeLoad: handleProxyIframeLoad,
         onProxyNavigate: handleProxyNavigate,
+        // Browser State
+        browserControls,
     };
 };

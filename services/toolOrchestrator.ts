@@ -9,6 +9,7 @@ import * as planning from '../tools/planning';
 import * as selfReview from '../tools/selfReview';
 import * as aiVersioning from '../tools/aiVersioning';
 import * as contextEngine from '../tools/contextEngine';
+import * as browser from '../tools/browser';
 
 import { ToolImplementationsDependencies } from '../types';
 
@@ -25,6 +26,7 @@ export const allTools = [
   ...selfReview.declarations,
   ...aiVersioning.declarations,
   ...contextEngine.declarations,
+  ...browser.declarations,
 ];
 
 // The main system instruction for the AI.
@@ -71,5 +73,6 @@ export const createToolImplementations = (deps: ToolImplementationsDependencies)
     ...selfReview.getImplementations(deps),
     ...aiVersioning.getImplementations(deps),
     ...contextEngine.getImplementations(deps),
+    ...browser.getImplementations(deps),
   };
 };
