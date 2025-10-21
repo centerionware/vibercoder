@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { InAppBrowser, PluginListenerHandle } from '@capacitor/inappbrowser';
+import { InAppBrowser, DefaultWebViewOptions } from '@capacitor/inappbrowser';
+import { PluginListenerHandle } from '@capacitor/core';
 import { BrowserTab, BrowserControls } from '../types';
 import { safeLocalStorage } from '../utils/environment';
 
@@ -127,6 +128,7 @@ export const useBrowser = (): BrowserControls => {
                 await InAppBrowser.openInWebView({
                     url: activeTab.url,
                     options: {
+                        ...DefaultWebViewOptions,
                         showURL: true,
                         showToolbar: true,
                         showNavigationButtons: true, // This will show native nav buttons.
