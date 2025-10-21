@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { InAppBrowser, InAppBrowserEvent } from '@capacitor/inappbrowser';
 import { BrowserTab, BrowserControls } from '../types';
@@ -47,6 +47,8 @@ export const useBrowser = (): BrowserControls => {
       safeLocalStorage.setItem(BROWSER_TABS_KEY, JSON.stringify(tabs));
       if (activeTabId) {
         safeLocalStorage.setItem(ACTIVE_TAB_ID_KEY, activeTabId);
+      } else {
+        localStorage.removeItem(ACTIVE_TAB_ID_KEY);
       }
     } catch (e) {
       console.error("Failed to save browser tabs to localStorage", e);
@@ -63,6 +65,7 @@ export const useBrowser = (): BrowserControls => {
 
   const openBrowserInstance = useCallback(async (url: string, tabId: string) => {
     if (browserRef.current) {
+      browserRef.current.removeAllListeners();
       await browserRef.current.close();
       browserRef.current = null;
     }
@@ -77,17 +80,30 @@ export const useBrowser = (): BrowserControls => {
       browserRef.current = browser;
 
       browser.on('urlChanged').subscribe((event: InAppBrowserEvent) => {
-        updateTab(tabId, { url: event.url, favicon: getFaviconUrl(event.url) });
+        setActiveTabId(currentActiveId => {
+            if (currentActiveId === tabId) {
+                updateTab(tabId, { url: event.url, favicon: getFaviconUrl(event.url) });
+            }
+            return currentActiveId;
+        });
       });
 
       browser.on('pageLoaded').subscribe(async () => {
-        const title = await browser.getTitle();
-        updateTab(tabId, { title: title || 'Untitled', isLoading: false });
+        setActiveTabId(currentActiveId => {
+            if (currentActiveId === tabId) {
+                browser.getTitle().then(title => {
+                    updateTab(tabId, { title: title || 'Untitled', isLoading: false });
+                });
+            }
+            return currentActiveId;
+        });
       });
 
       browser.on('closed').subscribe(() => {
-        browserRef.current = null;
-        // Optionally, you could set activeTabId to null if the user closing the browser should feel like closing the tab
+        if (browserRef.current === browser) {
+            browserRef.current = null;
+            setActiveTabId(null);
+        }
       });
 
     } catch (error) {
@@ -95,6 +111,18 @@ export const useBrowser = (): BrowserControls => {
       updateTab(tabId, { isLoading: false, title: 'Failed to load' });
     }
   }, [updateTab]);
+  
+  const activeTab = useMemo(() => tabs.find(t => t.id === activeTabId), [tabs, activeTabId]);
+
+  useEffect(() => {
+    if (activeTab) {
+      openBrowserInstance(activeTab.url, activeTab.id);
+    } else if (browserRef.current) {
+      browserRef.current.close();
+      browserRef.current = null;
+    }
+  }, [activeTab, openBrowserInstance]);
+
 
   const openNewTab = useCallback((url: string = 'https://google.com') => {
     const newTab: BrowserTab = {
@@ -107,41 +135,30 @@ export const useBrowser = (): BrowserControls => {
     };
     setTabs(prev => [...prev, newTab]);
     setActiveTabId(newTab.id);
-    openBrowserInstance(url, newTab.id);
     return newTab.id;
-  }, [openBrowserInstance]);
+  }, []);
 
   const switchToTab = useCallback((tabId: string) => {
-    const tab = tabs.find(t => t.id === tabId);
-    if (tab && tabId !== activeTabId) {
+    if (tabId !== activeTabId) {
       setActiveTabId(tabId);
-      openBrowserInstance(tab.url, tabId);
     }
-  }, [tabs, activeTabId, openBrowserInstance]);
+  }, [activeTabId]);
 
   const closeTab = useCallback((tabId: string) => {
     setTabs(prev => {
       const remainingTabs = prev.filter(t => t.id !== tabId);
       if (tabId === activeTabId) {
-        if (browserRef.current) {
-          browserRef.current.close();
-          browserRef.current = null;
-        }
         const newActiveTab = remainingTabs.sort((a,b) => b.lastUpdated - a.lastUpdated)[0];
-        if (newActiveTab) {
-          switchToTab(newActiveTab.id);
-        } else {
-          setActiveTabId(null);
-        }
+        setActiveTabId(newActiveTab ? newActiveTab.id : null);
       }
       return remainingTabs;
     });
-  }, [activeTabId, switchToTab]);
+  }, [activeTabId]);
   
   const navigateTo = (tabId: string, url: string) => {
-      updateTab(tabId, { url, favicon: getFaviconUrl(url) });
-      if (tabId === activeTabId) {
-        openBrowserInstance(url, tabId);
+      updateTab(tabId, { url, favicon: getFaviconUrl(url), isLoading: true });
+      if (tabId !== activeTabId) {
+        setActiveTabId(tabId);
       }
   };
 

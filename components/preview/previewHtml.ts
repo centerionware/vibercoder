@@ -98,7 +98,6 @@ export const previewHtml = `
         
         const message = args.map(arg => {
             try {
-                // FIX: Escaped template literal placeholders to prevent premature evaluation.
                 if (arg instanceof Error) return \`\${arg.message}\\n\${arg.stack}\`;
                 if (typeof arg === 'object' && arg !== null) return safeStringify(arg);
                 return String(arg);
@@ -122,7 +121,6 @@ export const previewHtml = `
       window.addEventListener('unhandledrejection', (event) => {
           const reason = event.reason;
           const message = reason ? (reason.stack || reason.message || String(reason)) : 'Unhandled promise rejection';
-          // FIX: Escaped template literal placeholders to prevent premature evaluation.
           postLog('error', \`Unhandled Rejection: \${message}\`);
       });
 
@@ -139,7 +137,6 @@ export const previewHtml = `
                   return original.apply(win, arguments);
               }
 
-              // FIX: Escaped template literal placeholders to prevent premature evaluation.
               postLog('log', \`[Proxy] Intercepted fetch() for URL: \${url}\`);
 
               try {
@@ -148,7 +145,6 @@ export const previewHtml = `
                   const responsePromise = new Promise((resolve, reject) => {
                       const timeout = setTimeout(() => {
                         window.removeEventListener('message', messageHandler);
-                        // FIX: Escaped template literal placeholders to prevent premature evaluation.
                         reject(new Error(\`Proxy fetch timed out for \${url}\`));
                       }, 20000);
 
@@ -181,7 +177,6 @@ export const previewHtml = `
                   }, '*', transferable);
 
                   const responseData = await responsePromise;
-                  // FIX: Escaped template literal placeholders to prevent premature evaluation.
                   postLog('log', \`[Proxy] Successfully received proxied fetch response for: \${url}\`);
                   return new Response(responseData.body, {
                       status: responseData.status,
@@ -189,7 +184,6 @@ export const previewHtml = `
                       headers: responseData.headers,
                   });
               } catch (err) {
-                  // FIX: Escaped template literal placeholders to prevent premature evaluation.
                   postLog('error', \`Fetch proxy failed for \${url}: \${err.message}\`);
                   throw err;
               }
@@ -199,7 +193,6 @@ export const previewHtml = `
       try {
         hijackFetch(window);
       } catch(e) {
-        // FIX: Escaped template literal placeholders to prevent premature evaluation.
         postLog('error', \`Failed to hijack top-level fetch: \${e.message}\`);
       }
       
@@ -220,13 +213,11 @@ export const previewHtml = `
               window.removeEventListener('message', onNavResponse);
 
               if (type === 'proxy-navigate-response') {
-                  // FIX: Escaped template literal placeholders to prevent premature evaluation.
                   postLog('log', \`[Proxy] Received success response for navigation to: \${url}. Injecting content.\`);
                   document.open();
                   document.write(payload.html);
                   document.close();
               } else if (type === 'proxy-navigate-error') {
-                  // FIX: Escaped template literal placeholders to prevent premature evaluation.
                   postLog('error', \`[Proxy] Received error response for navigation to: \${url}. Error: \${payload.error}\`);
               }
           };
@@ -234,9 +225,6 @@ export const previewHtml = `
       };
 
       document.addEventListener('click', (event) => {
-          // FIX: Check if an SPA router has already handled this click.
-          // If defaultPrevented is true, it means event.preventDefault() was called,
-          // so we should not interfere.
           if (event.defaultPrevented) {
               return;
           }
@@ -246,7 +234,6 @@ export const previewHtml = `
 
           const href = a.getAttribute('href');
 
-          // Ignore clicks on links that open new tabs, mail links, or internal page anchors.
           if (a.target === '_blank' || a.target === '_top' || a.protocol === 'mailto:' || a.protocol === 'tel:' || href.startsWith('#')) {
               return;
           }
@@ -254,8 +241,7 @@ export const previewHtml = `
           event.preventDefault();
           event.stopPropagation();
           
-          const absoluteUrl = a.href; // Browser resolves this against base URI
-          // FIX: Escaped template literal placeholders to prevent premature evaluation.
+          const absoluteUrl = a.href;
           postLog('log', \`[Proxy] Intercepting navigation to: \${absoluteUrl}\`);
           handleNavigation(absoluteUrl, 'GET');
       }, true);
@@ -269,7 +255,6 @@ export const previewHtml = `
           event.stopPropagation();
           
           const actionUrl = new URL(form.action, document.baseURI).href;
-          // FIX: Escaped template literal placeholders to prevent premature evaluation.
           postLog('log', \`[Proxy] Intercepting form submission to: \${actionUrl}\`);
 
           const formData = new FormData(form);
@@ -305,7 +290,6 @@ export const previewHtml = `
                 if (originalSrc && originalSrc.startsWith('http')) {
                   iframeNode.removeAttribute('src');
 
-                  // FIX: Escaped template literal placeholders to prevent premature evaluation.
                   postLog('log', \`[Proxy] Intercepted iframe with src: \${originalSrc}. Requesting content from parent.\`);
 
                   try {
@@ -329,7 +313,6 @@ export const previewHtml = `
                     window.removeEventListener('message', onProxyResponse);
 
                     if (type === 'proxy-iframe-response') {
-                      // FIX: Escaped template literal placeholders to prevent premature evaluation.
                       postLog('log', \`[Proxy] Received success response for iframe src: \${originalSrc}. Injecting content.\`);
                       iframeNode.srcdoc = payload.html;
 
@@ -337,21 +320,17 @@ export const previewHtml = `
                         try {
                           if (iframeNode.contentWindow) {
                             hijackFetch(iframeNode.contentWindow);
-                            // FIX: Escaped template literal placeholders to prevent premature evaluation.
                             postLog('log', \`Hijacked fetch in proxied iframe (src=\${originalSrc})\`);
                           }
                         } catch (e) {
-                           // FIX: Escaped template literal placeholders to prevent premature evaluation.
                            postLog('warn', \`Could not hijack fetch in proxied iframe: \${e.message}\`);
                         }
                       }, { once: true });
 
                     } else if (type === 'proxy-iframe-error') {
-                      // FIX: Escaped template literal placeholders to prevent premature evaluation.
                       postLog('error', \`[Proxy] Received error response for iframe src: \${originalSrc}. Error: \${payload.error}\`);
                       try {
                         if (iframeNode.contentDocument) {
-                          // FIX: Escaped template literal placeholders to prevent premature evaluation.
                           iframeNode.contentDocument.body.innerHTML = \`<div style="color: #f87171; font-family: sans-serif; padding: 1rem;"><h3>Iframe Proxy Load Failed</h3><p>\${payload.error}</p></div>\`;
                         }
                       } catch(e) { /* ignore */ }
@@ -424,7 +403,6 @@ export const previewHtml = `
           try {
               const element = document.querySelector(selector);
               if (!element) {
-                  // FIX: Escaped template literal placeholders to prevent premature evaluation.
                   throw new Error(\`Element with selector "\${selector}" not found.\`);
               }
               switch (action) {
@@ -444,10 +422,8 @@ export const previewHtml = `
                       element.blur();
                       break;
                   default:
-                      // FIX: Escaped template literal placeholders to prevent premature evaluation.
                       throw new Error(\`Unsupported action: "\${action}"\`);
               }
-              // FIX: Escaped template literal placeholders to prevent premature evaluation.
               parentWindow.postMessage({ type: 'interaction-success', requestId, message: \`Action "\${action}" on "\${selector}" was successful.\` }, '*');
           } catch (e) {
               parentWindow.postMessage({ type: 'interaction-error', requestId, message: e.message }, '*');
