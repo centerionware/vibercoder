@@ -168,7 +168,35 @@ export const createMessageProcessor = (deps: MessageProcessorDependencies) => {
 
                     const session = await sessionRefs.current?.sessionPromise;
                     if (!session) throw new Error("Live session not available for tool response.");
-                    session.sendToolResponse({ functionResponses: { id: fc.id, name: fc.name, response: { result } } });
+                    
+                    if (fc.name === 'captureScreenshot' && result.base64Image) {
+                        session.sendRealtimeInput({
+                            media: {
+                                data: result.base64Image,
+                                mimeType: 'image/png',
+                            }
+                        });
+                        
+                        const screenshotResponse = {
+                            status: "Success",
+                            confirmation: "A screenshot has been captured and sent as a media input.",
+                            instruction: "Your next response must analyze the visual information from the provided image."
+                        };
+                        
+                        // FIX: Removed the `{ result: ... }` wrapper from the response payload.
+                        // The `response` property should directly contain the result object.
+                        session.sendToolResponse({
+                            functionResponses: {
+                                id: fc.id,
+                                name: fc.name,
+                                response: screenshotResponse,
+                            }
+                        });
+                    } else {
+                        // FIX: Removed the `{ result: ... }` wrapper from the response payload.
+                        session.sendToolResponse({ functionResponses: { id: fc.id, name: fc.name, response: result } });
+                    }
+                    
                     status = ToolCallStatus.SUCCESS;
                 } catch (e) {
                     const error = e instanceof Error ? e.message : String(e);
@@ -178,7 +206,8 @@ export const createMessageProcessor = (deps: MessageProcessorDependencies) => {
                     ui.requestUiUpdate();
 
                     const session = await sessionRefs.current?.sessionPromise;
-                    session?.sendToolResponse({ functionResponses: { id: fc.id, name: fc.name, response: { result: { error } } } });
+                    // FIX: Ensured the error response structure is consistent with other tool responses.
+                    session?.sendToolResponse({ functionResponses: { id: fc.id, name: fc.name, response: { error } } });
                     status = ToolCallStatus.ERROR;
                 }
                 
