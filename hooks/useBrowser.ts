@@ -108,7 +108,8 @@ export const useBrowser = (): BrowserControls => {
     // Close any instances that are no longer the active tab
     Object.entries(browserInstances.current).forEach(([tabId, instance]) => {
       if (tabId !== activeTabId) {
-        instance.close();
+        // FIX: Added a type assertion to 'instance' to resolve an error where its type was inferred as 'unknown'.
+        (instance as InAppBrowser).close();
         delete browserInstances.current[tabId];
       }
     });
@@ -190,7 +191,7 @@ export const useBrowser = (): BrowserControls => {
   
   const navigateTo = (tabId: string, url: string) => {
       if (browserInstances.current[tabId]) {
-        browserInstances.current[tabId].close();
+        (browserInstances.current[tabId] as InAppBrowser).close();
       }
       updateTab(tabId, { url, title: url, favicon: getFaviconUrl(url), isLoading: true });
       if (tabId !== activeTabId) {

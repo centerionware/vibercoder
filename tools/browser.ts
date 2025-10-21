@@ -1,5 +1,5 @@
 import { FunctionDeclaration, Type } from '@google/genai';
-import { ToolImplementationsDependencies } from '../types';
+import { ToolImplementationsDependencies, View } from '../types';
 
 // --- Function Declarations ---
 
@@ -86,6 +86,26 @@ export const interactWithBrowserPageFunction: FunctionDeclaration = {
   },
 };
 
+export const searchWebFunction: FunctionDeclaration = {
+  name: 'searchWeb',
+  description: 'Performs a web search using Google and opens the results in a new browser tab. Use this for general queries or when asked to find information or images on the internet.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      query: {
+        type: Type.STRING,
+        description: 'The search query.',
+      },
+      searchType: {
+        type: Type.STRING,
+        description: "Specify 'image' to perform an image search. Defaults to a standard web search if omitted.",
+        enum: ['web', 'image'],
+      },
+    },
+    required: ['query'],
+  },
+};
+
 export const declarations = [
   listTabsFunction,
   openTabFunction,
@@ -94,11 +114,12 @@ export const declarations = [
   navigateToFunction,
   getBrowserPageContentFunction,
   interactWithBrowserPageFunction,
+  searchWebFunction,
 ];
 
 // --- Implementations Factory ---
 
-export const getImplementations = ({ browserControlsRef }: Pick<ToolImplementationsDependencies, 'browserControlsRef'>) => {
+export const getImplementations = ({ browserControlsRef, setActiveView }: Pick<ToolImplementationsDependencies, 'browserControlsRef' | 'setActiveView'>) => {
     const getControls = () => {
         const controls = browserControlsRef.current;
         if (!controls) throw new Error("Browser controls are not available.");
@@ -136,6 +157,21 @@ export const getImplementations = ({ browserControlsRef }: Pick<ToolImplementati
             const controls = getControls();
             const result = await controls.interactWithPage(args.tabId, args.selector, args.action, args.value);
             return { result };
+        },
+        searchWeb: async (args: { query: string, searchType?: 'web' | 'image' }) => {
+            const controls = getControls();
+            
+            const baseUrl = 'https://www.google.com/search?q=';
+            let searchUrl = baseUrl + encodeURIComponent(args.query);
+
+            if (args.searchType === 'image') {
+                searchUrl += '&tbm=isch';
+            }
+
+            const tabId = controls.openNewTab(searchUrl);
+            setActiveView(View.Browser);
+
+            return { success: true, message: `Opened new tab with ID ${tabId} to search for "${args.query}".` };
         },
     };
 };

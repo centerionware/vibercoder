@@ -58,9 +58,13 @@ export const getImplementations = ({ aiRef }: Pick<ToolImplementationsDependenci
         const ai = aiRef.current;
         if (!ai) throw new Error("AI not initialized.");
         let operation = await ai.models.generateVideos({
-            model: 'veo-2.0-generate-001',
+            model: 'veo-3.1-fast-generate-preview',
             prompt: args.prompt,
-            config: { numberOfVideos: 1 },
+            config: {
+                numberOfVideos: 1,
+                resolution: '720p',
+                aspectRatio: '16:9'
+            },
         });
 
         // Simplified polling for demo purposes
