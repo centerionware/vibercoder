@@ -1,8 +1,14 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { InAppBrowser, InAppBrowserEvent } from '@capacitor/inappbrowser';
+import { InAppBrowser, PluginListenerHandle } from '@capacitor/inappbrowser';
 import { BrowserTab, BrowserControls } from '../types';
 import { safeLocalStorage } from '../utils/environment';
+
+// The plugin docs show this event data interface, but it's likely not exported.
+// We'll define it locally to satisfy TypeScript.
+interface BrowserPageNavigationCompletedEventData {
+  url: string;
+}
 
 const BROWSER_TABS_KEY = 'vibecode_browserTabs';
 const ACTIVE_TAB_ID_KEY = 'vibecode_activeTabId';
@@ -20,8 +26,7 @@ export const useBrowser = (): BrowserControls => {
   const [tabs, setTabs] = useState<BrowserTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [isTabBarCollapsed, setIsTabBarCollapsed] = useState(false);
-  const browserRef = useRef<InAppBrowser | null>(null);
-
+  
   // Load tabs from localStorage on initial mount
   useEffect(() => {
     try {
@@ -47,7 +52,7 @@ export const useBrowser = (): BrowserControls => {
       safeLocalStorage.setItem(BROWSER_TABS_KEY, JSON.stringify(tabs));
       if (activeTabId) {
         safeLocalStorage.setItem(ACTIVE_TAB_ID_KEY, activeTabId);
-      } else {
+      } else if (safeLocalStorage.getItem(ACTIVE_TAB_ID_KEY)) { // Check before removing
         localStorage.removeItem(ACTIVE_TAB_ID_KEY);
       }
     } catch (e) {
@@ -62,67 +67,80 @@ export const useBrowser = (): BrowserControls => {
       )
     );
   }, []);
-
-  const openBrowserInstance = useCallback(async (url: string, tabId: string) => {
-    if (browserRef.current) {
-      browserRef.current.removeAllListeners();
-      await browserRef.current.close();
-      browserRef.current = null;
-    }
-
-    updateTab(tabId, { isLoading: true });
-
-    try {
-      const browser = await InAppBrowser.create(url, {
-        presentationStyle: 'fullscreen',
-        toolbar: true,
-      });
-      browserRef.current = browser;
-
-      browser.on('urlChanged').subscribe((event: InAppBrowserEvent) => {
-        setActiveTabId(currentActiveId => {
-            if (currentActiveId === tabId) {
-                updateTab(tabId, { url: event.url, favicon: getFaviconUrl(event.url) });
-            }
-            return currentActiveId;
-        });
-      });
-
-      browser.on('pageLoaded').subscribe(async () => {
-        setActiveTabId(currentActiveId => {
-            if (currentActiveId === tabId) {
-                browser.getTitle().then(title => {
-                    updateTab(tabId, { title: title || 'Untitled', isLoading: false });
-                });
-            }
-            return currentActiveId;
-        });
-      });
-
-      browser.on('closed').subscribe(() => {
-        if (browserRef.current === browser) {
-            browserRef.current = null;
-            setActiveTabId(null);
-        }
-      });
-
-    } catch (error) {
-      console.error("Error creating InAppBrowser:", error);
-      updateTab(tabId, { isLoading: false, title: 'Failed to load' });
-    }
-  }, [updateTab]);
   
+  // Setup listeners once
+  useEffect(() => {
+    const setupListeners = async () => {
+        const closedHandle = await InAppBrowser.addListener('browserClosed', () => {
+            setActiveTabId(null);
+        });
+
+        const loadedHandle = await InAppBrowser.addListener('browserPageLoaded', () => {
+            setActiveTabId(currentActiveId => {
+                if (currentActiveId) {
+                    // Title is not available via this API, so we have to make do.
+                    updateTab(currentActiveId, { isLoading: false, title: "Page Loaded" });
+                }
+                return currentActiveId;
+            });
+        });
+
+        // The 'urlChanged' event from the original code doesn't exist in the docs.
+        // 'browserPageNavigationCompleted' is the documented equivalent for WebView.
+        const navHandle = await InAppBrowser.addListener('browserPageNavigationCompleted', (data: BrowserPageNavigationCompletedEventData) => {
+            setActiveTabId(currentActiveId => {
+                if (currentActiveId) {
+                    // We can't get the title, so we update the URL and favicon.
+                    updateTab(currentActiveId, { url: data.url, title: data.url, favicon: getFaviconUrl(data.url) });
+                }
+                return currentActiveId;
+            });
+        });
+
+        return [closedHandle, loadedHandle, navHandle];
+    };
+
+    let handles: PluginListenerHandle[] = [];
+    setupListeners().then(h => handles = h);
+    
+    return () => {
+        handles.forEach(h => h.remove());
+        // Ensure browser is closed on unmount
+        InAppBrowser.close();
+    };
+  }, [updateTab]);
+
   const activeTab = useMemo(() => tabs.find(t => t.id === activeTabId), [tabs, activeTabId]);
 
+  // Effect to open/close the browser view based on the active tab
   useEffect(() => {
-    if (activeTab) {
-      openBrowserInstance(activeTab.url, activeTab.id);
-    } else if (browserRef.current) {
-      browserRef.current.close();
-      browserRef.current = null;
-    }
-  }, [activeTab, openBrowserInstance]);
+    const openOrCloseBrowser = async () => {
+        // Always close any existing browser instance before opening a new one.
+        // This handles tab switching.
+        await InAppBrowser.close();
 
+        if (activeTab) {
+            updateTab(activeTab.id, { isLoading: true });
+            try {
+                // Use the documented openInWebView method.
+                // It's fire-and-forget; it does not return a browser instance.
+                await InAppBrowser.openInWebView({
+                    url: activeTab.url,
+                    options: {
+                        showURL: true,
+                        showToolbar: true,
+                        showNavigationButtons: true, // This will show native nav buttons.
+                    }
+                });
+            } catch (error) {
+                console.error("Error opening InAppBrowser:", error);
+                updateTab(activeTab.id, { isLoading: false, title: 'Failed to load' });
+            }
+        }
+    };
+    
+    openOrCloseBrowser();
+  }, [activeTab, updateTab]);
 
   const openNewTab = useCallback((url: string = 'https://google.com') => {
     const newTab: BrowserTab = {
@@ -148,7 +166,7 @@ export const useBrowser = (): BrowserControls => {
     setTabs(prev => {
       const remainingTabs = prev.filter(t => t.id !== tabId);
       if (tabId === activeTabId) {
-        const newActiveTab = remainingTabs.sort((a,b) => b.lastUpdated - a.lastUpdated)[0];
+        const newActiveTab = remainingTabs.sort((a, b) => b.lastUpdated - a.lastUpdated)[0];
         setActiveTabId(newActiveTab ? newActiveTab.id : null);
       }
       return remainingTabs;
@@ -156,64 +174,30 @@ export const useBrowser = (): BrowserControls => {
   }, [activeTabId]);
   
   const navigateTo = (tabId: string, url: string) => {
-      updateTab(tabId, { url, favicon: getFaviconUrl(url), isLoading: true });
+      updateTab(tabId, { url, title: url, favicon: getFaviconUrl(url), isLoading: true });
       if (tabId !== activeTabId) {
         setActiveTabId(tabId);
       }
   };
 
-  const goBack = async (tabId: string) => { if (tabId === activeTabId && browserRef.current) await browserRef.current.goBack(); };
-  const goForward = async (tabId: string) => { if (tabId === activeTabId && browserRef.current) await browserRef.current.goForward(); };
-  const reload = async (tabId: string) => { if (tabId === activeTabId && browserRef.current) await browserRef.current.reload(); };
-
+  // --- Unsupported Functions ---
+  // The documented API for @capacitor/inappbrowser does not support these actions.
+  const goBack = async (tabId: string) => { console.warn("goBack is not programmatically supported by this InAppBrowser plugin version."); };
+  const goForward = async (tabId: string) => { console.warn("goForward is not programmatically supported by this InAppBrowser plugin version."); };
+  const reload = async (tabId: string) => { console.warn("reload is not programmatically supported by this InAppBrowser plugin version."); };
   const toggleTabBar = () => setIsTabBarCollapsed(p => !p);
 
   const getPageContent = async (tabId: string): Promise<string> => {
-    if (tabId !== activeTabId || !browserRef.current) {
-        throw new Error("Cannot get page content: The specified tab is not active in the browser view.");
-    }
-    const result = await browserRef.current.executeScript({ code: "document.body.innerText" });
-    return result[0] || '';
+    throw new Error("getPageContent (executeScript) is not supported by this InAppBrowser plugin version.");
   };
 
   const interactWithPage = async (tabId: string, selector: string, action: 'click' | 'type', value?: string): Promise<string> => {
-    if (tabId !== activeTabId || !browserRef.current) {
-        throw new Error("Cannot interact with page: The specified tab is not active in the browser view.");
-    }
-    const safeSelector = selector.replace(/"/g, '\\"');
-    let code = '';
-    switch(action) {
-        case 'click':
-            code = `document.querySelector("${safeSelector}").click(); "Clicked element."`;
-            break;
-        case 'type':
-            const safeValue = value?.replace(/"/g, '\\"') || '';
-            code = `
-                const el = document.querySelector("${safeSelector}");
-                el.value = "${safeValue}";
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-                el.dispatchEvent(new Event('change', { bubbles: true }));
-                "Typed value into element."
-            `;
-            break;
-    }
-    const result = await browserRef.current.executeScript({ code });
-    return result[0] || `Action '${action}' performed on '${selector}'.`;
+    throw new Error("interactWithPage (executeScript) is not supported by this InAppBrowser plugin version.");
   };
 
   return {
-    tabs,
-    activeTabId,
-    isTabBarCollapsed,
-    openNewTab,
-    closeTab,
-    switchToTab,
-    navigateTo,
-    goBack,
-    goForward,
-    reload,
-    toggleTabBar,
-    getPageContent,
-    interactWithPage,
+    tabs, activeTabId, isTabBarCollapsed, openNewTab, closeTab,
+    switchToTab, navigateTo, goBack, goForward, reload, toggleTabBar,
+    getPageContent, interactWithPage,
   };
 };
