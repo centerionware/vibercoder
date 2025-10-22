@@ -113,27 +113,15 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
         console.error(`Could not find browser element for tab ${tabId}`);
         return;
     }
-    // Find all iframes not belonging to our app UI
-    // FIX: Specify HTMLIFrameElement as the generic type for querySelectorAll to resolve the type mismatch.
-    const allIframes = Array.from(document.querySelectorAll<HTMLIFrameElement>('iframe:not(#preview-iframe)'));
-    const knownElements = Object.values(browserElements.current);
-    // FIX: Explicitly type `el` as HTMLElement to allow calling .querySelector().
-    const knownIframes = knownElements.map((el: HTMLElement) => el.querySelector<HTMLIFrameElement>('iframe')).filter((el): el is HTMLIFrameElement => !!el);
-    const newIframe = allIframes.find(iframe => !knownIframes.includes(iframe));
+    // Robustly find the wrapper div created by the plugin.
+    const allWrappers = Array.from(document.querySelectorAll<HTMLElement>('body > div.inappbrowser_wrapper'));
+    const knownWrappers = Object.values(browserElements.current);
+    const newWrapper = allWrappers.find(w => !knownWrappers.includes(w));
 
-    if (newIframe) {
-        let wrapper = newIframe.parentElement;
-        // The cordova-plugin-inappbrowser on web platform creates a div wrapper that is a direct child of body
-        while(wrapper && wrapper.parentElement !== document.body) {
-            wrapper = wrapper.parentElement;
-        }
-        if (wrapper && wrapper.tagName === 'DIV') {
-            console.log(`Associated browser DOM element for tab ${tabId}`);
-            browserElements.current[tabId] = wrapper;
-            forceUpdate({}); // Trigger layout effect to position it
-        } else {
-            setTimeout(() => findAndAssociateElement(tabId, attempt + 1), 100);
-        }
+    if (newWrapper) {
+        console.log(`Associated browser DOM element for tab ${tabId}`);
+        browserElements.current[tabId] = newWrapper;
+        forceUpdate({}); // Trigger layout effect to position it
     } else {
         setTimeout(() => findAndAssociateElement(tabId, attempt + 1), 100);
     }
@@ -183,45 +171,53 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
       
   }, [tabs, activeTabId, updateTab, findAndAssociateElement]);
 
-  // Main layout effect for DOM manipulation
+  // Main layout effect for DOM manipulation and persistent styling
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    const activeElement = activeTabId ? browserElements.current[activeTabId] : null;
+    const applyLayout = () => {
+        const activeElement = activeTabId ? browserElements.current[activeTabId] : null;
 
-    // Hide all browser elements first
-    // FIX: Explicitly type `el` as HTMLElement to allow accessing the .style property.
-    Object.values(browserElements.current).forEach((el: HTMLElement) => {
-        el.style.display = 'none';
-    });
-
-    if (activeElement && isBrowserViewActive) {
-        // This is the element we want to show. Move it into our container.
-        if (activeElement.parentElement !== container) {
-            container.appendChild(activeElement);
-        }
-        
-        // Force styles to make it behave
-        Object.assign(activeElement.style, {
-            position: 'relative',
-            top: '0', left: '0',
-            width: '100%', height: '100%',
-            zIndex: '1',
-            display: 'block'
+        // Hide all inactive elements
+        Object.entries(browserElements.current).forEach(([tabId, el]) => {
+            if (tabId !== activeTabId || !isBrowserViewActive) {
+                // FIX: Cast `el` to HTMLElement to ensure `style` property is accessible, as Object.entries can result in an `unknown` type.
+                (el as HTMLElement).style.display = 'none';
+            }
         });
 
-        // Also style the iframe within it
-        const iframe = activeElement.querySelector('iframe');
-        if (iframe) {
-            Object.assign(iframe.style, {
-                width: '100%',
-                height: '100%',
-                border: 'none'
-            });
+        if (activeElement && isBrowserViewActive) {
+            if (activeElement.parentElement !== container) {
+                container.appendChild(activeElement);
+            }
+            // Use setAttribute with !important to aggressively override any plugin styles.
+            activeElement.setAttribute('style', `
+                position: relative !important;
+                top: 0 !important;
+                left: 0 !important;
+                width: 100% !important;
+                height: 100% !important;
+                display: block !important;
+            `);
+            const iframe = activeElement.querySelector('iframe');
+            if (iframe) {
+                iframe.setAttribute('style', `
+                    width: 100% !important;
+                    height: 100% !important;
+                    border: none !important;
+                `);
+            }
         }
-    }
-  }, [activeTabId, isBrowserViewActive, tabs, containerRef]);
+    };
+
+    applyLayout(); // Apply styles immediately
+
+    const observer = new ResizeObserver(applyLayout);
+    observer.observe(container);
+
+    return () => observer.disconnect();
+}, [activeTabId, isBrowserViewActive, tabs, containerRef]);
 
 
   const openNewTab = useCallback((url: string = 'https://google.com') => {

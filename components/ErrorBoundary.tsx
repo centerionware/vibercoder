@@ -45,7 +45,6 @@ class ErrorBoundary extends React.Component<Props, State> {
     console.error("Global uncaught error:", event.error);
     event.preventDefault();
     const error = event.error instanceof Error ? event.error : new Error(JSON.stringify(event.error ?? 'An unknown error occurred'));
-    // FIX: Correctly call setState on a React.Component instance.
     this.setState({ hasError: true, error });
   }
 
@@ -55,7 +54,6 @@ class ErrorBoundary extends React.Component<Props, State> {
     console.error("Global unhandled rejection:", event.reason);
     event.preventDefault();
     const error = event.reason instanceof Error ? event.reason : new Error(JSON.stringify(event.reason));
-    // FIX: Correctly call setState on a React.Component instance.
     this.setState({ hasError: true, error });
   }
 
@@ -64,7 +62,6 @@ class ErrorBoundary extends React.Component<Props, State> {
       return <ErrorFallback error={this.state.error} />;
     }
     
-    // FIX: Correctly access props on a React.Component instance.
     return this.props.children;
   }
 }
