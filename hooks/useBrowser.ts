@@ -3,70 +3,72 @@ import { BrowserControls } from '../types';
 
 export const useBrowser = (): BrowserControls => {
   const browserInstanceRef = useRef<any>(null);
-
-  // This ref holds the URL for the *next* browser to be opened.
-  // This ensures that if openUrl is called multiple times while a browser is closing,
-  // only the *last* requested URL is opened, preventing a race condition.
   const pendingUrlRef = useRef<string | null>(null);
 
-  const openUrl = useCallback((url: string) => {
-    const inAppBrowserPlugin = (window as any).cordova?.InAppBrowser;
-    if (!inAppBrowserPlugin?.open) {
-      console.error("InAppBrowser plugin is not available. Cannot open URL.");
-      alert("Browser functionality is not available in this environment.");
-      return;
-    }
-
-    // Set the latest requested URL. This will be opened when the coast is clear.
-    pendingUrlRef.current = url;
-
-    // If there's already a browser open, just close it.
-    // The 'exit' handler is the single source of truth for what happens next.
-    if (browserInstanceRef.current) {
-      browserInstanceRef.current.close();
+  // This is the single source of truth for opening a browser.
+  // It's called either when openUrl is triggered and no browser is open,
+  // or by the 'exit' event listener of a closing browser.
+  const openPendingUrl = useCallback(() => {
+    const urlToOpen = pendingUrlRef.current;
+    if (!urlToOpen || browserInstanceRef.current) {
+      // Don't open if there's no pending URL or if a browser is somehow already open.
       return;
     }
     
-    // If no browser is open, and we have a pending URL, we can open it now.
-    const urlToOpen = pendingUrlRef.current;
-    if (urlToOpen) {
-      // Clear the pending URL since we are now handling it.
-      pendingUrlRef.current = null;
-      
-      const browser = inAppBrowserPlugin.open(urlToOpen, '_blank', 'location=yes');
-      browserInstanceRef.current = browser;
-
-      browser.addEventListener('exit', () => {
-        // When this browser closes, clean up its reference.
-        if (browserInstanceRef.current === browser) {
-            browserInstanceRef.current = null;
-        }
-
-        // IMPORTANT: After this browser has closed, we check if a new URL was requested
-        // in the meantime. If so, we trigger the openUrl logic again.
-        // This time, browserInstanceRef.current will be null, and it will open directly.
-        if (pendingUrlRef.current) {
-            openUrl(pendingUrlRef.current);
-        }
-      });
-
-      browser.addEventListener('loaderror', (params: any) => {
-          console.error('InAppBrowser load error:', params);
-          alert(`Failed to load URL: ${params.message}`);
-      });
+    const inAppBrowserPlugin = (window as any).cordova?.InAppBrowser;
+    if (!inAppBrowserPlugin?.open) {
+      console.error("InAppBrowser plugin not available.");
+      return;
     }
-  }, []); // `openUrl` is referenced recursively but useCallback's stable reference handles this.
 
-  const closeBrowser = useCallback(() => {
-    // If user manually closes, we clear any pending URL to prevent it from reopening unexpectedly.
+    // We are about to handle this URL, so clear it from the pending ref.
     pendingUrlRef.current = null;
-    if (browserInstanceRef.current) {
-      try {
-        browserInstanceRef.current.close();
-      } catch (e) {
-        console.warn("Error closing InAppBrowser instance:", e);
+    
+    const browser = inAppBrowserPlugin.open(urlToOpen, '_blank', 'location=yes');
+    browserInstanceRef.current = browser;
+
+    const onExit = () => {
+      // Clean up our reference to the closed browser.
+      if (browserInstanceRef.current === browser) {
         browserInstanceRef.current = null;
       }
+      
+      // After closing, immediately check if another URL was requested while this one was open.
+      // If so, open it. This creates the reliable "close-then-open" behavior.
+      openPendingUrl();
+      
+      // Make sure to remove the listener to avoid memory leaks
+      browser.removeEventListener('exit', onExit);
+      browser.removeEventListener('loaderror', onLoadError);
+    };
+
+    const onLoadError = (params: any) => {
+      console.error('InAppBrowser load error:', params);
+      alert(`Failed to load URL: ${params.message}`);
+    };
+
+    browser.addEventListener('exit', onExit);
+    browser.addEventListener('loaderror', onLoadError);
+  }, []); // Empty dependency array means this function is stable.
+
+  const openUrl = useCallback((url: string) => {
+    // Always set the latest requested URL.
+    pendingUrlRef.current = url;
+
+    if (browserInstanceRef.current) {
+      // If a browser is already open, close it. The 'onExit' handler will take care of opening the pending URL.
+      browserInstanceRef.current.close();
+    } else {
+      // If no browser is open, we can proceed to open the pending URL immediately.
+      openPendingUrl();
+    }
+  }, [openPendingUrl]);
+
+  const closeBrowser = useCallback(() => {
+    // If the user explicitly closes the browser, we cancel any pending URL that was scheduled to open next.
+    pendingUrlRef.current = null;
+    if (browserInstanceRef.current) {
+      browserInstanceRef.current.close();
     }
   }, []);
 
