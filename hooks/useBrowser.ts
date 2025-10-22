@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { BrowserTab, BrowserControls } from '../types';
 import { safeLocalStorage } from '../utils/environment';
@@ -52,10 +52,11 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
   const [tabs, setTabs] = useState<BrowserTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [isTabBarCollapsed, setIsTabBarCollapsed] = useState(false);
+  
   const browserInstances = useRef<Record<string, InAppBrowser>>({});
   const browserElements = useRef<Record<string, HTMLElement>>({});
   const containerRef = useRef<HTMLDivElement>(null);
-  const [, forceUpdate] = useState({}); // To trigger re-renders for layout effects
+  const openingTabIdRef = useRef<string | null>(null);
 
   // Load tabs from localStorage on initial mount
   useEffect(() => {
@@ -67,15 +68,13 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
         if (Array.isArray(parsedTabs) && parsedTabs.length > 0) {
             setTabs(parsedTabs);
             if (savedActiveTabId && parsedTabs.some((t: BrowserTab) => t.id === savedActiveTabId)) {
-            setActiveTabId(savedActiveTabId);
+              setActiveTabId(savedActiveTabId);
             } else {
-            setActiveTabId(parsedTabs[0].id);
+              setActiveTabId(parsedTabs[0].id);
             }
         }
       }
-    } catch (e) {
-      console.error("Failed to load browser tabs from localStorage", e);
-    }
+    } catch (e) { console.error("Failed to load browser tabs from localStorage", e); }
   }, []);
 
   // Save tabs to localStorage whenever they change
@@ -85,20 +84,8 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
       if (activeTabId) {
         safeLocalStorage.setItem(ACTIVE_TAB_ID_KEY, activeTabId);
       }
-    } catch (e) {
-      console.error("Failed to save browser tabs to localStorage", e);
-    }
+    } catch (e) { console.error("Failed to save browser tabs to localStorage", e); }
   }, [tabs, activeTabId]);
-  
-  // Cleanup browser instances on unmount
-  useEffect(() => {
-    return () => {
-      // FIX: The Object.values method was returning an array of 'unknown' type. Explicitly typing the instance to the 'InAppBrowser' interface resolves the type error and allows access to the 'close' method.
-      Object.values(browserInstances.current).forEach((instance: InAppBrowser) => instance.close());
-      // FIX: Explicitly type `el` as HTMLElement to allow calling the .remove() method.
-      Object.values(browserElements.current).forEach((el: HTMLElement) => el.remove());
-    };
-  }, []);
 
   const updateTab = useCallback((tabId: string, updates: Partial<BrowserTab>) => {
     setTabs(prevTabs =>
@@ -107,212 +94,160 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
       )
     );
   }, []);
-
-  const findAndAssociateElement = useCallback((tabId: string, attempt = 0) => {
-    if (attempt > 20) { // Give up after 2 seconds
-        console.error(`Could not find browser element for tab ${tabId}`);
-        return;
-    }
-    // Robustly find the wrapper div created by the plugin.
-    const allWrappers = Array.from(document.querySelectorAll<HTMLElement>('body > div.inappbrowser_wrapper'));
-    const knownWrappers = Object.values(browserElements.current);
-    const newWrapper = allWrappers.find(w => !knownWrappers.includes(w));
-
-    if (newWrapper) {
-        console.log(`Associated browser DOM element for tab ${tabId}`);
-        browserElements.current[tabId] = newWrapper;
-        forceUpdate({}); // Trigger layout effect to position it
-    } else {
-        setTimeout(() => findAndAssociateElement(tabId, attempt + 1), 100);
-    }
-  }, []);
   
-  // Effect to manage the browser instances themselves (creating/destroying)
-  useEffect(() => {
-      // Cleanup: Close instances for tabs that no longer exist
-      const openTabIds = new Set(tabs.map(t => t.id));
-      Object.keys(browserInstances.current).forEach(tabId => {
-          if (!openTabIds.has(tabId)) {
-              browserInstances.current[tabId]?.close();
-              browserElements.current[tabId]?.remove();
-              delete browserInstances.current[tabId];
-              delete browserElements.current[tabId];
-          }
-      });
-
-      const activeTab = tabs.find(t => t.id === activeTabId);
-
-      if (activeTab && !browserInstances.current[activeTab.id]) {
-          if (!window.cordova || !window.cordova.InAppBrowser) {
-              console.error("Cordova InAppBrowser plugin not found. Browser functionality is disabled.");
-              updateTab(activeTab.id, { isLoading: false, title: "Error: Plugin not found" });
-              return;
-          }
-
-          updateTab(activeTab.id, { isLoading: true });
-          
-          const iab = window.cordova.InAppBrowser.open(activeTab.url, '_blank', 'location=no,toolbar=no,zoom=no,hidden=yes');
-          browserInstances.current[activeTab.id] = iab;
-          findAndAssociateElement(activeTab.id);
-
-          const onLoadStart = (event: InAppBrowserEvent) => updateTab(activeTab.id, { isLoading: true, url: event.url });
-          const onLoadStop = (event: InAppBrowserEvent) => {
-              iab.executeScript({ code: "document.title" }, (values) => {
-                  const title = values[0] || event.url;
-                  updateTab(activeTab.id, { isLoading: false, url: event.url, title, favicon: getFaviconUrl(event.url) });
-              });
-          };
-          const onLoadError = (event: InAppBrowserEvent) => updateTab(activeTab.id, { isLoading: false, title: `Error: ${event.message}` });
-          
-          iab.addEventListener('loadstart', onLoadStart);
-          iab.addEventListener('loadstop', onLoadStop);
-          iab.addEventListener('loaderror', onLoadError);
-      }
-      
-  }, [tabs, activeTabId, updateTab, findAndAssociateElement]);
-
-  // Main layout effect for DOM manipulation and persistent styling
-  useEffect(() => {
+  const applyLayout = useCallback(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    const applyLayout = () => {
-        const activeElement = activeTabId ? browserElements.current[activeTabId] : null;
+    const activeElement = activeTabId ? browserElements.current[activeTabId] : null;
 
-        // Hide all inactive elements
-        Object.entries(browserElements.current).forEach(([tabId, el]) => {
-            if (tabId !== activeTabId || !isBrowserViewActive) {
-                // FIX: Cast `el` to HTMLElement to ensure `style` property is accessible, as Object.entries can result in an `unknown` type.
-                (el as HTMLElement).style.display = 'none';
-            }
-        });
+    // Hide all elements that aren't the active one (or if the browser view is inactive)
+    Object.entries(browserElements.current).forEach(([tabId, el]) => {
+      const shouldBeVisible = tabId === activeTabId && isBrowserViewActive;
+      (el as HTMLElement).style.display = shouldBeVisible ? 'block' : 'none';
+    });
 
-        if (activeElement && isBrowserViewActive) {
-            if (activeElement.parentElement !== container) {
-                container.appendChild(activeElement);
+    // If there's an active element that should be visible, ensure it's in the container and styled correctly.
+    if (activeElement && isBrowserViewActive) {
+      if (activeElement.parentElement !== container) {
+        container.appendChild(activeElement);
+      }
+      activeElement.setAttribute('style', `
+        position: relative !important;
+        top: auto !important;
+        left: auto !important;
+        width: 100% !important;
+        height: 100% !important;
+        display: block !important;
+      `);
+      const iframe = activeElement.querySelector('iframe');
+      if (iframe) {
+        iframe.setAttribute('style', `width: 100% !important; height: 100% !important; border: none !important;`);
+      }
+    }
+  }, [activeTabId, isBrowserViewActive]);
+
+  // This effect just calls the layout function when the active state changes.
+  useEffect(() => {
+    applyLayout();
+  }, [activeTabId, isBrowserViewActive, applyLayout]);
+  
+  // This effect sets up the MutationObserver to hijack the plugin's DOM element.
+  useEffect(() => {
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const node of Array.from(mutation.addedNodes)) {
+          // Check if the added node is the one we're looking for.
+          if (node instanceof HTMLElement && node.classList.contains('inappbrowser_wrapper')) {
+            const newTabId = openingTabIdRef.current;
+            if (newTabId) {
+              console.log(`[MutationObserver] Hijacked browser element for new tab ${newTabId}`);
+              browserElements.current[newTabId] = node;
+              openingTabIdRef.current = null; // Reset the flag
+              // Immediately apply the correct layout to this new element.
+              applyLayout();
             }
-            // Use setAttribute with !important to aggressively override any plugin styles.
-            activeElement.setAttribute('style', `
-                position: relative !important;
-                top: 0 !important;
-                left: 0 !important;
-                width: 100% !important;
-                height: 100% !important;
-                display: block !important;
-            `);
-            const iframe = activeElement.querySelector('iframe');
-            if (iframe) {
-                iframe.setAttribute('style', `
-                    width: 100% !important;
-                    height: 100% !important;
-                    border: none !important;
-                `);
-            }
+          }
         }
-    };
+      }
+    });
 
-    applyLayout(); // Apply styles immediately
-
-    const observer = new ResizeObserver(applyLayout);
-    observer.observe(container);
-
+    observer.observe(document.body, { childList: true });
     return () => observer.disconnect();
-}, [activeTabId, isBrowserViewActive, tabs, containerRef]);
+  }, [applyLayout]);
 
+  // This effect manages the actual InAppBrowser instances.
+  useEffect(() => {
+    // Cleanup instances for closed tabs
+    const openTabIds = new Set(tabs.map(t => t.id));
+    Object.keys(browserInstances.current).forEach(tabId => {
+        if (!openTabIds.has(tabId)) {
+            browserInstances.current[tabId]?.close();
+            browserElements.current[tabId]?.remove();
+            delete browserInstances.current[tabId];
+            delete browserElements.current[tabId];
+        }
+    });
+
+    const activeTab = tabs.find(t => t.id === activeTabId);
+
+    // Create a new instance if one doesn't exist for the active tab
+    if (activeTab && !browserInstances.current[activeTab.id]) {
+        if (!window.cordova?.InAppBrowser) { return; }
+        
+        updateTab(activeTab.id, { isLoading: true });
+        
+        // Set a flag so the MutationObserver knows which tab this new element belongs to.
+        openingTabIdRef.current = activeTab.id;
+
+        const iab = window.cordova.InAppBrowser.open(activeTab.url, '_blank', 'location=no,toolbar=no,zoom=no,hidden=yes');
+        browserInstances.current[activeTab.id] = iab;
+
+        iab.addEventListener('loadstart', (e) => updateTab(activeTab.id, { isLoading: true, url: e.url }));
+        iab.addEventListener('loadstop', (e) => {
+            iab.executeScript({ code: "document.title" }, (values) => {
+                const title = values[0] || e.url;
+                updateTab(activeTab.id, { isLoading: false, url: e.url, title, favicon: getFaviconUrl(e.url) });
+            });
+        });
+        iab.addEventListener('loaderror', (e) => updateTab(activeTab.id, { isLoading: false, title: `Error: ${e.message}` }));
+        
+        // This triggers the plugin to add its element to the DOM, which our MutationObserver will then catch.
+        iab.show();
+    }
+  }, [tabs, activeTabId, updateTab]);
 
   const openNewTab = useCallback((url: string = 'https://google.com') => {
-    const newTab: BrowserTab = {
-      id: uuidv4(),
-      url,
-      title: 'New Tab',
-      favicon: getFaviconUrl(url),
-      isLoading: true,
-      lastUpdated: Date.now(),
-    };
+    const newTab: BrowserTab = { id: uuidv4(), url, title: 'New Tab', favicon: getFaviconUrl(url), isLoading: true, lastUpdated: Date.now() };
     setTabs(prev => [...prev, newTab]);
     setActiveTabId(newTab.id);
     return newTab.id;
   }, []);
 
-  const switchToTab = useCallback((tabId: string) => {
-    if (tabId !== activeTabId) {
-      setActiveTabId(tabId);
-    }
-  }, [activeTabId]);
-
   const closeTab = useCallback((tabId: string) => {
     setTabs(prev => {
-      const remainingTabs = prev.filter(t => t.id !== tabId);
+      const remaining = prev.filter(t => t.id !== tabId);
       if (tabId === activeTabId) {
-        const newActiveTab = remainingTabs.sort((a, b) => b.lastUpdated - a.lastUpdated)[0];
-        setActiveTabId(newActiveTab ? newActiveTab.id : null);
+        const newActive = remaining.sort((a, b) => b.lastUpdated - a.lastUpdated)[0];
+        setActiveTabId(newActive ? newActive.id : null);
       }
-      return remainingTabs;
+      return remaining;
     });
   }, [activeTabId]);
-  
-  const navigateTo = (tabId: string, url: string) => {
-      // Re-create the instance to navigate, which is how IAB works
-      const instance = browserInstances.current[tabId];
-      if (instance) {
-        instance.close();
-        delete browserInstances.current[tabId];
-      }
-      const element = browserElements.current[tabId];
-      if(element) {
-        element.remove();
-        delete browserElements.current[tabId];
-      }
-      
-      updateTab(tabId, { url, title: 'Loading...', favicon: getFaviconUrl(url), isLoading: true });
 
-      if (tabId !== activeTabId) setActiveTabId(tabId);
-      else forceUpdate({}); // Force re-creation if already active
+  const switchToTab = useCallback((tabId: string) => {
+    setActiveTabId(tabId);
+  }, []);
+
+  const navigateTo = (tabId: string, url: string) => {
+    browserInstances.current[tabId]?.close();
+    browserElements.current[tabId]?.remove();
+    delete browserInstances.current[tabId];
+    delete browserElements.current[tabId];
+
+    updateTab(tabId, { url, title: 'Loading...', favicon: getFaviconUrl(url), isLoading: true });
+    setActiveTabId(tabId);
   };
   
   const executeScriptOnTab = <T extends any>(tabId: string, script: string): Promise<T> => {
     return new Promise((resolve, reject) => {
       const instance = browserInstances.current[tabId];
-      if (!instance) return reject(new Error(`No active browser instance for tab ID: ${tabId}`));
+      if (!instance) return reject(new Error(`No instance for tab ${tabId}`));
       instance.executeScript({ code: script }, (result) => resolve(result?.[0] as T));
     });
   };
   
-  const goBack = async (tabId: string) => { await executeScriptOnTab(tabId, 'history.back();'); };
-  const goForward = async (tabId: string) => { await executeScriptOnTab(tabId, 'history.forward();'); };
-  const reload = async (tabId: string) => { await executeScriptOnTab(tabId, 'location.reload();'); };
+  const goBack = async (tabId: string) => executeScriptOnTab(tabId, 'history.back();');
+  const goForward = async (tabId: string) => executeScriptOnTab(tabId, 'history.forward();');
+  const reload = async (tabId: string) => executeScriptOnTab(tabId, 'location.reload();');
   const toggleTabBar = () => setIsTabBarCollapsed(p => !p);
 
-  const getPageContent = async (tabId: string): Promise<string> => {
-    return executeScriptOnTab<string>(tabId, 'document.body.innerText');
-  };
+  const getPageContent = (tabId: string) => executeScriptOnTab<string>(tabId, 'document.body.innerText');
 
-  const interactWithPage = async (tabId: string, selector: string, action: 'click' | 'type', value?: string): Promise<string> => {
-    const script = `
-      (function() {
-        try {
-          const el = document.querySelector('${selector.replace(/'/g, "\\'")}');
-          if (!el) return 'Error: Element not found with selector: ${selector.replace(/'/g, "\\'")}';
-          
-          switch('${action}') {
-            case 'click': el.click(); return 'Click action performed.';
-            case 'type':
-              el.value = '${(value || '').replace(/'/g, "\\'")}';
-              el.dispatchEvent(new Event('input', { bubbles: true }));
-              el.dispatchEvent(new Event('change', { bubbles: true }));
-              return 'Type action performed.';
-            default: return 'Error: Unknown action.';
-          }
-        } catch(e) { return 'Error: ' + e.message; }
-      })();
-    `;
+  const interactWithPage = (tabId: string, selector: string, action: 'click' | 'type', value?: string) => {
+    const script = `(function(){try{const el=document.querySelector('${selector.replace(/'/g, "\\'")}');if(!el)return'Error: Element not found';switch('${action}'){case'click':el.click();return'Click performed.';case'type':el.value='${(value||'').replace(/'/g,"\\'")}',el.dispatchEvent(new Event('input',{bubbles:true})),el.dispatchEvent(new Event('change',{bubbles:true}));return'Type performed.';default:return'Error: Unknown action.'}}catch(e){return'Error: '+e.message}})()`;
     return executeScriptOnTab<string>(tabId, script);
   };
 
-
-  return {
-    tabs, activeTabId, isTabBarCollapsed, openNewTab, closeTab,
-    switchToTab, navigateTo, goBack, goForward, reload, toggleTabBar,
-    getPageContent, interactWithPage, containerRef,
-  };
+  return { tabs, activeTabId, isTabBarCollapsed, openNewTab, closeTab, switchToTab, navigateTo, goBack, goForward, reload, toggleTabBar, getPageContent, interactWithPage, containerRef };
 };

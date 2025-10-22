@@ -1,4 +1,4 @@
-import React, { ErrorInfo, ReactNode } from 'react';
+import React, { Component, ErrorInfo, ReactNode } from 'react';
 import ErrorFallback from './ErrorFallback';
 
 interface Props {
@@ -10,58 +10,34 @@ interface State {
   error: Error | null;
 }
 
-// FIX: The ErrorBoundary class must extend React.Component to be a valid React class component and have access to `props` and `setState`.
-class ErrorBoundary extends React.Component<Props, State> {
-  public state: State = {
-    hasError: false,
-    error: null,
-  };
+class ErrorBoundary extends Component<Props, State> {
+  public state: State;
 
-  // Standard React error boundary method for render-phase errors
-  static getDerivedStateFromError(error: Error): State {
+  constructor(props: Props) {
+    super(props);
+    // FIX: Initialized state in the constructor. This can resolve rare TypeScript type inference issues regarding instance properties like 'props'.
+    this.state = {
+      hasError: false,
+      error: null,
+    };
+  }
+
+  public static getDerivedStateFromError(error: Error): State {
+    // Update state so the next render will show the fallback UI.
     return { hasError: true, error };
   }
 
-  // For logging errors that were caught by getDerivedStateFromError
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error("React ErrorBoundary caught:", error, errorInfo);
+  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    // Log the error to the console for debugging
+    console.error("Uncaught error in ErrorBoundary:", error, errorInfo);
   }
 
-  // Add global listeners when the component mounts
-  componentDidMount() {
-    window.addEventListener('error', this.handleError);
-    window.addEventListener('unhandledrejection', this.handleRejection);
-  }
-
-  // Clean up global listeners when the component unmounts
-  componentWillUnmount() {
-    window.removeEventListener('error', this.handleError);
-    window.removeEventListener('unhandledrejection', this.handleRejection);
-  }
-
-  // Using an arrow function for a class method that is an event handler
-  // automatically binds `this` to the component instance.
-  private handleError = (event: ErrorEvent): void => {
-    console.error("Global uncaught error:", event.error);
-    event.preventDefault();
-    const error = event.error instanceof Error ? event.error : new Error(JSON.stringify(event.error ?? 'An unknown error occurred'));
-    this.setState({ hasError: true, error });
-  }
-
-  // Using an arrow function for a class method that is an event handler
-  // automatically binds `this` to the component instance.
-  private handleRejection = (event: PromiseRejectionEvent): void => {
-    console.error("Global unhandled rejection:", event.reason);
-    event.preventDefault();
-    const error = event.reason instanceof Error ? event.reason : new Error(JSON.stringify(event.reason));
-    this.setState({ hasError: true, error });
-  }
-
-  render() {
+  public render() {
     if (this.state.hasError && this.state.error) {
+      // Render the fallback UI and pass the error object to it
       return <ErrorFallback error={this.state.error} />;
     }
-    
+
     return this.props.children;
   }
 }
