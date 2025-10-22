@@ -1,8 +1,8 @@
-# VibeCode Cross-Platform Build & Deploy Pipeline
+# AIDE Cross-Platform Build & Deploy Pipeline
 #
 # This workflow is now ACTIVE. It will run automatically on pushes and pull requests to the main branch.
 
-name: VibeCode Cross-Platform Build
+name: AIDE Cross-Platform Build
 
 on:
   workflow_dispatch: # Allows manual triggering of the workflow
