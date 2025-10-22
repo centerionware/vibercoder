@@ -7,7 +7,6 @@ const BROWSER_TABS_KEY = 'vibecode_browserTabs';
 const ACTIVE_TAB_ID_KEY = 'vibecode_activeTabId';
 const DEFAULT_URL = 'https://www.google.com/search?q=VibeCode+AI';
 
-// A helper to get a favicon URL from a service
 const getFaviconUrl = (url: string): string => {
   try {
     const urlObj = new URL(url);
@@ -24,6 +23,8 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
   
   const containerRef = useRef<HTMLDivElement>(null);
   const activeBrowserInstance = useRef<any>(null);
+  const activeBrowserWrapperRef = useRef<HTMLElement | null>(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
   // --- State Persistence ---
   useEffect(() => {
@@ -46,7 +47,8 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
 
   useEffect(() => {
     try {
-      safeLocalStorage.setItem(BROWSER_TABS_KEY, JSON.stringify(tabs));
+      const tabsToSave = tabs.map(({ id, url, title, favicon, lastUpdated }) => ({ id, url, title, favicon, lastUpdated, isLoading: false }));
+      safeLocalStorage.setItem(BROWSER_TABS_KEY, JSON.stringify(tabsToSave));
       if (activeTabId) {
         safeLocalStorage.setItem(ACTIVE_TAB_ID_KEY, activeTabId);
       }
@@ -60,29 +62,44 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
       )
     );
   }, []);
+
+  const updateBrowserPosition = useCallback(() => {
+    if (activeBrowserWrapperRef.current && containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        Object.assign(activeBrowserWrapperRef.current.style, {
+            position: 'absolute',
+            top: `${rect.top}px`,
+            left: `${rect.left}px`,
+            width: `${rect.width}px`,
+            height: `${rect.height}px`,
+            zIndex: '40', // Below modals (z-50) but above most UI
+        });
+    }
+  }, []);
   
   const closeCurrentBrowser = useCallback(() => {
     if (activeBrowserInstance.current) {
         try {
             activeBrowserInstance.current.close();
         } catch(e) {
-            console.warn("Error closing InAppBrowser instance. It might have been already closed or in an invalid state.", e);
+            console.warn("Error closing InAppBrowser instance.", e);
         }
         activeBrowserInstance.current = null;
-    }
-    // Clean our container that holds the iframe
-    if (containerRef.current) {
-        containerRef.current.innerHTML = '';
+        activeBrowserWrapperRef.current = null;
     }
   }, []);
 
   const openBrowserForTab = useCallback((tab: BrowserTab) => {
     closeCurrentBrowser();
     
-    const targetContainer = containerRef.current;
     const inAppBrowserPlugin = (window as any).cordova?.InAppBrowser;
-    if (!targetContainer || !inAppBrowserPlugin?.open) {
-        console.warn('InAppBrowser plugin not available or container not ready.');
+    if (!containerRef.current || !inAppBrowserPlugin?.open) {
+        return;
+    }
+    
+    if (typeof tab.url !== 'string') {
+        console.error(`Cannot open browser tab. Expected URL to be a string, but got:`, tab.url);
+        updateTab(tab.id, { isLoading: false, title: 'Invalid URL' });
         return;
     }
 
@@ -92,28 +109,13 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
     const observer = new MutationObserver((mutations, obs) => {
         for (const mutation of mutations) {
             for (const node of Array.from(mutation.addedNodes)) {
-                if ((node as HTMLElement).parentElement === document.body) {
-                    const wrapperDiv = node as HTMLElement;
-                    const iframe = wrapperDiv.querySelector('iframe');
-
-                    // We found the plugin's wrapper div containing the iframe
-                    if (iframe) {
-                        // Move just the iframe into our container
-                        targetContainer.appendChild(iframe);
-
-                        // Restyle the iframe to fill the container
-                        Object.assign(iframe.style, {
-                            position: 'absolute', top: '0', left: '0',
-                            width: '100%', height: '100%', border: 'none'
-                        });
-
-                        // Hide the plugin's original wrapper div to prevent it from overlaying the screen
-                        wrapperDiv.style.display = 'none';
-
-                        browser.show();
-                        obs.disconnect(); // We're done
-                        return;
-                    }
+                const element = node as HTMLElement;
+                if (element.parentElement === document.body && element.querySelector('iframe')) {
+                    activeBrowserWrapperRef.current = element;
+                    updateBrowserPosition();
+                    browser.show();
+                    obs.disconnect();
+                    return;
                 }
             }
         }
@@ -123,14 +125,8 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
 
     browser.addEventListener('loadstop', (params: any) => {
         updateTab(tab.id, { isLoading: false, url: params.url, favicon: getFaviconUrl(params.url) });
-        // The plugin's web implementation does not allow getting the title.
-        // We'll try to infer it from the URL or leave it as is.
-        try {
-            const url = new URL(params.url);
-            updateTab(tab.id, { title: url.hostname });
-        } catch (e) {
-            updateTab(tab.id, { title: params.url });
-        }
+        try { new URL(params.url); updateTab(tab.id, { title: new URL(params.url).hostname }); }
+        catch (e) { updateTab(tab.id, { title: params.url }); }
     });
 
     browser.addEventListener('loaderror', (params: any) => {
@@ -141,10 +137,11 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
     browser.addEventListener('exit', () => {
         if (activeBrowserInstance.current === browser) {
             activeBrowserInstance.current = null;
+            activeBrowserWrapperRef.current = null;
         }
     });
 
-  }, [closeCurrentBrowser, updateTab]);
+  }, [closeCurrentBrowser, updateTab, updateBrowserPosition]);
   
   const closeTab = useCallback((tabId: string) => {
     if (tabId === activeTabId) {
@@ -161,20 +158,30 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
   }, [activeTabId, closeCurrentBrowser]);
 
   useEffect(() => {
+    if (resizeObserverRef.current) resizeObserverRef.current.disconnect();
+
+    if (isBrowserViewActive && containerRef.current) {
+        resizeObserverRef.current = new ResizeObserver(() => {
+            updateBrowserPosition();
+        });
+        resizeObserverRef.current.observe(containerRef.current);
+    }
+    
     if (!isBrowserViewActive) {
       closeCurrentBrowser();
-      return;
-    }
-    const activeTab = tabs.find(t => t.id === activeTabId);
-    if (activeTab) {
-      openBrowserForTab(activeTab);
     } else {
-      closeCurrentBrowser();
+        const activeTab = tabs.find(t => t.id === activeTabId);
+        if (activeTab) {
+          openBrowserForTab(activeTab);
+        } else {
+          closeCurrentBrowser();
+        }
     }
-  // This effect should re-run when the active tab or view status changes.
-  // The functions are wrapped in useCallback to be stable.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTabId, isBrowserViewActive]);
+    
+    return () => {
+        if (resizeObserverRef.current) resizeObserverRef.current.disconnect();
+    };
+  }, [activeTabId, isBrowserViewActive, tabs, openBrowserForTab, closeCurrentBrowser, updateBrowserPosition]);
   
   const openNewTab = useCallback((url: string = DEFAULT_URL): string => {
     const newTab: BrowserTab = { id: uuidv4(), url, title: 'New Tab', favicon: getFaviconUrl(url), isLoading: true, lastUpdated: Date.now() };
@@ -191,88 +198,55 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
   }, [activeTabId]);
 
   const navigateTo = (tabId: string, url: string) => {
-    const newTitle = 'Loading...';
-    try {
-        const urlObj = new URL(url);
-        // newTitle = urlObj.hostname;
-    } catch(e) {/* use default */}
-    
-    updateTab(tabId, { url, title: newTitle, favicon: getFaviconUrl(url), isLoading: true });
-    
+    updateTab(tabId, { url, title: 'Loading...', favicon: getFaviconUrl(url), isLoading: true });
     if (tabId === activeTabId) {
-        const activeTab = tabs.find(t => t.id === tabId);
-        if (activeTab) {
-            // Re-create the browser instance for the new URL
-            openBrowserForTab({ ...activeTab, url });
-        }
+        const tab = tabs.find(t => t.id === tabId);
+        if (tab) openBrowserForTab({ ...tab, url });
     }
   };
   
-  // The plugin's web implementation does not support history back/forward.
-  const goBack = (tabId: string) => {
+  const goBack = () => {
     if (activeBrowserInstance.current) {
         (activeBrowserInstance.current as any).executeScript({ code: "history.back();" });
     }
   };
-  const goForward = (tabId: string) => {
+  const goForward = () => {
       if (activeBrowserInstance.current) {
         (activeBrowserInstance.current as any).executeScript({ code: "history.forward();" });
     }
   };
   const reload = (tabId: string) => {
       if (tabId === activeTabId) {
-          const activeTab = tabs.find(t => t.id === tabId);
-          if (activeTab) openBrowserForTab(activeTab);
+          const tab = tabs.find(t => t.id === tabId);
+          if (tab) openBrowserForTab(tab);
       }
   };
   
   const toggleTabBar = () => setIsTabBarCollapsed(p => !p);
 
   const getPageContent = async (tabId: string): Promise<string> => {
-    if (!activeBrowserInstance.current) {
-        return "Error: No active browser instance.";
-    }
+    const browser = activeBrowserInstance.current;
+    if (!browser || tabId !== activeTabId) return Promise.reject("Target tab is not active.");
+    
     return new Promise((resolve, reject) => {
-        (activeBrowserInstance.current as any).executeScript({ code: "document.body.innerText" }, (result: any) => {
-            if (result && result[0]) {
-                resolve(result[0]);
-            } else {
-                reject("Could not retrieve page content.");
-            }
+        browser.executeScript({ code: "document.body.innerText" }, (result: any) => {
+            if (result && result[0]) resolve(result[0]);
+            else reject("Could not retrieve page content.");
         });
     });
   };
 
   const interactWithPage = async (tabId: string, selector: string, action: 'click' | 'type', value?: string): Promise<string> => {
-     if (!activeBrowserInstance.current) {
-        return Promise.reject(new Error("No active browser instance."));
-    }
-    const code = `(function() {
-        const el = document.querySelector('${selector}');
-        if (!el) return 'Error: Element not found for selector: ${selector}';
-        try {
-            if ('${action}' === 'click') {
-                el.click();
-                return 'Success: Clicked element.';
-            } else if ('${action}' === 'type') {
-                el.value = '${value || ''}';
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-                return 'Success: Typed into element.';
-            }
-            return 'Error: Unknown action.';
-        } catch(e) {
-            return 'Error: ' + e.message;
-        }
-    })();`;
+    const browser = activeBrowserInstance.current;
+    if (!browser || tabId !== activeTabId) return Promise.reject("Target tab is not active.");
+
+    const code = `(function() { try { const el = document.querySelector('${selector}'); if (!el) return 'Error: Element not found'; if ('${action}' === 'click') el.click(); else if ('${action}' === 'type') el.value = '${value || ''}'; return 'Success'; } catch(e) { return 'Error: ' + e.message; } })();`;
 
     return new Promise((resolve, reject) => {
-        (activeBrowserInstance.current as any).executeScript({ code }, (result: any) => {
+        browser.executeScript({ code }, (result: any) => {
             if (result && result[0]) {
-                if (result[0].startsWith('Error:')) {
-                    reject(new Error(result[0]));
-                } else {
-                    resolve(result[0]);
-                }
+                if (result[0].startsWith('Error:')) reject(new Error(result[0]));
+                else resolve(result[0]);
             } else {
                 reject(new Error("Failed to execute interaction script."));
             }
