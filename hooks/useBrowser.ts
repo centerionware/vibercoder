@@ -104,27 +104,35 @@ export const useBrowser = (): BrowserControls => {
     if (!browser) {
       return Promise.reject(new Error("No active browser instance to get content from."));
     }
+
+    // This script provides a cleaner text representation by removing scripts/styles.
+    const code = `
+    (function() {
+        try {
+            const clone = document.body.cloneNode(true);
+            clone.querySelectorAll('script, style, noscript, svg, [aria-hidden="true"]').forEach(el => el.remove());
+            return clone.textContent || '';
+        } catch (e) {
+            // Fallback for simple text content if cloning fails
+            return document.body.innerText || '';
+        }
+    })();`;
     
     const scriptExecutionPromise = new Promise<string>((resolve, reject) => {
-        browser.executeScript({ code: "document.body.innerText" }, (result: any[]) => {
-            // The result is an array. The first element contains the return value of the script.
+        browser.executeScript({ code }, (result: any[]) => {
             if (result && typeof result[0] === 'string') {
-                // This correctly handles an empty string for an empty page.
                 resolve(result[0]);
             } else if (result && result[0] === null) {
-                // This can happen if document.body.innerText is null (unlikely but possible).
-                // Treat it as an empty page.
                 resolve('');
             }
             else {
-                // This case handles script execution failure.
                 reject(new Error("Could not retrieve page content. The script may have failed to execute."));
             }
         });
     });
 
     const timeoutPromise = new Promise<string>((_, reject) => {
-      setTimeout(() => reject(new Error("Timed out waiting for page content script to execute.")), 5000); // 5 second timeout
+      setTimeout(() => reject(new Error("Timed out waiting for page content script to execute.")), 5000);
     });
 
     return Promise.race([scriptExecutionPromise, timeoutPromise]);
@@ -136,10 +144,44 @@ export const useBrowser = (): BrowserControls => {
       return Promise.reject(new Error("No active browser instance to interact with."));
     }
 
-    const code = `(function() { try { const el = document.querySelector('${selector.replace(/'/g, "\\'")}'); if (!el) return 'Error: Element not found'; if ('${action}' === 'click') el.click(); else if ('${action}' === 'type') el.value = '${(value || '').replace(/'/g, "\\'")}'; return 'Success'; } catch(e) { return 'Error: ' + e.message; } })();`;
+    // This injected script includes a Shadow DOM-piercing selector and dispatches proper events for robust interaction.
+    const code = `
+    (function() {
+        function deepQuerySelector(sel, root = document) {
+            let found = root.querySelector(sel);
+            if (found) return found;
+
+            const elements = root.querySelectorAll('*');
+            for (const el of elements) {
+                if (el.shadowRoot) {
+                    found = deepQuerySelector(sel, el.shadowRoot);
+                    if (found) return found;
+                }
+            }
+            return null;
+        }
+
+        try {
+            const el = deepQuerySelector('${selector.replace(/'/g, "\\'")}');
+            if (!el) {
+                return 'Error: Element not found with selector: ${selector.replace(/'/g, "\\'")}';
+            }
+            
+            if ('${action}' === 'click') {
+                el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, composed: true }));
+            } else if ('${action}' === 'type') {
+                el.value = '${(value || '').replace(/'/g, "\\'")}';
+                el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+            }
+            return 'Success';
+        } catch(e) {
+            return 'Error: ' + e.message;
+        }
+    })();`;
 
     return new Promise((resolve, reject) => {
-        browser.executeScript({ code }, (result: any) => {
+        browser.executeScript({ code }, (result: any[]) => {
             if (result && result[0]) {
                 if (result[0].startsWith('Error:')) {
                     reject(new Error(result[0]));
@@ -147,7 +189,7 @@ export const useBrowser = (): BrowserControls => {
                     resolve(result[0]);
                 }
             } else {
-                reject(new Error("Failed to execute interaction script."));
+                reject(new Error("Failed to execute interaction script. The script returned no result."));
             }
         });
     });
