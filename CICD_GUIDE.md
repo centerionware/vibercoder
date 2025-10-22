@@ -1,6 +1,6 @@
-# VibeCode CI/CD Guide with GitHub Actions
+# AIDE CI/CD Guide with GitHub Actions
 
-This guide explains the automated build process for VibeCode, which is now **active** and uses GitHub Actions to compile the application for all target platforms automatically.
+This guide explains the automated build process for AIDE, which is now **active** and uses GitHub Actions to compile the application for all target platforms automatically.
 
 ## Active Workflow
 

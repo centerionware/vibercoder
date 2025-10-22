@@ -1,7 +1,7 @@
 {
-  "name": "vibecode",
+  "name": "aide",
   "version": "1.0.0",
-  "description": "A mobile-first, web-based coding platform with seamless Git integration, AI-enhanced productivity, and a live preview experience, all running in the browser.",
+  "description": "A mobile-first, AI-driven IDE with seamless Git integration, enhanced productivity, and a live preview experience, all running in the browser.",
   "type": "module",
   "main": "electron/main.js",
   "scripts": {
@@ -16,7 +16,7 @@
     "build:win": "electron-builder --win",
     "build:linux": "electron-builder --linux",
     "build:macos": "electron-builder --mac",
-    "build:docker": "docker build -t vibecode:latest -f Dockerfile.json"
+    "build:docker": "docker build -t aide:latest -f Dockerfile.json"
   },
   "dependencies": {
     "@capacitor/android": "^7.0.0",
@@ -53,8 +53,8 @@
     "vite": "^7.1.9"
   },
   "build": {
-    "appId": "com.vibecode.app",
-    "productName": "VibeCode",
+    "appId": "com.aide.app",
+    "productName": "AIDE",
     "files": [
       "www/**/*",
       "electron/**/*"

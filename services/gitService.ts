@@ -42,7 +42,7 @@ class MainThreadGitService implements GitService {
 
     constructor(projectId: string, getAuthCallback: (operation: 'read' | 'write') => ({ token: string | undefined; author: GitAuthor; proxyUrl: string; }) | null) {
         // Use a unique FS name to avoid collisions, especially when running inside the preview iframe.
-        const fsName = `vibecode-fs-main-${window.self !== window.top ? 'iframe-' : ''}${projectId}`;
+        const fsName = `aide-fs-main-${window.self !== window.top ? 'iframe-' : ''}${projectId}`;
         this.fs = new LightningFS(fsName);
         this.getAuth = getAuthCallback;
 

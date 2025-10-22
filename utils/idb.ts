@@ -13,7 +13,7 @@ export class VibeCodeDB extends Dexie {
   projectFiles!: Table<ProjectFile>;
 
   constructor() {
-    super('vibecodeDB');
+    super('aideDB');
     // Bump version to 10 for projectFiles table
     // FIX: Cast `this` to `any` to call the `version` method, resolving a TypeScript type error with Dexie's dynamic methods.
     (this as any).version(10).stores({

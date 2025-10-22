@@ -65,7 +65,7 @@ self.onmessage = async (event: MessageEvent) => {
         if (!projectId) {
             throw new Error("Initialization error: projectId is missing.");
         }
-        fs = new LightningFS(`vibecode-fs-worker-${projectId}`);
+        fs = new LightningFS(`aide-fs-worker-${projectId}`);
         self.postMessage({ type: 'result', id, payload: { success: true } });
         return;
     }

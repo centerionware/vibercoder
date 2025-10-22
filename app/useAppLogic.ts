@@ -488,13 +488,15 @@ export const useAppLogic = () => {
     
     const { isResponding, sendMessage } = useAiChat({
         aiRef, settings, activeThread, addMessage, updateMessage, updateHistory, toolImplementations,
-        onStartAiRequest: vfs.initVfsSession, onEndAiRequest: vfs.saveVfsSession
+        // FIX: Wrapped vfs methods in arrow functions to ensure correct signature matching for the callback props.
+        onStartAiRequest: () => vfs.initVfsSession(), onEndAiRequest: () => vfs.saveVfsSession()
     });
     // FIX: The props object now correctly matches the `UseAiLiveProps` type, so the erroneous type cast is removed.
     const liveSessionControls = useAiLive({
         aiRef, settings, activeThread, addMessage, updateMessage, updateHistory, toolImplementations,
         activeView, onPermissionError: uiState.setPermissionError, setLiveFrameData: uiState.setLiveFrameData,
-        onStartAiRequest: vfs.initVfsSession, onEndAiRequest: vfs.saveVfsSession,
+        // FIX: Wrapped vfs methods in arrow functions to ensure correct signature matching for the callback props.
+        onStartAiRequest: () => vfs.initVfsSession(), onEndAiRequest: () => vfs.saveVfsSession(),
     });
     liveControlsRef.current = liveSessionControls;
 

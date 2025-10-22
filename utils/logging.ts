@@ -68,5 +68,5 @@ export const startCapturingLogs = (onNewLog: (log: LogEntry) => void) => {
     console.error = (...args) => capture('error', ...args);
     console.info = (...args) => capture('info', ...args);
 
-    console.log('VibeCode log capturing initialized.');
+    console.log('AIDE log capturing initialized.');
 };

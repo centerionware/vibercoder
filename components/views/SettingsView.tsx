@@ -23,7 +23,7 @@ const SettingsView: React.FC<SettingsViewProps> = (props) => {
         <header>
           <h2 className="text-2xl font-bold text-vibe-text">Settings</h2>
           <p className="text-vibe-text-secondary mt-1">
-            Configure your VibeCode environment. Changes are saved automatically.
+            Configure your AIDE environment. Changes are saved automatically.
           </p>
         </header>
         

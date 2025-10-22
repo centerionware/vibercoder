@@ -1,6 +1,6 @@
 {
-  "appId": "com.vibecode.app",
-  "appName": "VibeCode",
+  "appId": "com.aide.app",
+  "appName": "AIDE",
   "webDir": "www",
   "server": {
     "androidScheme": "https",

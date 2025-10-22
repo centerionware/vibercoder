@@ -1,10 +1,10 @@
-# VibeCode Project Guidelines
+# AIDE Project Guidelines
 
-This document outlines the vision, architecture, and design principles for the VibeCode application.
+This document outlines the vision, architecture, and design principles for the AIDE application.
 
 ## 1. Vision & Mission
 
-VibeCode is a mobile-first, web-based coding platform designed for modern frontend development. Our mission is to provide a seamless, enjoyable, and powerful coding experience that runs entirely in the browser, with a focus on:
+AIDE is a mobile-first, AI-driven IDE designed for modern frontend development. Our mission is to provide a seamless, enjoyable, and powerful coding experience that runs entirely in the browser, with a focus on:
 
 -   **Accessibility:** Code anytime, anywhere, on any device. The AI assistant should be able to control application features, like settings, to aid users.
 -   **AI-Enhanced Productivity:** Leverage generative AI as a true multi-modal pair programmer to accelerate development, from writing code and generating creative assets to real-time voice collaboration.

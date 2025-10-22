@@ -1,13 +1,13 @@
 {
-  "name": "vibecode-cors-proxy",
+  "name": "aide-cors-proxy",
   "version": "1.0.0",
-  "description": "A minimal CORS proxy for enabling client-side Git operations in VibeCode.",
+  "description": "A minimal CORS proxy for enabling client-side Git operations in AIDE.",
   "main": "index.js",
   "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "author": "VibeCode",
+  "author": "AIDE",
   "license": "MIT",
   "keywords": [
     "cors",

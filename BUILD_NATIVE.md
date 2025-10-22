@@ -1,4 +1,4 @@
-# VibeCode Native & Desktop Build Guide
+# AIDE Native & Desktop Build Guide
 
 **⚡ Automated Builds are Active! ⚡**
 
@@ -12,7 +12,7 @@ The manual instructions below are provided as a secondary option for local devel
 
 ## Part 1: Android (APK)
 
-This guide walks you through compiling the VibeCode web app into a native Android APK using Capacitor.
+This guide walks you through compiling the AIDE web app into a native Android APK using Capacitor.
 
 ### Prerequisites
 
@@ -56,7 +56,7 @@ This guide walks you through compiling the VibeCode web app into a native Androi
 
 ## Part 2: iOS (IPA)
 
-This guide explains how to compile the VibeCode web app into a native iOS application for emulators or physical devices.
+This guide explains how to compile the AIDE web app into a native iOS application for emulators or physical devices.
 
 ### Prerequisites
 
@@ -165,7 +165,7 @@ This section explains how to build desktop executables using Electron.
 
 ## Part 4: Docker Container
 
-This section explains how to build a Docker image that serves the VibeCode web application.
+This section explains how to build a Docker image that serves the AIDE web application.
 
 ### Prerequisites
 
@@ -178,13 +178,13 @@ This section explains how to build a Docker image that serves the VibeCode web a
     ```bash
     npm run build:docker
     ```
-    This command will tag the image as `vibecode:latest`.
+    This command will tag the image as `aide:latest`.
 
 2.  **Run the Container:**
     Once the build is complete, run the container:
     ```bash
-    docker run -d -p 8080:80 vibecode:latest
+    docker run -d -p 8080:80 aide:latest
     ```
 
-3.  **Access VibeCode:**
-    Open your web browser and navigate to `http://localhost:8080`. You should see the VibeCode application running, served by the Nginx container.
+3.  **Access AIDE:**
+    Open your web browser and navigate to `http://localhost:8080`. You should see the AIDE application running, served by the Nginx container.

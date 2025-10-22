@@ -1,6 +1,6 @@
 {
-  "name": "VibeCode",
-  "description": "A mobile-first, web-based coding platform with seamless Git integration, AI-enhanced productivity, and a live preview experience, all running in the browser.",
+  "name": "AIDE",
+  "description": "A mobile-first, AI-driven IDE with seamless Git integration, enhanced productivity, and a live preview experience, all running in the browser.",
   "requestFramePermissions": [
     "microphone",
     "camera"

@@ -23,7 +23,7 @@ export const useThreads = (activeProjectId: string | null) => {
             if (dbThreads.length > 0) {
                 setThreads(dbThreads);
                 // Try to load last active thread FOR THIS PROJECT, otherwise load the most recent one
-                const lastActiveId = safeLocalStorage.getItem(`vibecode_activeThreadId_${activeProjectId}`);
+                const lastActiveId = safeLocalStorage.getItem(`aide_activeThreadId_${activeProjectId}`);
                 if (lastActiveId && dbThreads.some(t => t.id === lastActiveId)) {
                     setActiveThreadId(lastActiveId);
                 } else {
@@ -54,7 +54,7 @@ export const useThreads = (activeProjectId: string | null) => {
     // Persist active thread ID for the specific project
     useEffect(() => {
         if (activeThreadId && activeProjectId) {
-            safeLocalStorage.setItem(`vibecode_activeThreadId_${activeProjectId}`, activeThreadId);
+            safeLocalStorage.setItem(`aide_activeThreadId_${activeProjectId}`, activeThreadId);
         }
     }, [activeThreadId, activeProjectId]);
 

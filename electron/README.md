@@ -1,23 +1,23 @@
-# VibeCode Electron Application
+# AIDE Electron Application
 
-This directory contains the necessary files to run VibeCode as a standalone desktop application using [Electron](https://www.electronjs.org/).
+This directory contains the necessary files to run AIDE as a standalone desktop application using [Electron](https://www.electronjs.org/).
 
 ## Purpose
 
-The Electron application serves as a native desktop wrapper for the VibeCode web application. This provides two primary benefits:
+The Electron application serves as a native desktop wrapper for the AIDE web application. This provides two primary benefits:
 
-1.  **Standalone Experience:** Users can run VibeCode as a regular desktop app, complete with an icon, without needing to open a web browser.
+1.  **Standalone Experience:** Users can run AIDE as a regular desktop app, complete with an icon, without needing to open a web browser.
 2.  **Native Capabilities:** It overcomes browser limitations. The most critical feature is the ability to bypass browser CORS (Cross-Origin Resource Sharing) restrictions for Git operations.
 
 ## How CORS is Bypassed
 
-Web browsers have a security feature called the Same-Origin Policy, which prevents a web page from making requests to a different domain than the one it was served from. This means the VibeCode web app, running on its own origin, cannot directly make requests to `github.com`.
+Web browsers have a security feature called the Same-Origin Policy, which prevents a web page from making requests to a different domain than the one it was served from. This means the AIDE web app, running on its own origin, cannot directly make requests to `github.com`.
 
 The Electron app solves this using a secure Inter-Process Communication (IPC) bridge:
 
 1.  **Two Processes:** An Electron app has two main types of processes:
     *   **Main Process (`main.js`):** Runs in a full Node.js environment. It has access to native OS features and is not restricted by CORS.
-    *   **Renderer Process (The Web App):** This is the VibeCode React application running inside an Electron window (a Chromium instance). It is subject to the same security rules as a regular web page.
+    *   **Renderer Process (The Web App):** This is the AIDE React application running inside an Electron window (a Chromium instance). It is subject to the same security rules as a regular web page.
 
 2.  **The IPC Bridge (`preload.js`):**
     *   The `preload.js` script is a special script that runs in the renderer process but has access to Node.js APIs.

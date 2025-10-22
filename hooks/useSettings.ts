@@ -3,7 +3,7 @@ import { AppSettings } from '../types';
 import { DEFAULT_SETTINGS } from '../app/config';
 import { safeLocalStorage } from '../utils/environment';
 
-const SETTINGS_KEY = 'vibecode_settings';
+const SETTINGS_KEY = 'aide_settings';
 
 export const useSettings = () => {
     const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);

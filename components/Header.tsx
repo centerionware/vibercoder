@@ -24,7 +24,7 @@ const Header: React.FC<HeaderProps> = ({
     <header className="bg-vibe-bg-deep p-3 flex justify-between items-center border-b border-vibe-panel shadow-lg">
       <button onClick={onTitleClick} className="flex items-center space-x-3 hover:opacity-80 transition-opacity">
         <div className="w-8 h-8 bg-gradient-to-br from-vibe-accent to-vibe-accent-hover rounded-lg"></div>
-        <h1 className="text-xl font-bold text-vibe-text">VibeCode</h1>
+        <h1 className="text-xl font-bold text-vibe-text">AIDE</h1>
       </button>
       <div className="flex items-center space-x-4">
         {isLiveVideoEnabled && (
