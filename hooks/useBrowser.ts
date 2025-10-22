@@ -60,23 +60,17 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
       )
     );
   }, []);
-
-  const closeTab = useCallback((tabId: string) => {
-    setTabs(prev => {
-      const remaining = prev.filter(t => t.id !== tabId);
-      if (tabId === activeTabId) {
-        const newActive = remaining.sort((a, b) => b.lastUpdated - a.lastUpdated)[0];
-        setActiveTabId(newActive ? newActive.id : null);
-      }
-      return remaining;
-    });
-  }, [activeTabId]);
-
+  
   const closeCurrentBrowser = useCallback(() => {
     if (activeBrowserInstance.current) {
-        activeBrowserInstance.current.close();
+        try {
+            activeBrowserInstance.current.close();
+        } catch(e) {
+            console.warn("Error closing InAppBrowser instance. It might have been already closed or in an invalid state.", e);
+        }
         activeBrowserInstance.current = null;
     }
+    // Clean our container that holds the iframe
     if (containerRef.current) {
         containerRef.current.innerHTML = '';
     }
@@ -98,26 +92,28 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
     const observer = new MutationObserver((mutations, obs) => {
         for (const mutation of mutations) {
             for (const node of Array.from(mutation.addedNodes)) {
-                // The plugin adds a DIV wrapper to the body. This is our target.
-                if ((node as HTMLElement).parentElement === document.body && (node as HTMLElement).querySelector('iframe')) {
-                    const browserViewNode = node as HTMLElement;
-                    
-                    targetContainer.appendChild(browserViewNode);
+                if ((node as HTMLElement).parentElement === document.body) {
+                    const wrapperDiv = node as HTMLElement;
+                    const iframe = wrapperDiv.querySelector('iframe');
 
-                    // Aggressively restyle the wrapper to be contained
-                    Object.assign(browserViewNode.style, {
-                        position: 'absolute', top: '0', left: '0',
-                        width: '100%', height: '100%', zIndex: '1',
-                    });
-                    
-                    const iframe = browserViewNode.querySelector('iframe');
+                    // We found the plugin's wrapper div containing the iframe
                     if (iframe) {
-                        Object.assign(iframe.style, { width: '100%', height: '100%', border: 'none' });
+                        // Move just the iframe into our container
+                        targetContainer.appendChild(iframe);
+
+                        // Restyle the iframe to fill the container
+                        Object.assign(iframe.style, {
+                            position: 'absolute', top: '0', left: '0',
+                            width: '100%', height: '100%', border: 'none'
+                        });
+
+                        // Hide the plugin's original wrapper div to prevent it from overlaying the screen
+                        wrapperDiv.style.display = 'none';
+
+                        browser.show();
+                        obs.disconnect(); // We're done
+                        return;
                     }
-                    
-                    browser.show();
-                    obs.disconnect();
-                    return;
                 }
             }
         }
@@ -125,9 +121,16 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
 
     observer.observe(document.body, { childList: true });
 
-    browser.addEventListener('loadstop', () => {
-        // Can't get title due to cross-origin, but we can stop the loading indicator.
-        updateTab(tab.id, { isLoading: false });
+    browser.addEventListener('loadstop', (params: any) => {
+        updateTab(tab.id, { isLoading: false, url: params.url, favicon: getFaviconUrl(params.url) });
+        // The plugin's web implementation does not allow getting the title.
+        // We'll try to infer it from the URL or leave it as is.
+        try {
+            const url = new URL(params.url);
+            updateTab(tab.id, { title: url.hostname });
+        } catch (e) {
+            updateTab(tab.id, { title: params.url });
+        }
     });
 
     browser.addEventListener('loaderror', (params: any) => {
@@ -138,11 +141,24 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
     browser.addEventListener('exit', () => {
         if (activeBrowserInstance.current === browser) {
             activeBrowserInstance.current = null;
-            closeTab(tab.id);
         }
     });
 
-  }, [closeCurrentBrowser, updateTab, closeTab]);
+  }, [closeCurrentBrowser, updateTab]);
+  
+  const closeTab = useCallback((tabId: string) => {
+    if (tabId === activeTabId) {
+        closeCurrentBrowser();
+    }
+    setTabs(prev => {
+      const remaining = prev.filter(t => t.id !== tabId);
+      if (tabId === activeTabId) {
+        const newActive = remaining.sort((a, b) => b.lastUpdated - a.lastUpdated)[0];
+        setActiveTabId(newActive ? newActive.id : null);
+      }
+      return remaining;
+    });
+  }, [activeTabId, closeCurrentBrowser]);
 
   useEffect(() => {
     if (!isBrowserViewActive) {
@@ -155,10 +171,12 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
     } else {
       closeCurrentBrowser();
     }
+  // This effect should re-run when the active tab or view status changes.
+  // The functions are wrapped in useCallback to be stable.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTabId, isBrowserViewActive]);
   
-  const openNewTab = useCallback((url: string = DEFAULT_URL) => {
+  const openNewTab = useCallback((url: string = DEFAULT_URL): string => {
     const newTab: BrowserTab = { id: uuidv4(), url, title: 'New Tab', favicon: getFaviconUrl(url), isLoading: true, lastUpdated: Date.now() };
     setTabs(prev => [...prev, newTab]);
     setActiveTabId(newTab.id);
@@ -173,7 +191,14 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
   }, [activeTabId]);
 
   const navigateTo = (tabId: string, url: string) => {
-    updateTab(tabId, { url, title: 'Loading...', favicon: getFaviconUrl(url), isLoading: true });
+    const newTitle = 'Loading...';
+    try {
+        const urlObj = new URL(url);
+        // newTitle = urlObj.hostname;
+    } catch(e) {/* use default */}
+    
+    updateTab(tabId, { url, title: newTitle, favicon: getFaviconUrl(url), isLoading: true });
+    
     if (tabId === activeTabId) {
         const activeTab = tabs.find(t => t.id === tabId);
         if (activeTab) {
@@ -184,9 +209,16 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
   };
   
   // The plugin's web implementation does not support history back/forward.
-  // We can simulate reload by re-opening.
-  const goBack = (tabId: string) => console.warn('InAppBrowser web implementation does not support goBack()');
-  const goForward = (tabId: string) => console.warn('InAppBrowser web implementation does not support goForward()');
+  const goBack = (tabId: string) => {
+    if (activeBrowserInstance.current) {
+        (activeBrowserInstance.current as any).executeScript({ code: "history.back();" });
+    }
+  };
+  const goForward = (tabId: string) => {
+      if (activeBrowserInstance.current) {
+        (activeBrowserInstance.current as any).executeScript({ code: "history.forward();" });
+    }
+  };
   const reload = (tabId: string) => {
       if (tabId === activeTabId) {
           const activeTab = tabs.find(t => t.id === tabId);
@@ -197,11 +229,55 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
   const toggleTabBar = () => setIsTabBarCollapsed(p => !p);
 
   const getPageContent = async (tabId: string): Promise<string> => {
-    return Promise.resolve('Error: Cannot access cross-origin iframe content due to browser security policies.');
+    if (!activeBrowserInstance.current) {
+        return "Error: No active browser instance.";
+    }
+    return new Promise((resolve, reject) => {
+        (activeBrowserInstance.current as any).executeScript({ code: "document.body.innerText" }, (result: any) => {
+            if (result && result[0]) {
+                resolve(result[0]);
+            } else {
+                reject("Could not retrieve page content.");
+            }
+        });
+    });
   };
 
   const interactWithPage = async (tabId: string, selector: string, action: 'click' | 'type', value?: string): Promise<string> => {
-    return Promise.reject(new Error("Interacting with web pages is not supported."));
+     if (!activeBrowserInstance.current) {
+        return Promise.reject(new Error("No active browser instance."));
+    }
+    const code = `(function() {
+        const el = document.querySelector('${selector}');
+        if (!el) return 'Error: Element not found for selector: ${selector}';
+        try {
+            if ('${action}' === 'click') {
+                el.click();
+                return 'Success: Clicked element.';
+            } else if ('${action}' === 'type') {
+                el.value = '${value || ''}';
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                return 'Success: Typed into element.';
+            }
+            return 'Error: Unknown action.';
+        } catch(e) {
+            return 'Error: ' + e.message;
+        }
+    })();`;
+
+    return new Promise((resolve, reject) => {
+        (activeBrowserInstance.current as any).executeScript({ code }, (result: any) => {
+            if (result && result[0]) {
+                if (result[0].startsWith('Error:')) {
+                    reject(new Error(result[0]));
+                } else {
+                    resolve(result[0]);
+                }
+            } else {
+                reject(new Error("Failed to execute interaction script."));
+            }
+        });
+    });
   };
 
   return { tabs, activeTabId, isTabBarCollapsed, openNewTab, closeTab, switchToTab, navigateTo, goBack, goForward, reload, toggleTabBar, getPageContent, interactWithPage, containerRef };
