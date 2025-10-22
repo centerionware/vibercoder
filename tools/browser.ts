@@ -70,7 +70,7 @@ export const getImplementations = ({ browserControlsRef }: Pick<ToolImplementati
 
     return {
         openUrl: async (args: { url: string }) => {
-            getControls().openUrl(args.url);
+            await getControls().openUrl(args.url);
             return { success: true, message: `Browser opened to ${args.url}.` };
         },
         closeBrowser: async () => {
@@ -87,7 +87,7 @@ export const getImplementations = ({ browserControlsRef }: Pick<ToolImplementati
         },
         searchWeb: async (args: { query: string }) => {
             const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(args.query)}`;
-            getControls().openUrl(searchUrl);
+            await getControls().openUrl(searchUrl);
             return { success: true, message: `Browser opened with search results for "${args.query}".` };
         },
     };
