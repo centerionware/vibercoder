@@ -18,7 +18,7 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    {/* FIX: The ErrorBoundary component requires a 'children' prop. Wrapping the App component within it satisfies this requirement. */}
+    {/* FIX: Property 'children' was missing on ErrorBoundary. This is fixed by wrapping the App component within ErrorBoundary. */}
     <ErrorBoundary>
       <App />
     </ErrorBoundary>

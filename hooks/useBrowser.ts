@@ -66,14 +66,17 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
   const updateBrowserPosition = useCallback(() => {
     if (activeBrowserWrapperRef.current && containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
-        Object.assign(activeBrowserWrapperRef.current.style, {
-            position: 'absolute',
-            top: `${rect.top}px`,
-            left: `${rect.left}px`,
-            width: `${rect.width}px`,
-            height: `${rect.height}px`,
-            zIndex: '40', // Below modals (z-50) but above most UI
-        });
+        const style = activeBrowserWrapperRef.current.style;
+        // FIX: Use `setProperty` with `!important` to forcefully override the plugin's
+        // default fullscreen and hidden styles, ensuring the browser view is correctly
+        // positioned and visible within the app's layout.
+        style.setProperty('position', 'absolute', 'important');
+        style.setProperty('top', `${rect.top}px`, 'important');
+        style.setProperty('left', `${rect.left}px`, 'important');
+        style.setProperty('width', `${rect.width}px`, 'important');
+        style.setProperty('height', `${rect.height}px`, 'important');
+        style.setProperty('z-index', '40', 'important');
+        style.setProperty('display', 'block', 'important');
     }
   }, []);
   
@@ -85,6 +88,9 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
             console.warn("Error closing InAppBrowser instance.", e);
         }
         activeBrowserInstance.current = null;
+    }
+    // Also remove the old wrapper ref
+    if (activeBrowserWrapperRef.current) {
         activeBrowserWrapperRef.current = null;
     }
   }, []);
@@ -113,7 +119,7 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
                 if (element.parentElement === document.body && element.querySelector('iframe')) {
                     activeBrowserWrapperRef.current = element;
                     updateBrowserPosition();
-                    browser.show();
+                    browser.show(); // We still call show() as a fallback
                     obs.disconnect();
                     return;
                 }
@@ -165,6 +171,8 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
             updateBrowserPosition();
         });
         resizeObserverRef.current.observe(containerRef.current);
+        // Also run it once on setup
+        updateBrowserPosition();
     }
     
     if (!isBrowserViewActive) {
@@ -180,6 +188,8 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
     
     return () => {
         if (resizeObserverRef.current) resizeObserverRef.current.disconnect();
+        // Ensure cleanup on unmount
+        closeCurrentBrowser();
     };
   }, [activeTabId, isBrowserViewActive, tabs, openBrowserForTab, closeCurrentBrowser, updateBrowserPosition]);
   
