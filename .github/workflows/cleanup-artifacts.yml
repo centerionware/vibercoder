@@ -1,4 +1,4 @@
-# VibeCode Artifact Cleanup Workflow
+# AIDE Artifact Cleanup Workflow
 #
 # This workflow automatically deletes old build artifacts to keep the repository
 # storage clean and manageable.
