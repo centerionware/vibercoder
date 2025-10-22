@@ -259,15 +259,6 @@ export interface UseWakeWordProps {
 }
 
 // --- Browser Tool ---
-// FIX: Added the missing BrowserTab interface to resolve import errors.
-export interface BrowserTab {
-    id: string;
-    title: string;
-    url: string;
-    favicon: string | null;
-    isLoading: boolean;
-    error: string | null;
-}
 export interface BrowserControls {
   openUrl: (url: string) => void;
   closeBrowser: () => void;

@@ -19,7 +19,7 @@ export const switchViewFunction: FunctionDeclaration = {
     properties: {
       view: {
         type: Type.STRING,
-        description: `The view to switch to. Must be one of: "${Object.values(View).join('", "')}".`,
+        description: `The view to switch to. Must be one of: "${Object.values(View).filter(v => v !== 'prompts').join('", "')}".`,
       },
     },
     required: ['view'],
@@ -387,7 +387,7 @@ export const getImplementations = ({
     },
     disableLiveVideo: async () => {
         // FIX: Access the controls via the ref's `.current` property.
-        liveSessionControlsRef.current?.disableLiveVideo();
+        liveSessionControlsRef.current?.disableVideoStream();
         return { success: true, message: 'Live video stream disabled.' };
     },
 });
