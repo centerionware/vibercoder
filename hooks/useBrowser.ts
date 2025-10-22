@@ -101,7 +101,7 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
 
     const activeElement = activeTabId ? browserElements.current[activeTabId] : null;
 
-    // Hide all elements that aren't the active one (or if the browser view is inactive)
+    // Hide all browser elements that aren't the active one (or if the browser view is inactive)
     Object.entries(browserElements.current).forEach(([tabId, el]) => {
       const shouldBeVisible = tabId === activeTabId && isBrowserViewActive;
       (el as HTMLElement).style.display = shouldBeVisible ? 'block' : 'none';
@@ -113,17 +113,14 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
         container.appendChild(activeElement);
       }
       activeElement.setAttribute('style', `
+        width: 100% !important;
+        height: 100% !important;
+        border: none !important;
+        display: block !important;
         position: relative !important;
         top: auto !important;
         left: auto !important;
-        width: 100% !important;
-        height: 100% !important;
-        display: block !important;
       `);
-      const iframe = activeElement.querySelector('iframe');
-      if (iframe) {
-        iframe.setAttribute('style', `width: 100% !important; height: 100% !important; border: none !important;`);
-      }
     }
   }, [activeTabId, isBrowserViewActive]);
 
@@ -141,11 +138,20 @@ export const useBrowser = (isBrowserViewActive: boolean): BrowserControls => {
           if (node instanceof HTMLElement && node.classList.contains('inappbrowser_wrapper')) {
             const newTabId = openingTabIdRef.current;
             if (newTabId) {
-              console.log(`[MutationObserver] Hijacked browser element for new tab ${newTabId}`);
-              browserElements.current[newTabId] = node;
-              openingTabIdRef.current = null; // Reset the flag
-              // Immediately apply the correct layout to this new element.
-              applyLayout();
+              const iframe = node.querySelector('iframe');
+              if (iframe) {
+                console.log(`[MutationObserver] Hijacked iframe for new tab ${newTabId}`);
+                // Store the IFRAME element itself, not the wrapper
+                browserElements.current[newTabId] = iframe;
+                
+                // Hide the original wrapper to prevent it from creating an overlay
+                node.style.display = 'none';
+
+                openingTabIdRef.current = null; // Reset the flag
+                
+                // Immediately apply the correct layout to this new element.
+                applyLayout();
+              }
             }
           }
         }
