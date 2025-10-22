@@ -183,18 +183,15 @@ export const createMessageProcessor = (deps: MessageProcessorDependencies) => {
                             instruction: "Your next response must analyze the visual information from the provided image."
                         };
                         
-                        // FIX: Removed the `{ result: ... }` wrapper from the response payload.
-                        // The `response` property should directly contain the result object.
                         session.sendToolResponse({
                             functionResponses: {
                                 id: fc.id,
                                 name: fc.name,
-                                response: screenshotResponse,
+                                response: { result: screenshotResponse },
                             }
                         });
                     } else {
-                        // FIX: Removed the `{ result: ... }` wrapper from the response payload.
-                        session.sendToolResponse({ functionResponses: { id: fc.id, name: fc.name, response: result } });
+                        session.sendToolResponse({ functionResponses: { id: fc.id, name: fc.name, response: { result } } });
                     }
                     
                     status = ToolCallStatus.SUCCESS;
@@ -206,8 +203,7 @@ export const createMessageProcessor = (deps: MessageProcessorDependencies) => {
                     ui.requestUiUpdate();
 
                     const session = await sessionRefs.current?.sessionPromise;
-                    // FIX: Ensured the error response structure is consistent with other tool responses.
-                    session?.sendToolResponse({ functionResponses: { id: fc.id, name: fc.name, response: { error } } });
+                    session?.sendToolResponse({ functionResponses: { id: fc.id, name: fc.name, response: { result: { error } } } });
                     status = ToolCallStatus.ERROR;
                 }
                 

@@ -2,7 +2,7 @@ import * as fileSystem from '../tools/fileSystem';
 import * as git from '../tools/git';
 import * as creative from '../tools/creative';
 import * as appControl from '../tools/appControl';
-import * as memory from '../tools/shortTermMemory';
+import * as memory from '../tools/memory';
 import * as prompts from '../tools/prompts';
 import * as chatContext from '../tools/chatContext';
 import * as planning from '../tools/planning';

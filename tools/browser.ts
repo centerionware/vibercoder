@@ -18,11 +18,17 @@ export const openUrlFunction: FunctionDeclaration = {
 export const closeBrowserFunction: FunctionDeclaration = {
   name: 'closeBrowser',
   description: 'Closes the currently open browser overlay.',
+  parameters: {
+    type: Type.OBJECT,
+  },
 };
 
 export const getBrowserPageContentFunction: FunctionDeclaration = {
   name: 'getBrowserPageContent',
   description: 'Retrieves the visible text content from the currently active web page in the browser.',
+  parameters: {
+    type: Type.OBJECT,
+  },
 };
 
 export const interactWithBrowserPageFunction: FunctionDeclaration = {

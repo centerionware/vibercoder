@@ -77,13 +77,13 @@ export const executeTools = async ({
             parts.push({
                 functionResponse: {
                     name: fc.name!,
-                    response: screenshotResponse,
+                    response: { result: screenshotResponse },
                 }
             });
 
         } else {
             // Standard tool response for all other tools
-            parts.push({ functionResponse: { name: fc.name!, response: result } });
+            parts.push({ functionResponse: { name: fc.name!, response: { result } } });
         }
 
         // Update UI to show success
@@ -108,7 +108,7 @@ export const executeTools = async ({
         updateMessage(modelMessageId, { toolCalls: [...turnStateRef.current.toolCalls] });
         
         // Return the error response as a single-item array
-        return [{ functionResponse: { name: fc.name!, response: { error } } }];
+        return [{ functionResponse: { name: fc.name!, response: { result: { error } } } }];
       }
     })
   );
