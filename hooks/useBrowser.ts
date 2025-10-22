@@ -7,18 +7,17 @@ export const useBrowser = (): BrowserControls => {
   const closeBrowser = useCallback(() => {
     if (browserInstanceRef.current) {
       try {
+        // The 'exit' event listener attached in openUrl will handle nulling the ref.
         browserInstanceRef.current.close();
       } catch (e) {
         console.warn("Error closing InAppBrowser instance:", e);
+        // Force nullify if close fails, to prevent a stuck state.
+        browserInstanceRef.current = null;
       }
-      browserInstanceRef.current = null;
     }
   }, []);
 
   const openUrl = useCallback((url: string) => {
-    // Close any existing browser before opening a new one.
-    closeBrowser();
-
     const inAppBrowserPlugin = (window as any).cordova?.InAppBrowser;
     if (!inAppBrowserPlugin?.open) {
       console.error("InAppBrowser plugin is not available. Cannot open URL.");
@@ -26,22 +25,37 @@ export const useBrowser = (): BrowserControls => {
       return;
     }
 
-    // Open the browser as a full-screen overlay with native controls.
-    const browser = inAppBrowserPlugin.open(url, '_blank', 'location=yes');
-    browserInstanceRef.current = browser;
+    const openNewBrowser = (newUrl: string) => {
+      const browser = inAppBrowserPlugin.open(newUrl, '_blank', 'location=yes');
+      browserInstanceRef.current = browser;
 
-    browser.addEventListener('exit', () => {
-      if (browserInstanceRef.current === browser) {
-        browserInstanceRef.current = null;
-      }
-    });
+      browser.addEventListener('exit', () => {
+        if (browserInstanceRef.current === browser) {
+          browserInstanceRef.current = null;
+        }
+      });
 
-    browser.addEventListener('loaderror', (params: any) => {
-        console.error('InAppBrowser load error:', params);
-        alert(`Failed to load URL: ${params.message}`);
-    });
+      browser.addEventListener('loaderror', (params: any) => {
+          console.error('InAppBrowser load error:', params);
+          alert(`Failed to load URL: ${params.message}`);
+      });
+    };
 
-  }, [closeBrowser]);
+    if (browserInstanceRef.current) {
+      // A browser is already open. We need to close it, and once it's closed, open the new one.
+      // The 'exit' event is the signal that it has closed.
+      const existingBrowser = browserInstanceRef.current;
+      
+      // Add a one-time listener to the 'exit' event.
+      existingBrowser.addEventListener('exit', () => openNewBrowser(url), { once: true });
+      
+      // Now, trigger the close.
+      existingBrowser.close();
+    } else {
+      // No browser is open, so we can open one immediately.
+      openNewBrowser(url);
+    }
+  }, []);
 
   const getPageContent = useCallback((): Promise<string> => {
     const browser = browserInstanceRef.current;

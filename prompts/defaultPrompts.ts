@@ -37,6 +37,7 @@ import UI_UX_DESIGN_PROTOCOL from './protocols/ui_ux_design_protocol';
 import VISION_PROTOCOL from './protocols/vision_protocol';
 import ASSET_MANAGEMENT_PROTOCOL from './protocols/asset_management_protocol';
 import CONTEXT_GATHERING_PROTOCOL from './protocols/context_gathering_protocol';
+import WEB_SEARCH_PROTOCOL from './protocols/web_search_protocol';
 
 
 interface DefaultPrompt {
@@ -211,5 +212,10 @@ export const defaultPrompts: DefaultPrompt[] = [
         id: 'context_gathering_protocol',
         description: 'A protocol for using the gatherContextForTask tool to efficiently research the codebase.',
         content: CONTEXT_GATHERING_PROTOCOL,
+    },
+    {
+        id: 'web_search_protocol',
+        description: 'A protocol for effectively searching the web and synthesizing information.',
+        content: WEB_SEARCH_PROTOCOL,
     }
 ];
