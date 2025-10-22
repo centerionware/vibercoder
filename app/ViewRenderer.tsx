@@ -7,7 +7,6 @@ import AiView from '../components/views/AiView';
 import GitView from '../components/views/GitView';
 import SettingsView from '../components/views/SettingsView';
 import PromptsView from '../components/views/PromptsView';
-import BrowserView from '../components/views/BrowserView';
 import { useAppLogic } from './useAppLogic';
 
 type AppLogic = ReturnType<typeof useAppLogic>;
@@ -71,8 +70,6 @@ const ViewRenderer: React.FC<AppLogic> = (props) => {
                 onSwitchThread={props.onSwitchThread}
                 onDeleteThread={props.onDeleteThread}
             />;
-        case View.Browser:
-            return <BrowserView {...props.browserControls} />;
         case View.Git:
             return <GitView 
                 files={props.files}

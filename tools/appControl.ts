@@ -387,7 +387,7 @@ export const getImplementations = ({
     },
     disableLiveVideo: async () => {
         // FIX: Access the controls via the ref's `.current` property.
-        liveSessionControlsRef.current?.disableVideoStream();
+        liveSessionControlsRef.current?.disableLiveVideo();
         return { success: true, message: 'Live video stream disabled.' };
     },
 });

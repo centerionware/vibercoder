@@ -5,7 +5,6 @@ import PreviewIcon from './icons/PreviewIcon';
 import AiIcon from './icons/AiIcon';
 import GitIcon from './icons/GitIcon';
 import SettingsIcon from './icons/SettingsIcon';
-import BrowserIcon from './icons/BrowserIcon';
 
 interface BottomNavProps {
   activeView: View;
@@ -16,7 +15,6 @@ const navItems = [
   { view: View.Code, label: 'Code', icon: CodeIcon },
   { view: View.Preview, label: 'Preview', icon: PreviewIcon },
   { view: View.Ai, label: 'AI', icon: AiIcon },
-  { view: View.Browser, label: 'Browser', icon: BrowserIcon },
   { view: View.Git, label: 'Git', icon: GitIcon },
   { view: View.Settings, label: 'Settings', icon: SettingsIcon },
 ];
