@@ -5,29 +5,25 @@ export const useBrowser = (): BrowserControls => {
   const browserInstanceRef = useRef<any>(null);
 
   const openUrl = useCallback(async (url: string) => {
-    // If a browser is already open, create a promise that resolves when it's closed.
+    // 1. If a browser is already open, close it and wait for confirmation.
     if (browserInstanceRef.current) {
+      const browserToClose = browserInstanceRef.current;
+      
+      // Create a promise that resolves when the 'exit' event fires.
+      // Using { once: true } ensures this is a clean, one-time listener
+      // that won't interfere with other handlers.
       const closePromise = new Promise<void>(resolve => {
-        const browserToClose = browserInstanceRef.current;
-        
-        // Define a one-time exit handler for the old browser.
-        const onExit = () => {
-          browserToClose.removeEventListener('exit', onExit); // Self-cleanup
-          // Check if the ref still points to the browser we intended to close.
-          if (browserInstanceRef.current === browserToClose) {
-            browserInstanceRef.current = null;
-          }
-          resolve();
-        };
-
-        browserToClose.addEventListener('exit', onExit);
-        browserToClose.close();
+        browserToClose.addEventListener('exit', resolve, { once: true });
       });
-      // Wait for the old browser to fully close before proceeding.
+      
+      // Initiate the close operation.
+      browserToClose.close();
+      
+      // Wait for the 'exit' event to confirm the browser is fully closed.
       await closePromise;
     }
 
-    // At this point, we are guaranteed that browserInstanceRef.current is null.
+    // 2. Now, open the new browser. We are guaranteed the old one is gone.
     const inAppBrowserPlugin = (window as any).cordova?.InAppBrowser;
     if (!inAppBrowserPlugin?.open) {
       console.error("InAppBrowser plugin not available.");
@@ -37,16 +33,19 @@ export const useBrowser = (): BrowserControls => {
     const browser = inAppBrowserPlugin.open(url, '_blank', 'location=yes');
     browserInstanceRef.current = browser;
 
-    // Define the exit handler for this new browser instance.
+    // 3. Attach a single, persistent 'exit' handler for this new browser instance.
     const onExit = () => {
-      browser.removeEventListener('exit', onExit); // Self-cleanup
-      // When this new browser closes, just null out the ref if it matches.
+      // Clean up the listener itself.
+      browser.removeEventListener('exit', onExit);
+      
+      // Only null out the ref if it's still pointing to THIS browser.
+      // This prevents a delayed 'exit' event from an old, closed browser
+      // from incorrectly nulling out the ref for a newer, active browser.
       if (browserInstanceRef.current === browser) {
         browserInstanceRef.current = null;
       }
     };
     
-    // Define an error handler for this new browser instance.
     const onLoadError = (params: any) => {
       console.error('InAppBrowser load error:', params);
       alert(`Failed to load URL: ${params.message}`);
