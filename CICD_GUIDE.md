@@ -21,12 +21,13 @@ The workflow is divided into several parallel `jobs` to be efficient:
     *   Runs the appropriate Electron build command (`build:win`, `build:macos`, `build:linux`).
     *   Uploads the resulting executables (`.exe`, `.dmg`, `.AppImage`) as artifacts.
 
-3.  **`build_android`**:
+3.  **`build_android_appbundle`**:
     *   Runs on Linux.
     *   Sets up a Java/Android environment.
     *   Downloads the `web-assets` artifact and syncs it with Capacitor.
-    *   Builds the Android APK.
-    *   Uploads the resulting `.apk` file as an artifact.
+    *   **Builds a signed Android App Bundle (.aab) if signing secrets are provided.** This is the required format for the Google Play Store.
+    *   Builds a debug Android Package (.apk) as a fallback if secrets are not available.
+    *   Uploads the resulting artifact to a `dev-builds/` branch.
 
 4.  **`build_ios`**:
     *   Runs on macOS (a requirement for iOS builds).
@@ -37,16 +38,33 @@ The workflow is divided into several parallel `jobs` to be efficient:
 
 ## Required Setup: Repository Secrets
 
-To build and sign release-ready applications, you need to provide credentials as "secrets" in your GitHub repository. Go to your repository's `Settings > Secrets and variables > Actions` to add them.
+To build and sign release-ready applications, you need to provide credentials as "secrets" in your GitHub repository. Go to your repository's `Settings > Secrets and variables > Actions` to add them. The workflow will automatically use them if they are present.
 
 *   `API_KEY_PLACEHOLDER`: (**Required for Web Build**) The Gemini API key. This is needed by the bundler to make it available to the application.
+
+### Android Release Build (.aab)
+To enable signed AAB builds, you must provide all four of the following secrets. This requires you to first generate a private upload key locally (a one-time setup).
+
+1.  **Generate an upload key:**
+    ```bash
+    keytool -genkeypair -v -keystore my-upload-key.keystore -alias my-key-alias -keyalg RSA -keysize 2048 -validity 10000
+    ```
+2.  **Encode the keystore file for the secret:**
+    ```bash
+    base64 -i my-upload-key.keystore
+    ```
+3.  **Add the following secrets to GitHub:**
+    *   `ENCODED_SIGNING_KEY`: (**Required for AAB**) The Base64 output from the command above. Copy the entire string.
+    *   `SIGNING_KEY_STORE_PASSWORD`: (**Required for AAB**) The keystore password you created in step 1.
+    *   `SIGNING_KEY_ALIAS`: (**Required for AAB**) The alias you used (e.g., `my-key-alias`).
+    *   `SIGNING_KEY_PASSWORD`: (**Required for AAB**) The key password you created in step 1.
+
+_Note: This process assumes your `android/app/build.gradle` file is configured to read a `keystore.properties` file for release signing, which is standard for CI builds._
+
+### macOS & iOS Release Builds
 *   `APPLE_ID`: (**Optional for macOS/iOS**) Your Apple Developer ID.
 *   `APPLE_ID_PASSWORD`: (**Optional for macOS/iOS**) An app-specific password for your Apple ID.
 *   `APPLE_TEAM_ID`: (**Optional for macOS/iOS**) Your Apple Developer Team ID.
-*   `SIGNING_KEY_ALIAS`, `SIGNING_KEY_PASSWORD`, `SIGNING_KEY_STORE_PASSWORD`: (**Optional for Android**) Your Android app signing key details.
-*   `ENCODED_SIGNING_KEY`: (**Optional for Android**) Your signing keystore file, encoded in Base64.
-
-The workflow file has comments indicating where these secrets are used. Without them, the builds will produce unsigned, development-ready artifacts.
 
 ## Accessing the Builds
 

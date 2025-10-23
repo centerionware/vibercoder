@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useEffect } from 'react';
 import { Capacitor } from '@capacitor/core';
 // FIX: Corrected import paths for useAppLogic and ViewRenderer to be relative to the current file location, resolving module not found errors.
