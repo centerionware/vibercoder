@@ -196,9 +196,9 @@ jobs:
           git commit -m "Desktop build for ${{ matrix.os }} from commit ${{ github.sha }}"
           git push --force origin "$BRANCH_NAME"
 
-  # Job 4: Build the native Android APK.
-  build_android:
-    name: Build Android APK
+  # Job 4: Build the native Android App Bundle (AAB) or a fallback APK.
+  build_android_appbundle:
+    name: Build Android App (AAB/APK)
     needs: build_web
     runs-on: ubuntu-latest
     steps:
@@ -237,33 +237,60 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
-      # Build a debug APK. This is signed with a debug key and is installable for testing.
-      - name: Build Android Debug APK
+      # These steps configure the build for release signing if secrets are present.
+      - name: Decode Android Keystore
+        if: secrets.ENCODED_SIGNING_KEY
+        run: echo "${{ secrets.ENCODED_SIGNING_KEY }}" | base64 --decode > android/upload-keystore.jks
+
+      - name: Create Keystore Properties File
+        if: secrets.ENCODED_SIGNING_KEY
+        run: |
+          echo "storeFile=upload-keystore.jks" > android/keystore.properties
+          echo "storePassword=${{ secrets.SIGNING_KEY_STORE_PASSWORD }}" >> android/keystore.properties
+          echo "keyAlias=${{ secrets.SIGNING_KEY_ALIAS }}" >> android/keystore.properties
+          echo "keyPassword=${{ secrets.SIGNING_KEY_PASSWORD }}" >> android/keystore.properties
+      
+      # If secrets are provided, build a signed release AAB for the Play Store.
+      - name: Build Android Release AAB
+        if: secrets.ENCODED_SIGNING_KEY
+        run: cd android && ./gradlew bundleRelease
+
+      # As a fallback, build a debug APK if signing secrets are not available.
+      - name: Build Android Debug APK (Fallback)
+        if: '!secrets.ENCODED_SIGNING_KEY'
         run: cd android && ./gradlew assembleDebug
 
-      - name: Push Android APK to Branch
+      - name: Push Android Artifact to Branch
         run: |
           git config --global user.name 'GitHub Actions'
           git config --global user.email 'actions@github.com'
           
-          BRANCH_NAME="dev-builds/android-apk"
-          ARTIFACT_PATH="android/app/build/outputs/apk/debug/app-debug.apk"
+          # Conditionally choose the artifact path and branch name based on which build ran.
+          if [ -f "android/app/build/outputs/bundle/release/app-release.aab" ]; then
+            BRANCH_NAME="dev-builds/android-aab"
+            ARTIFACT_PATH="android/app/build/outputs/bundle/release/app-release.aab"
+            COMMIT_MESSAGE="Signed Android AAB build from commit ${{ github.sha }}"
+          else
+            BRANCH_NAME="dev-builds/android-apk"
+            ARTIFACT_PATH="android/app/build/outputs/apk/debug/app-debug.apk"
+            COMMIT_MESSAGE="Debug Android APK build from commit ${{ github.sha }}"
+          fi
+          
           ARTIFACT_FILENAME=$(basename "$ARTIFACT_PATH")
+          echo "Found artifact: $ARTIFACT_PATH"
 
           # Secure the artifact by moving it out of the repo
           mv "$ARTIFACT_PATH" "/tmp/$ARTIFACT_FILENAME"
 
           # Create a new, clean branch
           git checkout --orphan "$BRANCH_NAME"
-
-          # Clean the working directory completely
           git rm -rf .
           git clean -fdx
           
           # Bring the artifact back, commit, and force-push
           mv "/tmp/$ARTIFACT_FILENAME" .
           git add "$ARTIFACT_FILENAME"
-          git commit -m "Android APK build from commit ${{ github.sha }}"
+          git commit -m "$COMMIT_MESSAGE"
           git push --force origin "$BRANCH_NAME"
 
   # Job 5: Build the native iOS App.
