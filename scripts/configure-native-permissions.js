@@ -110,16 +110,17 @@ function configureAndroid() {
         const signingConfigBlock = `
     signingConfigs {
         release {
-            if (project.hasProperty('keystore.properties')) {
-                def propsFile = rootProject.file('keystore.properties')
-                if (propsFile.exists()) {
-                    def props = new Properties()
-                    props.load(new FileInputStream(propsFile))
-                    storeFile file(props['storeFile'])
-                    storePassword props['storePassword']
-                    keyAlias props['keyAlias']
-                    keyPassword props['keyPassword']
-                }
+            def propsFile = rootProject.file('keystore.properties')
+            if (propsFile.exists()) {
+                println ">>> Release signing properties found, configuring signing."
+                def props = new Properties()
+                props.load(new FileInputStream(propsFile))
+                storeFile rootProject.file(props['storeFile'])
+                storePassword props['storePassword']
+                keyAlias props['keyAlias']
+                keyPassword props['keyPassword']
+            } else {
+                println ">>> Release signing properties not found, building unsigned release."
             }
         }
     }
