@@ -1,8 +1,0 @@
-{
-  "name": "AIDE",
-  "description": "A mobile-first, AI-driven IDE with seamless Git integration, enhanced productivity, and a live preview experience, all running in the browser.",
-  "requestFramePermissions": [
-    "microphone",
-    "camera"
-  ]
-}
