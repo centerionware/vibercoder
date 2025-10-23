@@ -201,6 +201,11 @@ jobs:
     name: Build Android App (AAB/APK)
     needs: build_web
     runs-on: ubuntu-latest
+    # FIX: Use an environment variable to check for the presence of the secret.
+    # The `secrets` context can be unreliable in step-level `if` conditions, especially
+    # with different event triggers (like pull_request from forks). This workaround is more robust.
+    env:
+      SIGNING_KEY_PRESENT: ${{ secrets.ENCODED_SIGNING_KEY != '' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -239,11 +244,11 @@ jobs:
 
       # These steps configure the build for release signing if secrets are present.
       - name: Decode Android Keystore
-        if: secrets.ENCODED_SIGNING_KEY
+        if: env.SIGNING_KEY_PRESENT == 'true'
         run: echo "${{ secrets.ENCODED_SIGNING_KEY }}" | base64 --decode > android/upload-keystore.jks
 
       - name: Create Keystore Properties File
-        if: secrets.ENCODED_SIGNING_KEY
+        if: env.SIGNING_KEY_PRESENT == 'true'
         run: |
           echo "storeFile=upload-keystore.jks" > android/keystore.properties
           echo "storePassword=${{ secrets.SIGNING_KEY_STORE_PASSWORD }}" >> android/keystore.properties
@@ -252,12 +257,12 @@ jobs:
       
       # If secrets are provided, build a signed release AAB for the Play Store.
       - name: Build Android Release AAB
-        if: secrets.ENCODED_SIGNING_KEY
+        if: env.SIGNING_KEY_PRESENT == 'true'
         run: cd android && ./gradlew bundleRelease
 
       # As a fallback, build a debug APK if signing secrets are not available.
       - name: Build Android Debug APK (Fallback)
-        if: '!secrets.ENCODED_SIGNING_KEY'
+        if: env.SIGNING_KEY_PRESENT == 'false'
         run: cd android && ./gradlew assembleDebug
 
       - name: Push Android Artifact to Branch
