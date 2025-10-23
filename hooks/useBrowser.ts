@@ -95,27 +95,34 @@ export const useBrowser = (): BrowserControls => {
 
   const waitForReady = useCallback((): Promise<void> => {
     return new Promise((resolve, reject) => {
-        if (!browserRef.current) {
+        const browser = browserRef.current;
+        if (!browser) {
             return reject(new Error("Browser is not open."));
         }
-        if (isReadyRef.current) {
-            return resolve();
-        }
-        
+
         let attempts = 0;
-        const maxAttempts = 20; // 10 seconds timeout
+        const maxAttempts = 20; // 10 seconds
         const interval = setInterval(() => {
-            if (isReadyRef.current) {
-                clearInterval(interval);
-                resolve();
-            } else if (!browserRef.current) {
+            if (!browserRef.current) { // Check if browser was closed during polling
                 clearInterval(interval);
                 reject(new Error("Browser was closed while waiting for it to be ready."));
-            } else if (attempts >= maxAttempts) {
+                return;
+            }
+            if (attempts >= maxAttempts) {
                 clearInterval(interval);
-                reject(new Error("Timed out waiting for browser page to load."));
+                reject(new Error("Timed out waiting for browser page to become ready."));
+                return;
             }
             attempts++;
+            
+            // Inject script to check document.readyState
+            browser.executeScript({ code: "document.readyState" }, (result: any[]) => {
+                if (result && result[0] === 'complete') {
+                    clearInterval(interval);
+                    isReadyRef.current = true; // Sync the flag
+                    resolve();
+                }
+            });
         }, 500);
     });
   }, []);
