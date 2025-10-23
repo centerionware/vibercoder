@@ -5,97 +5,83 @@ import { BrowserControls } from '../types';
 export const useBrowser = (): BrowserControls => {
   const browserInstanceRef = useRef<any>(null);
 
-  const openUrl = useCallback(async (url: string): Promise<void> => {
-    // --- Case 1: Browser already open, just navigate ---
-    if (browserInstanceRef.current) {
-      console.log(`InAppBrowser already open. Navigating to: ${url}`);
-      const browser = browserInstanceRef.current;
-      
-      return new Promise<void>((resolve, reject) => {
-        const cleanup = () => {
-            browser.removeEventListener('loadstop', onLoadStop);
-            browser.removeEventListener('loaderror', onLoadError);
-        };
+  const openUrl = useCallback((url: string): Promise<void> => {
+    // This promise wrapper handles the async nature of opening/navigating the browser.
+    return new Promise<void>((resolve, reject) => {
+      const existingBrowser = browserInstanceRef.current;
 
-        const onLoadStop = () => {
-          console.log(`InAppBrowser finished navigating to: ${url}`);
-          cleanup();
-          resolve();
-        };
+      // Define event handlers for this specific operation.
+      const cleanupListeners = (browser: any) => {
+        browser.removeEventListener('loadstop', onLoadStop);
+        browser.removeEventListener('loaderror', onLoadError);
+        browser.removeEventListener('exit', onExitDuringLoad);
+      };
 
-        const onLoadError = (params: any) => {
-          console.error('InAppBrowser navigation error:', params);
-          cleanup();
-          reject(new Error(`Failed to navigate to URL: ${params.message}`));
-        };
+      const onLoadStop = (event: any) => {
+        console.log(`InAppBrowser finished loading: ${event.url}`);
+        cleanupListeners(event.target);
+        resolve(); // Resolve immediately. Content readiness is getPageContent's job.
+      };
+
+      const onLoadError = (params: any) => {
+        console.error('InAppBrowser load error:', params);
+        cleanupListeners(params.target);
+        if (!existingBrowser) { // If it was a new browser that failed
+            params.target.close();
+            browserInstanceRef.current = null;
+        }
+        reject(new Error(`Failed to load URL: ${params.message}`));
+      };
+
+      // Handles the case where the user closes the browser *during* this specific load operation.
+      const onExitDuringLoad = (event: any) => {
+          console.log('InAppBrowser exited before load completed.');
+          cleanupListeners(event.target);
+          if (browserInstanceRef.current === event.target) {
+              browserInstanceRef.current = null;
+          }
+          reject(new Error("Browser was closed before the page finished loading."));
+      };
+
+      if (existingBrowser) {
+        // --- Case 1: Browser already open, just navigate ---
+        console.log(`Navigating existing InAppBrowser to: ${url}`);
+        existingBrowser.addEventListener('loadstop', onLoadStop);
+        existingBrowser.addEventListener('loaderror', onLoadError);
+        existingBrowser.addEventListener('exit', onExitDuringLoad);
+        existingBrowser.executeScript({ code: `window.location.href = "${url}"` });
+      } else {
+        // --- Case 2: No browser open, create a new one ---
+        const inAppBrowserPlugin = (window as any).cordova?.InAppBrowser;
+        if (!inAppBrowserPlugin?.open) {
+          return reject(new Error("InAppBrowser plugin not available."));
+        }
         
-        browser.addEventListener('loadstop', onLoadStop);
-        browser.addEventListener('loaderror', onLoadError);
-        browser.executeScript({ code: `window.location.href = "${url}"` });
-      });
-    }
-    
-    // --- Case 2: No browser open, create a new one ---
-    const inAppBrowserPlugin = (window as any).cordova?.InAppBrowser;
-    if (!inAppBrowserPlugin?.open) {
-      throw new Error("InAppBrowser plugin not available.");
-    }
-    
-    return new Promise((resolve, reject) => {
         console.log(`Opening new InAppBrowser for URL: ${url}`);
-        const browser = inAppBrowserPlugin.open(url, '_blank', 'location=yes');
-        browserInstanceRef.current = browser;
+        const newBrowser = inAppBrowserPlugin.open(url, '_blank', 'location=yes');
+        browserInstanceRef.current = newBrowser;
 
-        const cleanup = () => {
-            browser.removeEventListener('loadstop', onLoadStop);
-            browser.removeEventListener('loaderror', onLoadError);
-            browser.removeEventListener('exit', onEarlyExit);
-        };
+        // Attach listeners for this initial load operation
+        newBrowser.addEventListener('loadstop', onLoadStop);
+        newBrowser.addEventListener('loaderror', onLoadError);
+        newBrowser.addEventListener('exit', onExitDuringLoad);
 
-        // This is the main exit handler for the lifetime of this browser instance.
-        // It cleans up the ref.
-        const onPersistentExit = () => {
-            console.log('InAppBrowser exited.');
-            if (browserInstanceRef.current === browser) {
+        // Attach a SINGLE, PERSISTENT listener for when the browser is closed at any time.
+        newBrowser.addEventListener('exit', () => {
+            console.log('InAppBrowser was closed.');
+            // Check if the ref still holds this instance before nullifying.
+            if (browserInstanceRef.current === newBrowser) {
                 browserInstanceRef.current = null;
             }
-        };
-
-        const onLoadStop = () => {
-            console.log(`InAppBrowser loaded initial URL: ${url}`);
-            cleanup();
-            // Now that it's loaded, attach the persistent exit handler.
-            browser.addEventListener('exit', onPersistentExit, { once: true });
-            resolve();
-        };
-
-        const onLoadError = (params: any) => {
-            console.error('InAppBrowser initial load error:', params);
-            cleanup();
-            // Close the failed browser and clean up the ref
-            browser.close(); 
-            browserInstanceRef.current = null;
-            reject(new Error(`Failed to load URL: ${params.message}`));
-        };
-
-        // This handler is ONLY for the case where the user closes the browser *before* it finishes loading.
-        const onEarlyExit = () => {
-            console.log('InAppBrowser exited before loading completed.');
-            cleanup();
-            browserInstanceRef.current = null;
-            reject(new Error("Browser was closed before the page finished loading."));
-        };
-
-        browser.addEventListener('loadstop', onLoadStop);
-        browser.addEventListener('loaderror', onLoadError);
-        browser.addEventListener('exit', onEarlyExit);
+        });
+      }
     });
   }, []);
 
   const closeBrowser = useCallback(() => {
     if (browserInstanceRef.current) {
       browserInstanceRef.current.close();
-      // The onPersistentExit handler will take care of nullifying the ref.
+      // The 'exit' event handler will nullify the ref.
     }
   }, []);
 
@@ -105,37 +91,100 @@ export const useBrowser = (): BrowserControls => {
       return Promise.reject(new Error("No active browser instance to get content from."));
     }
 
-    // This script provides a cleaner text representation by removing scripts/styles.
-    const code = `
+    const injectionScript = `
     (function() {
-        try {
-            const clone = document.body.cloneNode(true);
-            clone.querySelectorAll('script, style, noscript, svg, [aria-hidden="true"]').forEach(el => el.remove());
-            return clone.textContent || '';
-        } catch (e) {
-            // Fallback for simple text content if cloning fails
-            return document.body.innerText || '';
+        if (window.__get_content_in_progress) return;
+        window.__get_content_in_progress = true;
+        delete window.__page_content_result;
+        delete window.__page_content_error;
+
+        function extractContent() {
+            let content = '';
+            if (document.title) {
+                content += 'Page Title: ' + document.title + '\\n\\n';
+            }
+            const getCleanText = (node) => (node.innerText || '').trim().replace(/\\s{2,}/g, ' ');
+            document.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach(h => {
+                const text = getCleanText(h);
+                if (text) {
+                    const level = parseInt(h.tagName.substring(1), 10);
+                    content += '#'.repeat(level) + ' ' + text + '\\n';
+                }
+            });
+            document.querySelectorAll('p, li, blockquote').forEach(p => {
+                const text = getCleanText(p);
+                if (text) content += text + '\\n\\n';
+            });
+            document.querySelectorAll('a[href]').forEach(a => {
+                const text = getCleanText(a);
+                const href = a.href;
+                if (text && href && href.startsWith('http')) {
+                    content += '[Link: ' + text + '](' + href + ')\\n';
+                }
+            });
+            if (!content.trim() && document.body) {
+                content = getCleanText(document.body);
+            }
+            return content;
         }
+
+        let attempts = 0;
+        const maxAttempts = 5;
+        const interval = 500;
+
+        function tryExtract() {
+            try {
+                const content = extractContent();
+                if (content && content.trim().length > 100) {
+                    window.__page_content_result = content;
+                    window.__get_content_in_progress = false;
+                } else {
+                    attempts++;
+                    if (attempts < maxAttempts) {
+                        setTimeout(tryExtract, interval);
+                    } else {
+                        window.__page_content_result = content; // Store whatever was found
+                        window.__get_content_in_progress = false;
+                    }
+                }
+            } catch (e) {
+                window.__page_content_error = e.message || 'Unknown extraction error';
+                window.__get_content_in_progress = false;
+            }
+        }
+        
+        tryExtract();
     })();`;
-    
-    const scriptExecutionPromise = new Promise<string>((resolve, reject) => {
-        browser.executeScript({ code }, (result: any[]) => {
-            if (result && typeof result[0] === 'string') {
-                resolve(result[0]);
-            } else if (result && result[0] === null) {
-                resolve('');
-            }
-            else {
-                reject(new Error("Could not retrieve page content. The script may have failed to execute."));
-            }
+  
+    const pollScript = `(function() { return { result: window.__page_content_result, error: window.__page_content_error, inProgress: window.__get_content_in_progress }; })();`;
+  
+    return new Promise((resolve, reject) => {
+      browser.executeScript({ code: injectionScript });
+  
+      const maxRetries = 15; // ~7.5 seconds timeout
+      let retries = 0;
+      const pollInterval = setInterval(() => {
+        if (retries >= maxRetries) {
+          clearInterval(pollInterval);
+          reject(new Error("Timeout waiting for page content from browser."));
+          return;
+        }
+        retries++;
+  
+        browser.executeScript({ code: pollScript }, (result: any) => {
+          const pollResult = result && result[0];
+          if (!pollResult || pollResult.inProgress) return; // Keep polling if no result object yet or still in progress
+  
+          if (pollResult.error) {
+            clearInterval(pollInterval);
+            reject(new Error(`Content extraction failed inside browser: ${pollResult.error}`));
+          } else if (typeof pollResult.result === 'string') {
+            clearInterval(pollInterval);
+            resolve(pollResult.result);
+          }
         });
+      }, 500);
     });
-
-    const timeoutPromise = new Promise<string>((_, reject) => {
-      setTimeout(() => reject(new Error("Timed out waiting for page content script to execute.")), 5000);
-    });
-
-    return Promise.race([scriptExecutionPromise, timeoutPromise]);
   }, []);
 
   const interactWithPage = useCallback((selector: string, action: 'click' | 'type', value?: string): Promise<string> => {
@@ -144,13 +193,11 @@ export const useBrowser = (): BrowserControls => {
       return Promise.reject(new Error("No active browser instance to interact with."));
     }
 
-    // This injected script includes a Shadow DOM-piercing selector and dispatches proper events for robust interaction.
     const code = `
     (function() {
         function deepQuerySelector(sel, root = document) {
             let found = root.querySelector(sel);
             if (found) return found;
-
             const elements = root.querySelectorAll('*');
             for (const el of elements) {
                 if (el.shadowRoot) {
@@ -160,13 +207,9 @@ export const useBrowser = (): BrowserControls => {
             }
             return null;
         }
-
         try {
             const el = deepQuerySelector('${selector.replace(/'/g, "\\'")}');
-            if (!el) {
-                return 'Error: Element not found with selector: ${selector.replace(/'/g, "\\'")}';
-            }
-            
+            if (!el) return 'Error: Element not found with selector: ${selector.replace(/'/g, "\\'")}';
             if ('${action}' === 'click') {
                 el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, composed: true }));
             } else if ('${action}' === 'type') {
@@ -194,6 +237,84 @@ export const useBrowser = (): BrowserControls => {
         });
     });
   }, []);
+  
+  const captureBrowserScreenshot = useCallback((): Promise<string> => {
+    const browser = browserInstanceRef.current;
+    if (!browser) {
+      return Promise.reject(new Error("No active browser instance to capture."));
+    }
+  
+    const injectionScript = `
+    (function() {
+        if (window.__capture_in_progress) return;
+        window.__capture_in_progress = true;
+        delete window.__capture_result;
+        delete window.__capture_error;
+  
+        function capture() {
+            const options = {
+                useCORS: true,
+                allowTaint: true,
+                backgroundColor: window.getComputedStyle(document.body).backgroundColor || '#1a1b26'
+            };
+            window.html2canvas(document.documentElement, options).then(canvas => {
+                window.__capture_result = canvas.toDataURL('image/jpeg', 0.8);
+            }).catch(err => {
+                window.__capture_error = err.message || 'Unknown capture error';
+            }).finally(() => {
+                window.__capture_in_progress = false;
+            });
+        }
+  
+        function loadScript(url) {
+            const script = document.createElement('script');
+            script.src = url;
+            script.onload = capture;
+            script.onerror = () => {
+                window.__capture_error = 'Failed to load html2canvas script.';
+                window.__capture_in_progress = false;
+            };
+            document.head.appendChild(script);
+        }
+  
+        if (typeof window.html2canvas === 'function') {
+            capture();
+        } else {
+            loadScript('https://aistudiocdn.com/html2canvas@^1.4.1');
+        }
+    })();`;
+  
+    const pollScript = `(function() { return { result: window.__capture_result, error: window.__capture_error, inProgress: window.__capture_in_progress }; })();`;
+  
+    return new Promise((resolve, reject) => {
+      browser.executeScript({ code: injectionScript });
+  
+      const maxRetries = 10; // 5 seconds timeout
+      let retries = 0;
+      const pollInterval = setInterval(() => {
+        if (retries >= maxRetries) {
+          clearInterval(pollInterval);
+          reject(new Error("Timeout waiting for screenshot from browser."));
+          return;
+        }
+        retries++;
+  
+        browser.executeScript({ code: pollScript }, (result: any) => {
+          const pollResult = result && result[0];
+          if (!pollResult) return;
+  
+          if (pollResult.error) {
+            clearInterval(pollInterval);
+            reject(new Error(`Screenshot failed inside browser: ${pollResult.error}`));
+          } else if (pollResult.result) {
+            clearInterval(pollInterval);
+            const base64 = pollResult.result.split(',')[1];
+            resolve(base64);
+          }
+        });
+      }, 500);
+    });
+  }, []);
 
-  return { openUrl, closeBrowser, getPageContent, interactWithPage };
+  return { openUrl, closeBrowser, getPageContent, interactWithPage, captureBrowserScreenshot };
 };

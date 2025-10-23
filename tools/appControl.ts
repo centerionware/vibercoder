@@ -138,9 +138,9 @@ export const stopListeningFunction: FunctionDeclaration = {
     },
 };
 
-export const captureScreenshotFunction: FunctionDeclaration = {
-  name: 'captureScreenshot',
-  description: "Captures a real-time screenshot of the user's entire application window, exactly as they see it. Use this tool as your 'eyes' to analyze the UI, read text, inspect layouts, or see the output of code. Your subsequent analysis MUST be grounded exclusively in the content of the image provided by this tool.",
+export const captureAppScreenshotFunction: FunctionDeclaration = {
+  name: 'captureAppScreenshot',
+  description: "Captures a real-time screenshot of the user's entire application window (the AIDE interface itself), exactly as they see it. Use this tool as your 'eyes' to analyze the UI, read text, inspect layouts, or see the output of code.",
   parameters: {
     type: Type.OBJECT,
   },
@@ -205,7 +205,7 @@ export const declarations = [
     updateSettingsFunction,
     pauseListeningFunction,
     stopListeningFunction,
-    captureScreenshotFunction,
+    captureAppScreenshotFunction,
     enableScreenshotPreviewFunction,
     interactWithPreviewFunction,
     enableLiveVideoFunction,
@@ -322,7 +322,7 @@ export const getImplementations = ({
         liveSessionControlsRef.current?.stopLiveSession({ immediate: false });
         return { success: true };
     },
-    captureScreenshot: async () => {
+    captureAppScreenshot: async () => {
         const captureTarget = document.getElementById('app-container');
         if (!captureTarget) throw new Error('Could not find app container to capture.');
 
@@ -374,7 +374,7 @@ export const getImplementations = ({
             },
         });
 
-        const dataURL = canvas.toDataURL('image/png');
+        const dataURL = canvas.toDataURL('image/jpeg', 0.8);
         
         if (!isScreenshotPreviewDisabled) {
             setScreenshotPreview(dataURL);

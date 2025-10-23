@@ -57,12 +57,21 @@ export const searchWebFunction: FunctionDeclaration = {
   },
 };
 
+export const captureBrowserScreenshotFunction: FunctionDeclaration = {
+  name: 'captureBrowserScreenshot',
+  description: 'Captures a screenshot of the content inside the currently open web browser. Use this as your "eyes" to see the content of external websites.',
+  parameters: {
+    type: Type.OBJECT,
+  },
+};
+
 export const declarations = [
   openUrlFunction,
   closeBrowserFunction,
   getBrowserPageContentFunction,
   interactWithBrowserPageFunction,
   searchWebFunction,
+  captureBrowserScreenshotFunction,
 ];
 
 // --- Implementations Factory ---
@@ -95,6 +104,10 @@ export const getImplementations = ({ browserControlsRef }: Pick<ToolImplementati
             const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(args.query)}`;
             await getControls().openUrl(searchUrl);
             return { success: true, message: `Browser opened with search results for "${args.query}".` };
+        },
+        captureBrowserScreenshot: async () => {
+            const base64Image = await getControls().captureBrowserScreenshot();
+            return { base64Image };
         },
     };
 };

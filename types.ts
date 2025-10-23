@@ -264,6 +264,7 @@ export interface BrowserControls {
   closeBrowser: () => void;
   getPageContent: () => Promise<string>;
   interactWithPage: (selector: string, action: 'click' | 'type', value?: string) => Promise<string>;
+  captureBrowserScreenshot: () => Promise<string>;
 }
 
 

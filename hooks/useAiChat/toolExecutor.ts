@@ -59,10 +59,10 @@ export const executeTools = async ({
         }
 
         // Handle image-based tools, which inject an image into the next prompt
-        if (fc.name === 'captureScreenshot' && result.base64Image) {
+        if ((fc.name === 'captureAppScreenshot' || fc.name === 'captureBrowserScreenshot') && result.base64Image) {
             parts.push({
                 inlineData: {
-                    mimeType: 'image/png',
+                    mimeType: 'image/jpeg',
                     data: result.base64Image,
                 }
             });
@@ -70,7 +70,7 @@ export const executeTools = async ({
             // This structured response gives the model a very strong hint to use the new image.
             const screenshotResponse = {
                 status: "Success",
-                confirmation: "A screenshot of the user's application has been captured and is included in this turn's context.",
+                confirmation: "A screenshot has been captured and is included in this turn's context.",
                 instruction: "Your next response must be an analysis based *only* on the visual information in this new screenshot."
             };
             
