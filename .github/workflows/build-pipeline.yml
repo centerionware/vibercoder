@@ -224,6 +224,58 @@ jobs:
         with:
           distribution: 'zulu'
           java-version: '21'
+          
+      - name: Fetch Last Version
+        id: fetch_version
+        run: |
+          # Fetch all branches to ensure version-tracker is available
+          git fetch --all
+          # Check if the branch exists
+          if git show-ref --verify --quiet refs/remotes/origin/version-tracker; then
+            # Branch exists, get the version file
+            LAST_VERSION=$(git show origin/version-tracker:VERSION)
+          else
+            # Branch doesn't exist, this is the first run
+            echo "version-tracker branch not found. This must be the first build."
+            LAST_VERSION="0.99"
+          fi
+          echo "Last version was: $LAST_VERSION"
+          echo "last_version=$LAST_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Calculate New Version
+        id: calc_version
+        run: |
+          LAST_VERSION=${{ steps.fetch_version.outputs.last_version }}
+          # Use awk for reliable floating point math
+          NEW_VERSION=$(awk "BEGIN {printf \"%.2f\", ${LAST_VERSION} + 0.01}")
+          echo "New version name: $NEW_VERSION"
+
+          # Calculate integer version code from major.minor (e.g., 1.01 -> 101)
+          MAJOR=$(echo $NEW_VERSION | cut -d. -f1)
+          MINOR=$(echo $NEW_VERSION | cut -d. -f2)
+          # Remove leading zeros from MINOR if any, to avoid octal interpretation in shell
+          MINOR_INT=$((10#$MINOR))
+          NEW_VERSION_CODE=$((MAJOR * 100 + MINOR_INT))
+          echo "New version code: $NEW_VERSION_CODE"
+          
+          echo "version_name=$NEW_VERSION" >> $GITHUB_ENV
+          echo "version_code=$NEW_VERSION_CODE" >> $GITHUB_ENV
+
+      - name: Update and Push Version File
+        run: |
+          git config --global user.name 'GitHub Actions'
+          git config --global user.email 'actions@github.com'
+          
+          TEMP_DIR=$(mktemp -d)
+          cd $TEMP_DIR
+          git init
+          git remote add origin https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          
+          echo "${{ env.version_name }}" > VERSION
+          git add VERSION
+          git commit -m "Bump version to ${{ env.version_name }}"
+          # Force push to the version-tracker branch, creating it if it doesn't exist
+          git push --force origin HEAD:refs/heads/version-tracker
 
       - name: Install dependencies
         run: npm install
@@ -258,12 +310,12 @@ jobs:
       # If secrets are provided, build a signed release AAB for the Play Store.
       - name: Build Android Release AAB
         if: env.SIGNING_KEY_PRESENT == 'true'
-        run: cd android && ./gradlew bundleRelease
+        run: cd android && ./gradlew bundleRelease -PenvVersionName=${{ env.version_name }} -PenvVersionCode=${{ env.version_code }}
 
       # As a fallback, build a debug APK if signing secrets are not available.
       - name: Build Android Debug APK (Fallback)
         if: env.SIGNING_KEY_PRESENT == 'false'
-        run: cd android && ./gradlew assembleDebug
+        run: cd android && ./gradlew assembleDebug -PenvVersionName=${{ env.version_name }} -PenvVersionCode=${{ env.version_code }}
 
       - name: Push Android Artifact to Branch
         run: |
@@ -300,7 +352,7 @@ jobs:
 
   # Job 5: Build the native iOS App.
   build_ios:
-    name: Build iOS App
+    name: BBuilduild iOS App
     needs: build_web
     runs-on: macos-latest # iOS builds MUST run on a macOS machine.
     steps:
