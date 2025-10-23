@@ -63,40 +63,114 @@ function configureAndroid() {
     const variablesGradlePath = path.resolve(__dirname, '..', 'android/variables.gradle');
     if (!fs.existsSync(variablesGradlePath)) {
         log('variables.gradle not found, skipping minSdkVersion configuration. This may be an error if an Android project exists.');
-        return; 
-    }
-
-    log(`Configuring variables.gradle at: ${variablesGradlePath}`);
-    let gradleFile = fs.readFileSync(variablesGradlePath, 'utf8');
-    let gradleChangesMade = false;
-    const newMinSdkVersion = 26;
-    const minSdkVersionRegex = /(minSdkVersion\s*=\s*)(\d+)/;
-    
-    if (minSdkVersionRegex.test(gradleFile)) {
-        const currentVersion = parseInt(gradleFile.match(minSdkVersionRegex)[2], 10);
-        if (currentVersion !== newMinSdkVersion) {
-            gradleFile = gradleFile.replace(minSdkVersionRegex, `$1${newMinSdkVersion}`);
-            log(`  + Updated minSdkVersion from ${currentVersion} to ${newMinSdkVersion} in variables.gradle.`);
-            gradleChangesMade = true;
-        } else {
-            log(`  ✓ minSdkVersion is already ${newMinSdkVersion} in variables.gradle.`);
-        }
     } else {
-        const extBlockRegex = /(ext\s*{)([\s\S]*?)(})/;
-        if (extBlockRegex.test(gradleFile)) {
-            gradleFile = gradleFile.replace(extBlockRegex, `$1$2\n    minSdkVersion = ${newMinSdkVersion}\n$3`);
-            log(`  + Added minSdkVersion = ${newMinSdkVersion} to ext block in variables.gradle.`);
-            gradleChangesMade = true;
+        log(`Configuring variables.gradle at: ${variablesGradlePath}`);
+        let gradleFile = fs.readFileSync(variablesGradlePath, 'utf8');
+        let gradleChangesMade = false;
+        const newMinSdkVersion = 26;
+        const minSdkVersionRegex = /(minSdkVersion\s*=\s*)(\d+)/;
+        
+        if (minSdkVersionRegex.test(gradleFile)) {
+            const currentVersion = parseInt(gradleFile.match(minSdkVersionRegex)[2], 10);
+            if (currentVersion !== newMinSdkVersion) {
+                gradleFile = gradleFile.replace(minSdkVersionRegex, `$1${newMinSdkVersion}`);
+                log(`  + Updated minSdkVersion from ${currentVersion} to ${newMinSdkVersion} in variables.gradle.`);
+                gradleChangesMade = true;
+            } else {
+                log(`  ✓ minSdkVersion is already ${newMinSdkVersion} in variables.gradle.`);
+            }
         } else {
-             log('  ! Could not find ext { ... } block in variables.gradle to add minSdkVersion. Creating it.');
-             gradleFile += `\next {\n    minSdkVersion = ${newMinSdkVersion}\n}\n`;
-             gradleChangesMade = true;
+            const extBlockRegex = /(ext\s*{)([\s\S]*?)(})/;
+            if (extBlockRegex.test(gradleFile)) {
+                gradleFile = gradleFile.replace(extBlockRegex, `$1$2\n    minSdkVersion = ${newMinSdkVersion}\n$3`);
+                log(`  + Added minSdkVersion = ${newMinSdkVersion} to ext block in variables.gradle.`);
+                gradleChangesMade = true;
+            } else {
+                 log('  ! Could not find ext { ... } block in variables.gradle to add minSdkVersion. Creating it.');
+                 gradleFile += `\next {\n    minSdkVersion = ${newMinSdkVersion}\n}\n`;
+                 gradleChangesMade = true;
+            }
+        }
+
+        if (gradleChangesMade) {
+            fs.writeFileSync(variablesGradlePath, gradleFile, 'utf8');
+            log('variables.gradle updated successfully.');
         }
     }
 
-    if (gradleChangesMade) {
-        fs.writeFileSync(variablesGradlePath, gradleFile, 'utf8');
-        log('variables.gradle updated successfully.');
+    // Part 3: Configure android/app/build.gradle for release signing
+    const buildGradlePath = path.resolve(__dirname, '..', 'android/app/build.gradle');
+    if (!fs.existsSync(buildGradlePath)) {
+        log('android/app/build.gradle not found, skipping signing configuration.');
+    } else {
+        log(`Configuring android/app/build.gradle for signing at: ${buildGradlePath}`);
+        let gradleContent = fs.readFileSync(buildGradlePath, 'utf8');
+        let gradleChangesMade = false;
+
+        const signingConfigBlock = `
+    signingConfigs {
+        release {
+            if (project.hasProperty('keystore.properties')) {
+                def propsFile = rootProject.file('keystore.properties')
+                if (propsFile.exists()) {
+                    def props = new Properties()
+                    props.load(new FileInputStream(propsFile))
+                    storeFile file(props['storeFile'])
+                    storePassword props['storePassword']
+                    keyAlias props['keyAlias']
+                    keyPassword props['keyPassword']
+                }
+            }
+        }
+    }
+`;
+
+        // Check if signingConfigs block is already present
+        if (!gradleContent.includes('signingConfigs {')) {
+            // Inject signingConfigs block inside the android { ... } block, before buildTypes
+            if (gradleContent.includes('buildTypes {')) {
+                gradleContent = gradleContent.replace(
+                    /(\s*buildTypes\s*{)/,
+                    `${signingConfigBlock}\n$1`
+                );
+                log('  + Added signingConfigs block.');
+                gradleChangesMade = true;
+            } else {
+                // Fallback if buildTypes isn't there
+                gradleContent = gradleContent.replace(
+                    /(android\s*{)/,
+                    `$1\n${signingConfigBlock}`
+                );
+                log('  + Added signingConfigs block (buildTypes not found, using fallback).');
+                gradleChangesMade = true;
+            }
+        } else {
+            log('  ✓ signingConfigs block already exists.');
+        }
+
+        // Check if the release build type is already configured for signing
+        if (!gradleContent.includes('signingConfig signingConfigs.release')) {
+            // Add signingConfig to the release build type
+            if (gradleContent.match(/buildTypes\s*{\s*release\s*{/)) {
+                gradleContent = gradleContent.replace(
+                    /(buildTypes\s*{\s*release\s*{)/,
+                    `$1\n            signingConfig signingConfigs.release`
+                );
+                log('  + Applied signingConfig to release build type.');
+                gradleChangesMade = true;
+            } else {
+                 log('  ! Could not find `buildTypes { release {` block to apply signing config.');
+            }
+        } else {
+            log('  ✓ release build type already configured for signing.');
+        }
+
+        if (gradleChangesMade) {
+            fs.writeFileSync(buildGradlePath, gradleContent, 'utf8');
+            log('android/app/build.gradle updated for signing successfully.');
+        } else {
+            log('android/app/build.gradle signing configuration already up-to-date.');
+        }
     }
 }
 
