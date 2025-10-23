@@ -98,16 +98,19 @@ function configureAndroid() {
         }
     }
 
-    // Part 3: Configure android/app/build.gradle for release signing
+    // Part 3 & 4: Configure android/app/build.gradle for signing and versioning
     const buildGradlePath = path.resolve(__dirname, '..', 'android/app/build.gradle');
     if (!fs.existsSync(buildGradlePath)) {
-        log('android/app/build.gradle not found, skipping signing configuration.');
-    } else {
-        log(`Configuring android/app/build.gradle for signing at: ${buildGradlePath}`);
-        let gradleContent = fs.readFileSync(buildGradlePath, 'utf8');
-        let gradleChangesMade = false;
+        log('android/app/build.gradle not found, skipping signing and versioning configuration.');
+        return;
+    }
+    
+    log(`Configuring android/app/build.gradle for signing & versioning at: ${buildGradlePath}`);
+    let gradleContent = fs.readFileSync(buildGradlePath, 'utf8');
+    let anyChangesMade = false;
 
-        const signingConfigBlock = `
+    // --- Signing Configuration ---
+    const signingConfigBlock = `
     signingConfigs {
         release {
             def propsFile = rootProject.file('keystore.properties')
@@ -125,53 +128,58 @@ function configureAndroid() {
         }
     }
 `;
-
-        // Check if signingConfigs block is already present
-        if (!gradleContent.includes('signingConfigs {')) {
-            // Inject signingConfigs block inside the android { ... } block, before buildTypes
-            if (gradleContent.includes('buildTypes {')) {
-                gradleContent = gradleContent.replace(
-                    /(\s*buildTypes\s*{)/,
-                    `${signingConfigBlock}\n$1`
-                );
-                log('  + Added signingConfigs block.');
-                gradleChangesMade = true;
-            } else {
-                // Fallback if buildTypes isn't there
-                gradleContent = gradleContent.replace(
-                    /(android\s*{)/,
-                    `$1\n${signingConfigBlock}`
-                );
-                log('  + Added signingConfigs block (buildTypes not found, using fallback).');
-                gradleChangesMade = true;
-            }
-        } else {
-            log('  ✓ signingConfigs block already exists.');
+    if (!gradleContent.includes('signingConfigs {')) {
+        if (gradleContent.includes('buildTypes {')) {
+            gradleContent = gradleContent.replace(/(\s*buildTypes\s*{)/, `${signingConfigBlock}\n$1`);
+            log('  + Added signingConfigs block.');
+            anyChangesMade = true;
         }
+    } else {
+        log('  ✓ signingConfigs block already exists.');
+    }
 
-        // Check if the release build type is already configured for signing
-        if (!gradleContent.includes('signingConfig signingConfigs.release')) {
-            // Add signingConfig to the release build type
-            if (gradleContent.match(/buildTypes\s*{\s*release\s*{/)) {
-                gradleContent = gradleContent.replace(
-                    /(buildTypes\s*{\s*release\s*{)/,
-                    `$1\n            signingConfig signingConfigs.release`
-                );
-                log('  + Applied signingConfig to release build type.');
-                gradleChangesMade = true;
-            } else {
-                 log('  ! Could not find `buildTypes { release {` block to apply signing config.');
-            }
-        } else {
-            log('  ✓ release build type already configured for signing.');
+    if (!gradleContent.includes('signingConfig signingConfigs.release')) {
+        if (gradleContent.match(/buildTypes\s*{\s*release\s*{/)) {
+            gradleContent = gradleContent.replace(/(buildTypes\s*{\s*release\s*{)/, `$1\n            signingConfig signingConfigs.release`);
+            log('  + Applied signingConfig to release build type.');
+            anyChangesMade = true;
         }
-
-        if (gradleChangesMade) {
-            fs.writeFileSync(buildGradlePath, gradleContent, 'utf8');
-            log('android/app/build.gradle updated for signing successfully.');
+    } else {
+        log('  ✓ release build type already configured for signing.');
+    }
+    
+    // --- Dynamic Versioning Configuration ---
+    log(`Configuring for dynamic versioning.`);
+    const versionCodeRegex = /versionCode\s+\d+/;
+    const newVersionCodeLine = `versionCode project.hasProperty('envVersionCode') ? project.property('envVersionCode').toInteger() : 1`;
+    if (gradleContent.match(versionCodeRegex)) {
+        if (!gradleContent.includes(`project.property('envVersionCode')`)) {
+            gradleContent = gradleContent.replace(versionCodeRegex, newVersionCodeLine);
+            log('  + Replaced static versionCode with dynamic property.');
+            anyChangesMade = true;
         } else {
-            log('android/app/build.gradle signing configuration already up-to-date.');
+            log('  ✓ Dynamic versionCode already configured.');
         }
+    }
+    
+    const versionNameRegex = /versionName\s+".*"/;
+    const newVersionNameLine = `versionName project.hasProperty('envVersionName') ? project.property('envVersionName') : "1.0"`;
+    if (gradleContent.match(versionNameRegex)) {
+        if (!gradleContent.includes(`project.property('envVersionName')`)) {
+            gradleContent = gradleContent.replace(versionNameRegex, newVersionNameLine);
+            log('  + Replaced static versionName with dynamic property.');
+            anyChangesMade = true;
+        } else {
+            log('  ✓ Dynamic versionName already configured.');
+        }
+    }
+    
+    // Final write if any change was made
+    if (anyChangesMade) {
+        fs.writeFileSync(buildGradlePath, gradleContent, 'utf8');
+        log('android/app/build.gradle updated successfully.');
+    } else {
+        log('android/app/build.gradle configuration already up-to-date.');
     }
 }
 
