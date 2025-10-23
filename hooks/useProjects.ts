@@ -31,7 +31,8 @@ export const useProjects = () => {
             setActiveProjectId(newProject.id);
         }
         return newProject;
-    }, []);
+        // FIX: Added state setters to dependency array to be explicit and prevent potential stale closures.
+    }, [setProjects, setActiveProjectId]);
 
     // FIX: Add createNewProject and activeProjectId to the dependency array to prevent stale closures and ensure the effect runs correctly if the active project is cleared.
     useEffect(() => {

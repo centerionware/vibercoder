@@ -260,7 +260,8 @@ export interface UseWakeWordProps {
 
 // --- Browser Tool ---
 export interface BrowserControls {
-  openUrl: (url: string) => void;
+  // FIX: The `openUrl` function in `useBrowser.ts` returns a Promise and is awaited by consumers. The type is updated from `void` to `Promise<void>` to match the implementation and fix the type error.
+  openUrl: (url: string) => Promise<void>;
   closeBrowser: () => void;
   getPageContent: () => Promise<string>;
   interactWithPage: (selector: string, action: 'click' | 'type', value?: string) => Promise<string>;
