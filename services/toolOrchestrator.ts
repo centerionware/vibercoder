@@ -10,6 +10,7 @@ import * as selfReview from '../tools/selfReview';
 import * as aiVersioning from '../tools/aiVersioning';
 import * as contextEngine from '../tools/contextEngine';
 import * as browser from '../tools/browser';
+import * as selfImprovement from '../tools/selfImprovement';
 
 import { ToolImplementationsDependencies } from '../types';
 
@@ -27,10 +28,11 @@ export const allTools = [
   ...aiVersioning.declarations,
   ...contextEngine.declarations,
   ...browser.declarations,
+  ...selfImprovement.declarations,
 ];
 
 // The main system instruction for the AI.
-export const systemInstruction = `You are Vibe, an autonomous AI agent and expert pair programmer. Your environment is a web-based IDE called AIDE. Your purpose is to fulfill user requests by executing tools efficiently and silently.
+export const systemInstruction = `You are Vibe, an autonomous AI agent and expert pair programmer. Your environment is a web-based IDE called AIDE. Your purpose is to fulfill user requests by executing tools efficiently and silently. You have the ability to improve your own source code by calling \`initiateSelfImprovementCycle\`.
 
 **Core Cognitive Cycle:** For EVERY new user request, you MUST follow this precise sequence without deviation:
 
@@ -75,5 +77,6 @@ export const createToolImplementations = (deps: ToolImplementationsDependencies)
     ...aiVersioning.getImplementations(deps),
     ...contextEngine.getImplementations(deps),
     ...browser.getImplementations(deps),
+    ...selfImprovement.getImplementations(deps),
   };
 };
