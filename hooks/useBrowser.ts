@@ -1,3 +1,4 @@
+
 import { useCallback, useRef, useEffect } from 'react';
 import { BrowserControls } from '../types';
 import html2canvas from 'html2canvas';
@@ -6,6 +7,8 @@ export const useBrowser = (): BrowserControls => {
   const browserRef = useRef<any>(null);
   const isReadyRef = useRef(false);
   const currentOpenPromise = useRef<{ resolve: () => void, reject: (e: Error) => void } | null>(null);
+  // NEW: A ref to hold the resolver for anyone waiting for the next page load.
+  const pageLoadResolverRef = useRef<{ resolve: () => void, reject: (e: Error) => void } | null>(null);
 
   const onLoadStart = useCallback(() => {
     console.log('InAppBrowser load started.');
@@ -15,36 +18,53 @@ export const useBrowser = (): BrowserControls => {
   const onLoadStop = useCallback(() => {
     console.log('InAppBrowser load finished.');
     isReadyRef.current = true;
+    // Resolve the promise for the specific openUrl call, if it exists
     if (currentOpenPromise.current) {
       currentOpenPromise.current.resolve();
       currentOpenPromise.current = null;
     }
+    // Resolve the promise for any generic waitForReady call
+    if (pageLoadResolverRef.current) {
+      pageLoadResolverRef.current.resolve();
+      pageLoadResolverRef.current = null;
+    }
   }, []);
 
   const onLoadError = useCallback((params: any) => {
-    console.error('InAppBrowser load error:', params.message);
-    isReadyRef.current = false; // Page did not load correctly
+    const error = new Error(params.message || 'Failed to load URL in browser.');
+    console.error('InAppBrowser load error:', error.message);
+    isReadyRef.current = false;
+    // Reject the promise for the specific openUrl call, if it exists
     if (currentOpenPromise.current) {
-      currentOpenPromise.current.reject(new Error(params.message || 'Failed to load URL in browser.'));
+      currentOpenPromise.current.reject(error);
       currentOpenPromise.current = null;
+    }
+    // Reject the promise for any generic waitForReady call
+    if (pageLoadResolverRef.current) {
+      pageLoadResolverRef.current.reject(error);
+      pageLoadResolverRef.current = null;
     }
   }, []);
   
-  // FIX: Moved onExit declaration to be after its dependencies but before functions that use it. Removed the circular self-reference from the useCallback dependency array to resolve the "used before its declaration" error. The callback function can still correctly reference itself to remove the event listener.
   const onExit = useCallback(() => {
     console.log('InAppBrowser exited.');
+    const error = new Error("Browser was closed by the user.");
     
+    // Reject any outstanding promises
     if (currentOpenPromise.current) {
-      currentOpenPromise.current.reject(new Error("Browser was closed during navigation."));
+      currentOpenPromise.current.reject(error);
       currentOpenPromise.current = null;
+    }
+    if (pageLoadResolverRef.current) {
+      pageLoadResolverRef.current.reject(error);
+      pageLoadResolverRef.current = null;
     }
 
     if (browserRef.current) {
-      // Explicitly remove all listeners to prevent memory leaks and ensure a clean state
       browserRef.current.removeEventListener('loadstart', onLoadStart);
       browserRef.current.removeEventListener('loadstop', onLoadStop);
       browserRef.current.removeEventListener('loaderror', onLoadError);
-      browserRef.current.removeEventListener('exit', onExit);
+      browserRef.current.removeEventListener('exit', onExit); // Self-removal but good to be explicit
       browserRef.current = null;
     }
     
@@ -52,6 +72,7 @@ export const useBrowser = (): BrowserControls => {
   }, [onLoadStart, onLoadStop, onLoadError]);
 
   useEffect(() => {
+    // Cleanup on unmount
     return () => {
       if (browserRef.current) {
         browserRef.current.close();
@@ -61,6 +82,7 @@ export const useBrowser = (): BrowserControls => {
 
   const openUrl = useCallback((url: string) => {
     return new Promise<void>((resolve, reject) => {
+      // Reject any previous, unfinished openUrl promise
       if (currentOpenPromise.current) {
         currentOpenPromise.current.reject(new Error("A new navigation was initiated before the previous one completed."));
       }
@@ -69,6 +91,13 @@ export const useBrowser = (): BrowserControls => {
       const inAppBrowserPlugin = (window as any).cordova?.InAppBrowser;
       if (!inAppBrowserPlugin?.open) {
         return reject(new Error("InAppBrowser plugin not available. This feature is only supported in the native mobile app."));
+      }
+      
+      // If we are about to navigate in an existing browser, there might be something waiting on pageLoadResolverRef.
+      // We should reject it because we are starting a new navigation.
+      if (browserRef.current && pageLoadResolverRef.current) {
+        pageLoadResolverRef.current.reject(new Error("A new `openUrl` call cancelled the wait for the previous page load."));
+        pageLoadResolverRef.current = null;
       }
 
       if (browserRef.current) {
@@ -90,40 +119,36 @@ export const useBrowser = (): BrowserControls => {
   const closeBrowser = useCallback(() => {
     if (browserRef.current) {
       browserRef.current.close();
+      // The onExit handler will do the rest of the cleanup.
     }
   }, []);
 
   const waitForReady = useCallback((): Promise<void> => {
-    return new Promise((resolve, reject) => {
-        const browser = browserRef.current;
-        if (!browser) {
-            return reject(new Error("Browser is not open."));
-        }
+    if (!browserRef.current) {
+        return Promise.reject(new Error("Browser is not open."));
+    }
 
-        let attempts = 0;
-        const maxAttempts = 20; // 10 seconds
-        const interval = setInterval(() => {
-            if (!browserRef.current) { // Check if browser was closed during polling
-                clearInterval(interval);
-                reject(new Error("Browser was closed while waiting for it to be ready."));
-                return;
-            }
-            if (attempts >= maxAttempts) {
-                clearInterval(interval);
-                reject(new Error("Timed out waiting for browser page to become ready."));
-                return;
-            }
-            attempts++;
-            
-            // Inject script to check document.readyState
-            browser.executeScript({ code: "document.readyState" }, (result: any[]) => {
-                if (result && result[0] === 'complete') {
-                    clearInterval(interval);
-                    isReadyRef.current = true; // Sync the flag
-                    resolve();
-                }
-            });
-        }, 500);
+    // If it's already ready, resolve immediately.
+    if (isReadyRef.current) {
+        return Promise.resolve();
+    }
+
+    // If another waitForReady is already pending, reject it. Only one can wait at a time.
+    if (pageLoadResolverRef.current) {
+        pageLoadResolverRef.current.reject(new Error("A new wait was initiated before the previous one completed."));
+    }
+
+    // Otherwise, create a new promise and store its handlers to be called by the event listeners.
+    return new Promise((resolve, reject) => {
+      pageLoadResolverRef.current = { resolve, reject };
+      
+      // Add a timeout to prevent infinite waiting
+      const timeoutId = setTimeout(() => {
+          if (pageLoadResolverRef.current?.resolve === resolve) { // Check if we are still the one waiting
+              pageLoadResolverRef.current = null;
+              reject(new Error("Timed out waiting for browser page to load."));
+          }
+      }, 15000); // 15 second timeout
     });
   }, []);
   
