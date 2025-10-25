@@ -1,4 +1,5 @@
 
+
 import { useCallback, useRef, useEffect } from 'react';
 import { BrowserControls } from '../types';
 import html2canvas from 'html2canvas';
@@ -153,7 +154,6 @@ export const useBrowser = (): BrowserControls => {
   }, []);
   
   const getPageContent = useCallback(async (): Promise<string> => {
-    await waitForReady();
     const browser = browserRef.current;
     if (!browser) {
       return Promise.reject(new Error("No active browser instance to get content from."));
@@ -235,10 +235,9 @@ export const useBrowser = (): BrowserControls => {
         });
       }, 500);
     });
-  }, [waitForReady]);
+  }, []);
 
   const interactWithPage = useCallback(async (selector: string, action: 'click' | 'type', value?: string): Promise<string> => {
-    await waitForReady();
     const browser = browserRef.current;
     if (!browser) {
       return Promise.reject(new Error("No active browser instance to interact with."));
@@ -291,10 +290,9 @@ export const useBrowser = (): BrowserControls => {
             }
         });
     });
-  }, [waitForReady]);
+  }, []);
   
   const captureBrowserScreenshot = useCallback(async (): Promise<string> => {
-    await waitForReady();
     const browser = browserRef.current;
     if (!browser) {
       return Promise.reject(new Error("No active browser instance to capture."));
@@ -374,7 +372,7 @@ export const useBrowser = (): BrowserControls => {
         });
       }, 500);
     });
-  }, [waitForReady]);
+  }, []);
 
   return { openUrl, closeBrowser, getPageContent, interactWithPage, captureBrowserScreenshot };
 };
