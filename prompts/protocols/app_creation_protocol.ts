@@ -2,7 +2,7 @@ const content = `This protocol provides a strict, step-by-step guide for creatin
 
 **Mandatory Workflow:**
 
-1.  **Create \`index.html\`:** Call \`writeFile\` to create an \`index.html\` file. The content MUST be the standard VibeCode HTML boilerplate, including a root div and the Tailwind CSS CDN script.
+1.  **Create \`index.html\`:** Call \`createFile\` to create an \`index.html\` file. The content MUST be the standard VibeCode HTML boilerplate, including a root div and the Tailwind CSS CDN script.
     \`\`\`html
     <!DOCTYPE html>
     <html lang="en">
@@ -18,7 +18,7 @@ const content = `This protocol provides a strict, step-by-step guide for creatin
     </html>
     \`\`\`
 
-2.  **Create \`style.css\`:** Call \`writeFile\` to create a \`style.css\` file. The content should provide basic, theme-aligned body styles.
+2.  **Create \`style.css\`:** Call \`createFile\` to create a \`style.css\` file. The content should provide basic, theme-aligned body styles.
     \`\`\`css
     body {
       font-family: sans-serif;
@@ -27,7 +27,7 @@ const content = `This protocol provides a strict, step-by-step guide for creatin
     }
     \`\`\`
 
-3.  **Create \`index.tsx\`:** Call \`writeFile\` to create the main application entry point, \`index.tsx\`. This file MUST import React, ReactDOM, and the new \`style.css\`. It should render a simple placeholder component based on the user's request into the 'root' div.
+3.  **Create \`index.tsx\`:** Call \`createFile\` to create the main application entry point, \`index.tsx\`. This file MUST import React, ReactDOM, and the new \`style.css\`. It should render a simple placeholder component based on the user's request into the 'root' div.
 
 4.  **Finalize:** After creating all three files, you MUST call \`commitToHead\` to save the new application to the user's workspace.
 

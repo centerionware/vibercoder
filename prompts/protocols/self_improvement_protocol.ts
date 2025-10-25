@@ -20,7 +20,7 @@ const content = `This is the most advanced protocol. It guides you in a recursiv
     a. Use \`readFile()\` on the target file(s).
     b. Create a detailed, step-by-step plan for the modification. You MUST use the \`think()\` tool again to outline this plan.
 
-4.  **Implement in VFS:** Use \`writeFile()\` to make the changes in your virtual file system.
+4.  **Implement in VFS:** Use \`updateFile()\` to make the changes in your virtual file system.
 
 5.  **Self-Review:**
     a. You MUST now load the appropriate review protocols. At a minimum, load \`['senior_software_architect_protocol', 'quality_assurance_engineer_protocol']\`.
