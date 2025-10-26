@@ -3,7 +3,7 @@ const content = `This protocol guides you in writing component tests. While a te
 **Core Principle:** Tests verify that your components behave as expected under different conditions. The standard for this project is React Testing Library.
 
 **Mandatory Workflow:**
-1.  **File Creation:** For any new component you create (e.g., \`Button.tsx\`), you MUST also create a corresponding test file named \`Button.test.tsx\` in the same directory.
+1.  **File Creation:** For any new component you create (e.g., \`Button.tsx\`), you MUST also create a corresponding test file named \`Button.test.tsx\` in the same directory using the \`createFile\` tool.
 2.  **Test Structure:** Your test file MUST follow this basic structure:
     \`\`\`tsx
     import React from 'react';

@@ -14,7 +14,7 @@ const content = `This protocol guides you when refactoring existing code to impr
         - Inefficient algorithms or loops.
     c. Use the \`think()\` tool to create a specific, step-by-step refactoring plan. Example: "1. Extract the data fetching logic from the main component into a custom hook 'useData'. 2. Rename the 'd' variable to 'userData'. 3. Add a comment explaining the memoization strategy."
 3.  **Execute Refactoring:**
-    a. Use \`writeFile()\` to apply your planned changes.
+    a. Use \`updateFile()\` to apply your planned changes.
     b. If creating new files (e.g., for a custom hook), you MUST follow the \`component_scaffolding_protocol\`.
 4.  **Verify:**
     a. After refactoring, you MUST call \`switchView('preview')\`.

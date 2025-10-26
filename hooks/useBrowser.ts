@@ -1,4 +1,5 @@
 
+
 import { useCallback, useRef, useEffect } from 'react';
 import { BrowserControls } from '../types';
 import html2canvas from 'html2canvas';
@@ -153,7 +154,6 @@ export const useBrowser = (): BrowserControls => {
   }, []);
   
   const getPageContent = useCallback(async (): Promise<string> => {
-    await waitForReady();
     const browser = browserRef.current;
     if (!browser) {
       return Promise.reject(new Error("No active browser instance to get content from."));
@@ -161,7 +161,12 @@ export const useBrowser = (): BrowserControls => {
 
     const injectionScript = `
     (function() {
-        try {
+        if (window.__get_content_in_progress) return;
+        window.__get_content_in_progress = true;
+        delete window.__page_content_result;
+        delete window.__page_content_error;
+
+        function extractContent() {
             let content = '';
             if (document.title) {
                 content += 'Page Title: ' + document.title + '\\n\\n';
@@ -189,29 +194,50 @@ export const useBrowser = (): BrowserControls => {
                 content = getCleanText(document.body);
             }
             return content;
+        }
+
+        try {
+            const content = extractContent();
+            window.__page_content_result = content;
         } catch (e) {
-            return 'Error: ' + (e.message || 'Unknown extraction error');
+            window.__page_content_error = e.message || 'Unknown extraction error';
+        } finally {
+             window.__get_content_in_progress = false;
         }
     })();`;
   
+    const pollScript = `(function() { return { result: window.__page_content_result, error: window.__page_content_error, inProgress: window.__get_content_in_progress }; })();`;
+  
     return new Promise((resolve, reject) => {
-      browser.executeScript({ code: injectionScript }, (result: any[]) => {
-        const content = result && result[0];
-        if (typeof content === 'string') {
-          if (content.startsWith('Error:')) {
-            reject(new Error(content));
-          } else {
-            resolve(content);
-          }
-        } else {
-          reject(new Error("Failed to get page content, script returned no result or unexpected type."));
+      browser.executeScript({ code: injectionScript });
+  
+      const maxRetries = 15; // ~7.5 seconds timeout
+      let retries = 0;
+      const pollInterval = setInterval(() => {
+        if (retries >= maxRetries) {
+          clearInterval(pollInterval);
+          reject(new Error("Timeout waiting for page content from browser."));
+          return;
         }
-      });
+        retries++;
+  
+        browser.executeScript({ code: pollScript }, (result: any) => {
+          const pollResult = result && result[0];
+          if (!pollResult || pollResult.inProgress) return;
+  
+          if (pollResult.error) {
+            clearInterval(pollInterval);
+            reject(new Error(`Content extraction failed inside browser: ${pollResult.error}`));
+          } else if (typeof pollResult.result === 'string') {
+            clearInterval(pollInterval);
+            resolve(pollResult.result);
+          }
+        });
+      }, 500);
     });
-  }, [waitForReady]);
+  }, []);
 
   const interactWithPage = useCallback(async (selector: string, action: 'click' | 'type', value?: string): Promise<string> => {
-    await waitForReady();
     const browser = browserRef.current;
     if (!browser) {
       return Promise.reject(new Error("No active browser instance to interact with."));
@@ -264,10 +290,9 @@ export const useBrowser = (): BrowserControls => {
             }
         });
     });
-  }, [waitForReady]);
+  }, []);
   
   const captureBrowserScreenshot = useCallback(async (): Promise<string> => {
-    await waitForReady();
     const browser = browserRef.current;
     if (!browser) {
       return Promise.reject(new Error("No active browser instance to capture."));
@@ -347,7 +372,7 @@ export const useBrowser = (): BrowserControls => {
         });
       }, 500);
     });
-  }, [waitForReady]);
+  }, []);
 
   return { openUrl, closeBrowser, getPageContent, interactWithPage, captureBrowserScreenshot };
 };

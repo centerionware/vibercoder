@@ -38,6 +38,7 @@ import VISION_PROTOCOL from './protocols/vision_protocol';
 import ASSET_MANAGEMENT_PROTOCOL from './protocols/asset_management_protocol';
 import CONTEXT_GATHERING_PROTOCOL from './protocols/context_gathering_protocol';
 import WEB_SEARCH_PROTOCOL from './protocols/web_search_protocol';
+import SELF_IMPROVEMENT_PROTOCOL from './protocols/self_improvement_protocol';
 
 
 interface DefaultPrompt {
@@ -217,5 +218,10 @@ export const defaultPrompts: DefaultPrompt[] = [
         id: 'web_search_protocol',
         description: 'A protocol for effectively searching the web and synthesizing information.',
         content: WEB_SEARCH_PROTOCOL,
+    },
+    {
+        id: 'self_improvement_protocol',
+        description: 'A meta-protocol for analyzing and improving your own source code.',
+        content: SELF_IMPROVEMENT_PROTOCOL,
     }
 ];

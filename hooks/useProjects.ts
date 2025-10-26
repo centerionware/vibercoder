@@ -65,11 +65,26 @@ export const useProjects = () => {
             alert("You cannot delete the last remaining project.");
             return;
         }
-        await db.projects.delete(id);
+
+        // FIX: Implemented a robust, atomic deletion for projects. The previous logic only deleted the project record, leaving associated files, threads, and AI sessions orphaned in the database. This new implementation uses a transaction to ensure all related data is cleaned up, preventing state corruption and file-mixing bugs.
+        await (db as any).transaction('rw', db.projects, db.projectFiles, db.threads, db.vfsSessions, async () => {
+            // Find threads of the project to delete their VFS sessions
+            const threadsToDelete = await db.threads.where({ projectId: id }).toArray();
+            const threadIdsToDelete = threadsToDelete.map(t => t.id);
+            
+            if (threadIdsToDelete.length > 0) {
+                await db.vfsSessions.where('threadId').anyOf(threadIdsToDelete).delete();
+            }
+            await db.threads.where({ projectId: id }).delete();
+            await db.projectFiles.where({ projectId: id }).delete();
+            await db.projects.delete(id);
+        });
+
         const remaining = projects.filter(p => p.id !== id);
         setProjects(remaining);
         if (activeProjectId === id) {
-            setActiveProjectId(remaining[0]?.id || null);
+            const newActiveProject = remaining.sort((a, b) => b.createdAt - a.createdAt)[0];
+            setActiveProjectId(newActiveProject?.id || null);
         }
     }, [projects, activeProjectId]);
     
