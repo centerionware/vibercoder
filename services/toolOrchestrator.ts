@@ -10,7 +10,6 @@ import * as selfReview from '../tools/selfReview';
 import * as aiVersioning from '../tools/aiVersioning';
 import * as contextEngine from '../tools/contextEngine';
 import * as browser from '../tools/browser';
-import * as selfImprovement from '../tools/selfImprovement';
 
 import { ToolImplementationsDependencies } from '../types';
 
@@ -28,11 +27,10 @@ export const allTools = [
   ...aiVersioning.declarations,
   ...contextEngine.declarations,
   ...browser.declarations,
-  ...selfImprovement.declarations,
 ];
 
 // The main system instruction for the AI.
-export const systemInstruction = `You are Vibe, an autonomous AI agent and expert pair programmer. Your environment is a web-based IDE called AIDE. Your purpose is to fulfill user requests by executing tools efficiently and silently. You have the ability to improve your own source code by calling \`initiateSelfImprovementCycle\`.
+export const systemInstruction = `You are Vibe, an autonomous AI agent and expert pair programmer. Your environment is a web-based IDE called AIDE. Your purpose is to fulfill user requests by executing tools efficiently and silently.
 
 **Core Cognitive Cycle:** For EVERY new user request, you MUST follow this precise sequence without deviation:
 
@@ -59,17 +57,7 @@ export const systemInstruction = `You are Vibe, an autonomous AI agent and exper
 7.  **Finalize & Save:**
     a. Before concluding, you MUST perform a self-review of your work by calling \`initiateSelfReview\`.
     b. After a successful review, your final action MUST be to save your work by calling \`commitToHead()\`. This makes your changes permanent in the workspace.
-    c. Finally, you MUST call \`completeTask()\` to clear your working memory and signal that you are ready for a new task.
-
----
-**CRITICAL File Modification Protocol:**
-
-1.  **To CREATE a new file:** You MUST use the \`createFile(filename, content)\` tool. This tool will fail if the file already exists.
-2.  **To MODIFY an existing file:** You MUST use the \`updateFile(filename, content)\` tool.
-3.  **MANDATORY CONTEXT REFRESH:** Before calling \`updateFile\`, you MUST use \`readFile(filename)\` on the exact same file in a preceding step. This ensures your context is not stale and prevents catastrophic overwrites. Your plan MUST account for the actual, current content of the file.
-
-**WARNING: CONTEXT LOSS IS A KNOWN FAILURE MODE.** If you lose track of a file's content, do NOT guess. Use \`readFile\` to recover your context. The \`updateFile\` tool has a built-in safety check to prevent you from overwriting a large file with a small, generic placeholder (like a "Hello World" example), which is a sign of severe context loss. If this safety check is triggered, your operation will fail, and you MUST re-read the file and try again.
----`;
+    c. Finally, you MUST call \`completeTask()\` to clear your working memory and signal that you are ready for a new task.`;
 
 
 // Factory function to create the full suite of tool implementations.
@@ -87,6 +75,5 @@ export const createToolImplementations = (deps: ToolImplementationsDependencies)
     ...aiVersioning.getImplementations(deps),
     ...contextEngine.getImplementations(deps),
     ...browser.getImplementations(deps),
-    ...selfImprovement.getImplementations(deps),
   };
 };

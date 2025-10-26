@@ -1,0 +1,3 @@
+# Project Summary
+
+This project is a React-based Integrated Development Environment (IDE) that runs in the browser. It uses Vite as a bundler and includes various components for code editing, a live preview, Git integration, and an AI assistant. Key libraries include Monaco Editor for code editing and Isomorphic Git for Git operations. It uses Capacitor for native mobile builds, which allows for native mobile builds for iOS and Android, and can also be packaged as an Electron desktop app. The UI is styled with Tailwind CSS.

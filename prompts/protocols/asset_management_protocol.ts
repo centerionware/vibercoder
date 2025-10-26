@@ -10,19 +10,19 @@ When an image or other asset is generated (e.g., using \`generateImage\`), you M
 
 2.  **Create Assets Directory:**
     a. Check if an \`src/assets/\` directory exists by calling \`listFiles()\`.
-    b. If it does not exist, you MUST create it. You can do this by calling \`createFile()\` with a placeholder file inside it, like \`createFile({ filename: 'src/assets/.gitkeep', content: '' })\`.
+    b. If it does not exist, you MUST create it. You can do this by calling \`writeFile()\` with a placeholder file inside it, like \`writeFile({ filename: 'src/assets/.gitkeep', content: '' })\`.
 
 3.  **Save the Asset:**
-    -   The \`generateImage\` tool returns a base64 string. To save it, you must first acknowledge that file system tools expect regular strings, not base64.
+    -   The \`generateImage\` tool returns a base64 string. To save it, you must first acknowledge that \`writeFile\` expects a regular string, not base64.
     -   You MUST inform the user that you are saving the image and then write the base64 data directly into the file. The browser environment can handle this.
-    -   Call \`createFile({ filename: 'src/assets/your-chosen-name.jpg', content: 'data:image/jpeg;base64,' + base64ImageData })\`.
-    -   **Correction:** The above is slightly wrong. The tools write text content. The correct approach is to inform the user that you cannot save binary files, but you can embed the image directly into a component using a data URL.
+    -   Call \`writeFile({ filename: 'src/assets/your-chosen-name.jpg', content: 'data:image/jpeg;base64,' + base64ImageData })\`.
+    -   **Correction:** The above is slightly wrong. \`writeFile\` writes text content. The correct approach is to inform the user that you cannot save binary files, but you can embed the image directly into a component using a data URL.
 
 **Corrected Workflow:**
 
 1.  **Generate Asset:** Call \`generateImage\`. The tool returns \`base64Image\`.
 2.  **Ask for Placement:** Ask the user where to use the image. "I have generated the image. Which component should I add it to?"
-3.  **Embed as Data URL:** Read the target component file. Modify it to include an \`<img>\` tag where the \`src\` is the Base64 data URL. Use the \`updateFile\` tool to save the changes.
+3.  **Embed as Data URL:** Read the target component file. Modify it to include an \`<img>\` tag where the \`src\` is the Base64 data URL.
     \`\`\`jsx
     // Example modification in a component file:
     const base64ImageData = " ... the very long base64 string from the tool ... ";
