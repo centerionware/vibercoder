@@ -41,6 +41,10 @@ export const updateFileFunction: FunctionDeclaration = {
         type: Type.STRING,
         description: 'The new content to write to the file.',
       },
+      force: {
+        type: Type.BOOLEAN,
+        description: 'If true, bypasses safety checks like the catastrophic overwrite prevention. Use with extreme caution as this can lead to data loss if your context is stale.',
+      },
     },
     required: ['filename', 'content'],
   },
@@ -81,6 +85,29 @@ export const removeFileFunction: FunctionDeclaration = {
     },
 };
 
+export const patchFileFunction: FunctionDeclaration = {
+    name: 'patchFile',
+    description: 'Applies a targeted change to an existing file by replacing the first occurrence of a search string with new content. This is safer than `updateFile` for small changes as it avoids the risk of catastrophic overwrites due to context loss.',
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            filename: {
+                type: Type.STRING,
+                description: 'The full name of the file to patch.',
+            },
+            search: {
+                type: Type.STRING,
+                description: 'The exact string of content to find in the file.',
+            },
+            replace: {
+                type: Type.STRING,
+                description: 'The new content that will replace the `search` string.',
+            },
+        },
+        required: ['filename', 'search', 'replace'],
+    },
+};
+
 // --- Aggregated Declarations ---
 
 export const declarations = [
@@ -89,6 +116,7 @@ export const declarations = [
     updateFileFunction,
     createFileFunction,
     removeFileFunction,
+    patchFileFunction,
 ];
 
 // --- Implementations Factory ---
@@ -137,7 +165,7 @@ export const getImplementations = ({ getAiVirtualFiles, setAiVirtualFiles, getVf
         
         throw new Error(`File "${filename}" not found in the AI virtual session.`);
     },
-    updateFile: async (args: { filename: string; content: string }) => {
+    updateFile: async (args: { filename: string; content: string; force?: boolean }) => {
         await getVfsReadyPromise();
         const vfs = getAiVirtualFiles();
         if (vfs === null) {
@@ -152,11 +180,13 @@ export const getImplementations = ({ getAiVirtualFiles, setAiVirtualFiles, getVf
 
         const filename = normalizePath(args.filename);
         const newContent = args.content;
-        const originalContent = vfs.originalFiles[filename];
-
+        
         // Safety Check: Prevent catastrophic overwrites due to context loss.
-        if (originalContent && originalContent.length > 500 && newContent.length < (originalContent.length * 0.25)) {
-            throw new Error(`Write operation rejected due to high risk of context loss. The new content (${newContent.length} chars) is drastically smaller than the original file (${originalContent.length} chars). You MUST read the file again to refresh your context.`);
+        if (!args.force) {
+            const originalContent = vfs.originalFiles[filename];
+            if (originalContent && originalContent.length > 500 && newContent.length < (originalContent.length * 0.25)) {
+                throw new Error(`Write operation rejected due to high risk of context loss. The new content (${newContent.length} chars) is drastically smaller than the original file (${originalContent.length} chars). To proceed, you can either: 1. Call this tool again with the 'force: true' parameter. 2. Use the 'patchFile' tool for a more targeted change. 3. Read the file again to refresh your context before updating.`);
+            }
         }
         
         setAiVirtualFiles(prevVfs => {
@@ -244,5 +274,57 @@ export const getImplementations = ({ getAiVirtualFiles, setAiVirtualFiles, getVf
         await saveVfsSession();
 
         return { success: true };
-    }
+    },
+    patchFile: async (args: { filename: string; search: string; replace: string }) => {
+        await getVfsReadyPromise();
+        const vfs = getAiVirtualFiles();
+        if (vfs === null) {
+            throw new Error("No active AI session. Cannot patch file.");
+        }
+        if (typeof args.filename !== 'string' || !args.filename) {
+            throw new Error("patchFile tool call is missing the required 'filename' argument.");
+        }
+        if (typeof args.search !== 'string') {
+             throw new Error("patchFile tool call is missing the required 'search' argument.");
+        }
+        if (typeof args.replace !== 'string') {
+            throw new Error("patchFile tool call is missing the required 'replace' argument.");
+        }
+
+        const filename = normalizePath(args.filename);
+        
+        // Get the current content from the VFS, considering mutations.
+        const mutation = vfs.mutations[filename];
+        let currentContent: string;
+        if (typeof mutation === 'string') {
+            currentContent = mutation;
+        } else if (mutation === DELETED_FILE_SENTINEL) {
+            throw new Error(`Cannot patch file "${filename}" because it has been deleted in this session.`);
+        } else if (vfs.originalFiles[filename] !== undefined) {
+            currentContent = vfs.originalFiles[filename];
+        } else {
+            throw new Error(`File "${filename}" not found in the AI virtual session.`);
+        }
+
+        if (!currentContent.includes(args.search)) {
+            throw new Error(`The search string was not found in the file "${filename}". You may need to read the file again to get the exact content before patching.`);
+        }
+
+        const newContent = currentContent.replace(args.search, args.replace);
+
+        setAiVirtualFiles(prevVfs => {
+            if (!prevVfs) return prevVfs;
+            return {
+                ...prevVfs,
+                mutations: {
+                    ...prevVfs.mutations,
+                    [filename]: newContent,
+                }
+            };
+        });
+
+        await saveVfsSession();
+
+        return { success: true, message: `File "${filename}" patched successfully.` };
+    },
 });
