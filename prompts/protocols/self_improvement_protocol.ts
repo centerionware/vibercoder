@@ -1,36 +1,27 @@
-const content = `This is the most advanced protocol. It guides you in a recursive cycle of self-improvement, allowing you to modify your own source code to fix bugs, refactor, or add new capabilities.
+const content = `This is your most advanced protocol. It guides you in a recursive cycle of self-improvement, allowing you to modify your own internal instructions (your protocols) to fix bugs in your reasoning, refactor your workflows, or add new capabilities.
 
-**Core Principle:** You are modifying the very code that makes you run. Proceed with extreme caution. Make small, incremental, and verifiable changes.
+**Core Principle:** You are modifying the very instructions that define your behavior. Your goal is to make small, incremental, and beneficial changes to your protocols to become more efficient and effective. You MUST NOT use this protocol to modify application source code files (.ts, .tsx, etc.). This is exclusively for editing your own prompts.
 
 **Mandatory Workflow:**
 
-1.  **Initiation:** This protocol is only activated after you have called the \`initiateSelfImprovementCycle\` tool, which provides you with a list of your own source code files.
+1.  **Initiation:** This protocol is activated when a user asks you to improve yourself or a specific protocol you follow (e.g., "your debugging process is inefficient, fix it" or "improve your git commit messages").
 
-2.  **Analyze & Select Target:**
-    a. Review the list of your source files.
-    b. Cross-reference this list with your internal knowledge of your capabilities and the project guidelines (e.g., \`project guidelines.md\`, other protocols).
-    c. Identify ONE small, specific, and high-impact area for improvement. Examples of good targets:
-        - "The \`git_commit_protocol\` could be more explicit about subject line length." (Updating a prompt)
-        - "The \`useGitLogic.ts\` hook has a complex function that could be simplified." (Refactoring code)
-        - "The \`MicPermissionModal\` does not explain *why* the microphone is needed." (Improving UI/UX copy)
-        - "I lack a tool to check the current date and time." (Proposing a new, simple tool)
-    d. You MUST use the \`think()\` tool to state your chosen target and your reasoning.
+2.  **Explore Your Capabilities:** Your first action MUST be to call \`listPrompts()\`. This tool provides a complete list of all your internal protocols (your "source code").
 
-3.  **Plan the Change:**
-    a. Use \`readFile()\` on the target file(s).
-    b. Create a detailed, step-by-step plan for the modification. You MUST use the \`think()\` tool again to outline this plan.
+3.  **Identify Target for Improvement:**
+    a. Review the list of your available protocols.
+    b. Based on the user's request or your own self-analysis, identify the ONE protocol that is the best target for improvement.
+    c. You MUST use the \`think()\` tool to state your chosen target protocol and your reasoning for selecting it. For example: "The user is unhappy with my commit messages. I will improve the 'git_commit_protocol'."
 
-4.  **Implement in VFS:** Use \`updateFile()\` to make the changes in your virtual file system.
+4.  **Read and Analyze the Current Protocol:**
+    a. You MUST call \`readPrompts()\` with the key of the target protocol to load its current content.
+    b. Use the \`think()\` tool to critically analyze the content and formulate a specific, improved version. Your thought process should clearly state what is wrong with the old version and how the new version will be better.
 
-5.  **Self-Review:**
-    a. You MUST now load the appropriate review protocols. At a minimum, load \`['senior_software_architect_protocol', 'quality_assurance_engineer_protocol']\`.
-    b. Follow the instructions in those protocols to review your own changes.
-    c. If you find any issues, go back to step 4 and fix them. This is the recursive loop.
+5.  **Implement the Improvement:** You MUST call the \`updatePrompt()\` tool with the following arguments:
+    - \`key\`: The key of the protocol you are improving.
+    - \`newContent\`: The full, improved content for the protocol.
+    - \`reason\`: A concise explanation of the improvement you made.
 
-6.  **Finalize:**
-    a. Once the self-review is passed, you MUST call \`commitToHead()\` to save your improvements to the main workspace. This makes your changes permanent.
-    b. Call \`completeTask()\` to clear your working memory.
-
-7.  **Report:** Announce the improvement you have made. State the file(s) you changed and the nature of the improvement.
+6.  **Report and Conclude:** Announce the improvement you have made. State which protocol you updated and briefly describe the nature of the improvement. Your task is now complete.
 `;
 export default content;
