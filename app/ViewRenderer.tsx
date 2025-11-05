@@ -22,7 +22,7 @@ const ViewRenderer: React.FC<AppLogic> = (props) => {
                 onFileChange={props.onFileChange}
                 onFileSelect={props.onFileSelect}
                 onFileAdd={props.onFileAdd}
-                onFileRemove={props.onFileRemove}
+                onFileRemove={props.onRemoveFile}
                 isFullScreen={props.isFullScreen}
                 onToggleFullScreen={props.onToggleFullScreen}
             />;
