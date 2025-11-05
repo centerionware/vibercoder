@@ -11,7 +11,7 @@ interface State {
 }
 
 class ErrorBoundary extends Component<Props, State> {
-  // FIX: The component's state was not initialized, causing errors when trying to access `this.state` or `this.props`. A constructor has been added to call `super(props)` and set the initial state, which resolves these errors.
+  // FIX: Added a constructor to initialize state. In React class components, `this.state` must be initialized, and `super(props)` must be called before `this.props` can be used.
   constructor(props: Props) {
     super(props);
     this.state = {

@@ -1,4 +1,5 @@
 
+
 import React, { useRef, useState, useMemo, useCallback, useEffect } from 'react';
 import Editor, { OnMount } from '@monaco-editor/react';
 import { editor } from 'monaco-editor';
@@ -173,10 +174,10 @@ const CollapsedExplorer: React.FC<{ onExpand: () => void }> = ({ onExpand }) => 
 interface CodeViewProps {
   files: Record<string, string>;
   activeFile: string | null;
-  onFileChange: (filename: string, content: string) => void;
+  onFileChange: (filename: string, content: string) => Promise<void>;
   onFileSelect: (filename: string | null) => void;
-  onFileAdd: (filename: string, content: string) => void;
-  onFileRemove: (filename: string) => void;
+  onFileAdd: (filename: string, content: string) => Promise<void>;
+  onFileRemove: (filename: string) => Promise<void>;
   isFullScreen: boolean;
   onToggleFullScreen: () => void;
 }

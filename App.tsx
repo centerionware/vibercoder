@@ -1,6 +1,10 @@
 
 
 
+
+
+
+// FIX: Imported useState and useEffect from React, as they were being used without being imported.
 import React, { useState, useEffect } from 'react';
 import { Capacitor } from '@capacitor/core';
 // FIX: Corrected import paths for useAppLogic and ViewRenderer to be relative to the current file location, resolving module not found errors.
@@ -66,7 +70,7 @@ const App = () => {
         )}
       </div>
 
-      {/* Modals */}
+      {/* Modals & Overlays */}
       <GitCredentialsModal
         isOpen={app.isGitCredentialsModalOpen}
         onClose={() => app.setIsGitCredentialsModalOpen(false)}

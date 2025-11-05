@@ -440,9 +440,9 @@ export const useAppLogic = () => {
         }
     }, [settings.apiKey, isSettingsLoaded]);
 
-    const browserControls = useBrowser();
+    const browser = useBrowser();
     const browserControlsRef = useRef<BrowserControls>();
-    browserControlsRef.current = browserControls;
+    browserControlsRef.current = browser.controls;
 
     const liveControlsRef = useRef<LiveSessionControls>();
     
@@ -535,6 +535,6 @@ export const useAppLogic = () => {
         onProxyIframeLoad: handleProxyIframeLoad,
         onProxyNavigate: handleProxyNavigate,
         // Browser State
-        browserControls,
+        browser,
     };
 };
