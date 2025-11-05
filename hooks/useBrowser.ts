@@ -1,5 +1,3 @@
-
-
 import { useCallback, useRef, useEffect } from 'react';
 import { BrowserControls } from '../types';
 import html2canvas from 'html2canvas';
@@ -81,7 +79,8 @@ export const useBrowser = (): BrowserControls => {
     };
   }, []);
 
-  const openUrl = useCallback((url: string) => {
+  // FIX: Added 'async' keyword. Although the function already returns a promise, making it explicitly async can resolve subtle type inference issues that may cause the reported error.
+  const openUrl = useCallback(async (url: string): Promise<void> => {
     return new Promise<void>((resolve, reject) => {
       // Reject any previous, unfinished openUrl promise
       if (currentOpenPromise.current) {
@@ -158,15 +157,11 @@ export const useBrowser = (): BrowserControls => {
     if (!browser) {
       return Promise.reject(new Error("No active browser instance to get content from."));
     }
-
+    
+    // This IIFE will be executed in the InAppBrowser context and its return value will be passed to the callback.
     const injectionScript = `
     (function() {
-        if (window.__get_content_in_progress) return;
-        window.__get_content_in_progress = true;
-        delete window.__page_content_result;
-        delete window.__page_content_error;
-
-        function extractContent() {
+        try {
             let content = '';
             if (document.title) {
                 content += 'Page Title: ' + document.title + '\\n\\n';
@@ -179,7 +174,7 @@ export const useBrowser = (): BrowserControls => {
                     content += '#'.repeat(level) + ' ' + text + '\\n';
                 }
             });
-            document.querySelectorAll('p, li, blockquote, article, main').forEach(p => {
+            document.querySelectorAll('p, li, blockquote, article, main, pre').forEach(p => {
                 const text = getCleanText(p);
                 if (text) content += text + '\\n\\n';
             });
@@ -190,50 +185,30 @@ export const useBrowser = (): BrowserControls => {
                     content += '[Link: ' + text + '](' + href + ')\\n';
                 }
             });
+            // Fallback to body text if no structured content was found
             if (!content.trim() && document.body) {
                 content = getCleanText(document.body);
             }
-            return content;
-        }
-
-        try {
-            const content = extractContent();
-            window.__page_content_result = content;
+            return { result: content };
         } catch (e) {
-            window.__page_content_error = e.message || 'Unknown extraction error';
-        } finally {
-             window.__get_content_in_progress = false;
+            return { error: e.message || 'An unknown error occurred during content extraction.' };
         }
     })();`;
-  
-    const pollScript = `(function() { return { result: window.__page_content_result, error: window.__page_content_error, inProgress: window.__get_content_in_progress }; })();`;
-  
+
     return new Promise((resolve, reject) => {
-      browser.executeScript({ code: injectionScript });
-  
-      const maxRetries = 15; // ~7.5 seconds timeout
-      let retries = 0;
-      const pollInterval = setInterval(() => {
-        if (retries >= maxRetries) {
-          clearInterval(pollInterval);
-          reject(new Error("Timeout waiting for page content from browser."));
-          return;
+      // The callback for executeScript receives an array containing the return value of the script.
+      browser.executeScript({ code: injectionScript }, (result: any) => {
+        if (!result || !result[0]) {
+          return reject(new Error("Failed to get page content. The script returned no result."));
         }
-        retries++;
-  
-        browser.executeScript({ code: pollScript }, (result: any) => {
-          const pollResult = result && result[0];
-          if (!pollResult || pollResult.inProgress) return;
-  
-          if (pollResult.error) {
-            clearInterval(pollInterval);
-            reject(new Error(`Content extraction failed inside browser: ${pollResult.error}`));
-          } else if (typeof pollResult.result === 'string') {
-            clearInterval(pollInterval);
-            resolve(pollResult.result);
-          }
-        });
-      }, 500);
+
+        const scriptResult = result[0];
+        if (scriptResult.error) {
+          return reject(new Error(`Content extraction failed inside browser: ${scriptResult.error}`));
+        }
+        
+        resolve(scriptResult.result);
+      });
     });
   }, []);
 
@@ -258,15 +233,15 @@ export const useBrowser = (): BrowserControls => {
             return null;
         }
         try {
-            const el = deepQuerySelector('${selector.replace(/'/g, "\\'")}');
-            if (!el) return 'Error: Element not found with selector: ${selector.replace(/'/g, "\\'")}';
+            const el = deepQuerySelector('${selector.replace(/'/g, "\\\\'")}');
+            if (!el) return 'Error: Element not found with selector: ${selector.replace(/'/g, "\\\\'")}';
             if ('${action}' === 'click') {
                 el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, composed: true }));
             } else if ('${action}' === 'type') {
                 if (typeof el.value !== 'undefined') {
-                    el.value = '${(value || '').replace(/'/g, "\\'")}';
+                    el.value = '${(value || '').replace(/'/g, "\\\\'")}';
                 } else if (el.isContentEditable) {
-                    el.textContent = '${(value || '').replace(/'/g, "\\'")}';
+                    el.textContent = '${(value || '').replace(/'/g, "\\\\'")}';
                 }
                 el.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
                 el.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
@@ -300,77 +275,97 @@ export const useBrowser = (): BrowserControls => {
   
     const injectionScript = `
     (function() {
-        if (window.__capture_in_progress) return;
-        window.__capture_in_progress = true;
-        delete window.__capture_result;
-        delete window.__capture_error;
-  
-        function capture() {
-            const options = {
-                useCORS: true,
-                allowTaint: true,
-                backgroundColor: window.getComputedStyle(document.body).backgroundColor || '#1a1b26'
-            };
-            window.html2canvas(document.documentElement, options).then(canvas => {
-                window.__capture_result = canvas.toDataURL('image/jpeg', 0.8);
-            }).catch(err => {
-                window.__capture_error = err.message || 'Unknown capture error';
-            }).finally(() => {
-                window.__capture_in_progress = false;
-            });
-        }
-  
-        function loadScript(url, callback) {
-            if (document.querySelector('script[src="' + url + '"]')) {
-                callback();
-                return;
+        // Use a unique key to avoid conflicts if the script is injected multiple times
+        const executionKey = 'capture_result_' + Date.now();
+        window[executionKey] = { status: 'pending', data: null };
+
+        const finalize = (status, data) => {
+            window[executionKey].status = status;
+            window[executionKey].data = data;
+            // Clean up the script tag
+            const scriptTag = document.getElementById('html2canvas_script');
+            if (scriptTag) scriptTag.remove();
+        };
+
+        const runCapture = () => {
+            if (!document.body) {
+                return finalize('error', 'Document body not available for capture.');
             }
+            try {
+                const options = {
+                    useCORS: true,
+                    allowTaint: true,
+                    logging: false,
+                    backgroundColor: window.getComputedStyle(document.body).backgroundColor || '#ffffff'
+                };
+                // FIX: Cast window to 'any' to access the dynamically loaded html2canvas library, resolving TypeScript errors.
+                (window as any).html2canvas(document.documentElement, options).then(canvas => {
+                    finalize('success', canvas.toDataURL('image/jpeg', 0.8));
+                }).catch(err => {
+                    finalize('error', 'html2canvas execution failed: ' + (err.message || 'Unknown error'));
+                });
+            } catch (e) {
+                finalize('error', 'Error initializing html2canvas: ' + e.message);
+            }
+        };
+
+        // FIX: Cast window to 'any' to access the dynamically loaded html2canvas library, resolving TypeScript errors.
+        if (typeof (window as any).html2canvas === 'function') {
+            runCapture();
+        } else {
             const script = document.createElement('script');
-            script.src = url;
-            script.onload = callback;
+            script.id = 'html2canvas_script';
+            script.src = 'https://aistudiocdn.com/html2canvas@^1.4.1';
+            script.onload = runCapture;
             script.onerror = () => {
-                window.__capture_error = 'Failed to load html2canvas script.';
-                window.__capture_in_progress = false;
+                finalize('error', 'Failed to load html2canvas script from CDN.');
             };
             document.head.appendChild(script);
         }
-  
-        if (typeof window.html2canvas === 'function') {
-            capture();
-        } else {
-            loadScript('https://aistudiocdn.com/html2canvas@^1.4.1', capture);
-        }
+        
+        return executionKey; // Return the key for polling
     })();`;
   
-    const pollScript = `(function() { return { result: window.__capture_result, error: window.__capture_error, inProgress: window.__capture_in_progress }; })();`;
+    const pollScript = (key: string) => `(function() { return window['${key}']; })();`;
   
     return new Promise((resolve, reject) => {
-      browser.executeScript({ code: injectionScript });
-  
-      const maxRetries = 10; // 5 seconds timeout
-      let retries = 0;
-      const pollInterval = setInterval(() => {
-        if (retries >= maxRetries) {
-          clearInterval(pollInterval);
-          reject(new Error("Timeout waiting for screenshot from browser."));
-          return;
+      // First, inject the script and get the unique key for this execution.
+      browser.executeScript({ code: injectionScript }, (injectionResult: any) => {
+        if (!injectionResult || !injectionResult[0]) {
+          return reject(new Error("Screenshot script injection failed."));
         }
-        retries++;
-  
-        browser.executeScript({ code: pollScript }, (result: any) => {
-          const pollResult = result && result[0];
-          if (!pollResult || pollResult.inProgress) return;
-  
-          if (pollResult.error) {
+        const executionKey = injectionResult[0];
+
+        const maxRetries = 20; // 10 seconds timeout
+        let retries = 0;
+        const pollInterval = setInterval(() => {
+          if (retries >= maxRetries) {
             clearInterval(pollInterval);
-            reject(new Error(`Screenshot failed inside browser: ${pollResult.error}`));
-          } else if (pollResult.result) {
-            clearInterval(pollInterval);
-            const base64 = pollResult.result.split(',')[1];
-            resolve(base64);
+            // Cleanup the polling property on the window
+            browser.executeScript({ code: `delete window['${executionKey}']` });
+            return reject(new Error("Timeout waiting for screenshot from browser. The page might have complex content or a strict Content Security Policy."));
           }
-        });
-      }, 500);
+          retries++;
+
+          browser.executeScript({ code: pollScript(executionKey) }, (pollResult: any) => {
+            const resultObj = pollResult && pollResult[0];
+            if (!resultObj || resultObj.status === 'pending') {
+              return; // Continue polling
+            }
+
+            // Polling is done, clean up
+            clearInterval(pollInterval);
+            browser.executeScript({ code: `delete window['${executionKey}']` });
+
+            if (resultObj.status === 'error') {
+              reject(new Error(`Screenshot failed inside browser: ${resultObj.data}`));
+            } else if (resultObj.status === 'success') {
+              const base64 = resultObj.data.split(',')[1];
+              resolve(base64);
+            }
+          });
+        }, 500);
+      });
     });
   }, []);
 

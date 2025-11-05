@@ -1,5 +1,4 @@
 import { useState, useCallback, RefObject, useEffect } from 'react';
-// FIX: Import React to use React-specific types like Dispatch and SetStateAction.
 import React from 'react';
 import { GitService, GitStatus, Project } from '../types';
 
@@ -8,7 +7,6 @@ interface UseGitLogicProps {
     activeProject: Project | null;
     files: Record<string, string>;
     setFiles: (files: Record<string, string>) => void;
-    // FIX: Changed the type of 'setActiveFile' to correctly represent a React state setter, which can accept a value or an updater function.
     setActiveFile: React.Dispatch<React.SetStateAction<string | null>>;
 }
 

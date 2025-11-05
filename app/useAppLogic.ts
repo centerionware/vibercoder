@@ -17,8 +17,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { v4 as uuidv4 } from 'uuid';
-// FIX: Import `Project` to resolve the 'Cannot find name' error.
-// FIX: Import `LiveSessionControls` to correctly type the ref for live session methods.
 import { View, GitService, UseAiLiveProps, GitCredential, AppSettings, GitAuthor, LiveSessionControls, PreviewLogEntry, Project, BrowserControls } from '../types';
 import { db } from '../utils/idb';
 
@@ -81,7 +79,6 @@ export const useAppLogic = () => {
                 credential = gitCredentials.find(c => c.isDefault);
                 break;
             case 'custom':
-                // FIX: Map the properties from the 'custom' git settings object to the expected 'Partial<AppSettings>' type.
                 if (projectGitSettings.custom) {
                     finalSettings = {
                         gitUserName: projectGitSettings.custom.userName,
@@ -100,7 +97,6 @@ export const useAppLogic = () => {
             name: finalSettings.gitUserName || settings.gitUserName,
             email: finalSettings.gitUserEmail || settings.gitUserEmail,
         };
-        // FIX: Correctly access 'gitAuthToken' on 'finalSettings' to match the 'AppSettings' type.
         const token = finalSettings.gitAuthToken || credential?.token || settings.gitAuthToken;
         const proxyUrl = finalSettings.gitCorsProxy || settings.gitCorsProxy;
         
@@ -163,7 +159,7 @@ export const useAppLogic = () => {
                 // 4. CRITICAL: Persist this complete baseline to IndexedDB for future loads.
                 // The `setFiles` hook will handle wiping any old entries and bulk-adding the new set.
                 console.log(`Persisting baseline for '${activeProject.name}' to IndexedDB.`);
-                setFiles(finalFiles);
+                await setFiles(finalFiles);
             }
             
             // 5. Set the active file for the UI.
@@ -448,17 +444,14 @@ export const useAppLogic = () => {
     const browserControlsRef = useRef<BrowserControls>();
     browserControlsRef.current = browserControls;
 
-    // FIX: Correctly type the ref that holds the live session controls.
     const liveControlsRef = useRef<LiveSessionControls>();
     
-    // FIX: Create a stable getter for the active thread to prevent stale state in tools.
     const activeThreadRef = useRef(activeThread);
     useEffect(() => {
         activeThreadRef.current = activeThread;
     }, [activeThread]);
     const getActiveThread = useCallback(() => activeThreadRef.current, []);
     
-    // FIX: Pass the ref itself to `createToolImplementations` to break the circular dependency. The tool functions will access `.current` at execution time.
     const toolImplementations = createToolImplementations({
         files, setFiles, activeFile, setActiveFile, activeView, setActiveView,
         aiRef, gitServiceRef, settings, onSettingsChange: setSettings,
@@ -471,7 +464,6 @@ export const useAppLogic = () => {
         setScreenshotPreview: uiState.setScreenshotPreview,
         isScreenshotPreviewDisabled: uiState.isScreenshotPreviewDisabled,
         setIsScreenshotPreviewDisabled: uiState.setIsScreenshotPreviewDisabled,
-        // FIX: Renamed properties to match the return values from useGitLogic (e.g., onGitPush -> onPush).
         onGitPush: gitLogic.onPush,
         onGitPull: gitLogic.onPull,
         onGitRebase: gitLogic.onRebase,
@@ -488,15 +480,13 @@ export const useAppLogic = () => {
     
     const { isResponding, sendMessage } = useAiChat({
         aiRef, settings, activeThread, addMessage, updateMessage, updateHistory, toolImplementations,
-        // FIX: Wrapped vfs methods in arrow functions to ensure correct signature matching for the callback props.
-        onStartAiRequest: () => vfs.initVfsSession(), onEndAiRequest: () => vfs.saveVfsSession()
+        onStartAiRequest: vfs.initVfsSession, onEndAiRequest: vfs.saveVfsSession
     });
-    // FIX: The props object now correctly matches the `UseAiLiveProps` type, so the erroneous type cast is removed.
+    
     const liveSessionControls = useAiLive({
         aiRef, settings, activeThread, addMessage, updateMessage, updateHistory, toolImplementations,
         activeView, onPermissionError: uiState.setPermissionError, setLiveFrameData: uiState.setLiveFrameData,
-        // FIX: Wrapped vfs methods in arrow functions to ensure correct signature matching for the callback props.
-        onStartAiRequest: () => vfs.initVfsSession(), onEndAiRequest: () => vfs.saveVfsSession(),
+        onStartAiRequest: vfs.initVfsSession, onEndAiRequest: vfs.saveVfsSession,
     });
     liveControlsRef.current = liveSessionControls;
 
@@ -534,8 +524,7 @@ export const useAppLogic = () => {
         createGitCredential, deleteGitCredential, setDefaultGitCredential,
         // File Management
         onFileChange: onWriteFile, onFileSelect: setActiveFile, onFileAdd: onWriteFile, 
-        // FIX: Corrected the shorthand property to match the destructured variable name 'onRemoveFile'.
-        onFileRemove: onRemoveFile,
+        onRemoveFile,
         // Prompt Management
         createPrompt, updatePrompt, revertToVersion, deletePrompt: deletePromptHook,
         // Preview & Bundler State

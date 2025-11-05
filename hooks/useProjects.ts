@@ -31,19 +31,16 @@ export const useProjects = () => {
             setActiveProjectId(newProject.id);
         }
         return newProject;
-        // FIX: Added state setters to dependency array to be explicit and prevent potential stale closures.
-    }, [setProjects, setActiveProjectId]);
+    }, []);
 
-    // FIX: Add createNewProject and activeProjectId to the dependency array to prevent stale closures and ensure the effect runs correctly if the active project is cleared.
     useEffect(() => {
         const loadProjects = async () => {
             const allProjects = await db.projects.toArray();
             setProjects(allProjects);
             if (!activeProjectId && allProjects.length > 0) {
-                setActiveProjectId(allProjects[0].id);
+                setActiveProjectId(allProjects.sort((a,b) => b.createdAt - a.createdAt)[0].id);
             } else if (allProjects.length === 0) {
                 // If DB is empty, create a default project
-                // FIX: `createNewProject` requires a name argument. Provide a default name.
                 createNewProject('My First Project', true);
             }
         };
@@ -66,7 +63,6 @@ export const useProjects = () => {
             return;
         }
 
-        // FIX: Implemented a robust, atomic deletion for projects. The previous logic only deleted the project record, leaving associated files, threads, and AI sessions orphaned in the database. This new implementation uses a transaction to ensure all related data is cleaned up, preventing state corruption and file-mixing bugs.
         await (db as any).transaction('rw', db.projects, db.projectFiles, db.threads, db.vfsSessions, async () => {
             // Find threads of the project to delete their VFS sessions
             const threadsToDelete = await db.threads.where({ projectId: id }).toArray();
