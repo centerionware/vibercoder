@@ -288,12 +288,12 @@ jobs:
       - name: Add Capacitor Android platform
         run: npx capacitor add android
 
-      - name: Configure native permissions
-        run: npm run configure:native
-        
       - name: Sync Capacitor project
         run: npx capacitor sync android
 
+      - name: Configure native permissions
+        run: npm run configure:native
+        
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
@@ -305,10 +305,10 @@ jobs:
       - name: Create Keystore Properties File
         if: env.SIGNING_KEY_PRESENT == 'true'
         run: |
-          echo "storeFile=upload-keystore.jks" > android/app/keystore.properties
-          echo "storePassword=${{ secrets.SIGNING_KEY_STORE_PASSWORD }}" >> android/app/keystore.properties
-          echo "keyAlias=${{ secrets.SIGNING_KEY_ALIAS }}" >> android/app/keystore.properties
-          echo "keyPassword=${{ secrets.SIGNING_KEY_PASSWORD }}" >> android/app/keystore.properties
+          echo "storeFile=upload-keystore.jks" > android/keystore.properties
+          echo "storePassword=${{ secrets.SIGNING_KEY_STORE_PASSWORD }}" >> android/keystore.properties
+          echo "keyAlias=${{ secrets.SIGNING_KEY_ALIAS }}" >> android/keystore.properties
+          echo "keyPassword=${{ secrets.SIGNING_KEY_PASSWORD }}" >> android/keystore.properties
       
       # If secrets are provided, build a signed release AAB for the Play Store.
       - name: Build Android Release AAB
