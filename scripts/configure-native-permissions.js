@@ -306,27 +306,8 @@ function injectAndroidPlugin() {
     logPlugin(`Checking for MainActivity.kt at: ${mainActivityPath}`);
 
     if (!fs.existsSync(mainActivityPath)) {
-        logPlugin(`  ! MainActivity.kt not found. Creating it from a template...`);
-        try {
-            const mainActivityTemplate = `package ${appId}
-
-import android.os.Bundle
-import com.getcapacitor.BridgeActivity
-
-class MainActivity : BridgeActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        registerPlugin(AideBrowserPlugin::class.java)
-        super.onCreate(savedInstanceState)
-    }
-}
-`;
-            const mainActivityDir = path.dirname(mainActivityPath);
-            fs.mkdirSync(mainActivityDir, { recursive: true });
-            fs.writeFileSync(mainActivityPath, mainActivityTemplate.trim(), 'utf8');
-            logPlugin(`  + Successfully created and configured MainActivity.kt at ${mainActivityPath}.`);
-        } catch (e) {
-            logPlugin(`  ! CRITICAL: Failed to create MainActivity.kt: ${e.message}`);
-        }
+        logPlugin(`  ! MainActivity.kt not found. This is unexpected after 'capacitor sync'. The build may fail.`);
+        // Don't create it from a template anymore, as 'sync' should have done this.
         return;
     }
 
@@ -341,6 +322,7 @@ class MainActivity : BridgeActivity() {
             return;
         }
 
+        // Add imports if they don't exist
         if (!mainActivityContent.includes(`import ${appId}.AideBrowserPlugin`)) {
             mainActivityContent = mainActivityContent.replace(/(package .*)/, `$1\n\nimport ${appId}.AideBrowserPlugin`);
             logPlugin(`  + Added AideBrowserPlugin import.`);
@@ -350,11 +332,14 @@ class MainActivity : BridgeActivity() {
             logPlugin(`  + Added Bundle import.`);
         }
         
+        // Make sure imports are not duplicated by splitting, uniquing, and rejoining
         const lines = mainActivityContent.split('\n');
         const uniqueLines = [...new Set(lines)];
         mainActivityContent = uniqueLines.join('\n');
 
+        // Inject registration line into existing onCreate or create a new one
         if (onCreateMethodRegex.test(mainActivityContent)) {
+             // More robust injection before super.onCreate
             mainActivityContent = mainActivityContent.replace(
                 /(super\.onCreate\s*\(\s*savedInstanceState\s*\))/,
                 `        ${registrationLine}\n        $1`
