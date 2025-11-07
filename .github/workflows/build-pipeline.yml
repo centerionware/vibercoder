@@ -287,9 +287,6 @@ jobs:
 
       - name: Add Capacitor Android platform
         run: npx capacitor add android
-      
-      - name: Sync Android project with Capacitor
-        run: npx capacitor sync android
 
       - name: Configure native permissions
         run: npm run configure:native
@@ -355,7 +352,7 @@ jobs:
 
   # Job 5: Build the native iOS App.
   build_ios:
-    name: Build iOS App
+    name: BBuilduild iOS App
     needs: build_web
     runs-on: macos-latest # iOS builds MUST run on a macOS machine.
     steps:
@@ -385,9 +382,6 @@ jobs:
 
       - name: Configure native permissions
         run: npm run configure:native
-
-      - name: Sync iOS project with Capacitor
-        run: npx capacitor sync ios
 
       - name: Update CocoaPods repositories
         run: pod repo update
