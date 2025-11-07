@@ -335,7 +335,7 @@ jobs:
           mv "/tmp/$ARTIFACT_FILENAME" .
           git add "$ARTIFACT_FILENAME"
           git commit -m "$COMMIT_MESSAGE"
-          git push --force origioriginn "$BRANCH_NAME"
+          git push --force origin "$BRANCH_NAME"
 
   # Job 5: Build the native iOS App.
   build_ios:
