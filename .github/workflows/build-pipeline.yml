@@ -339,7 +339,7 @@ jobs:
 
   # Job 5: Build the native iOS App.
   build_ios:
-    name: BBuilduild iOS App
+    name: Build iOS App
     needs: build_web
     runs-on: macos-latest # iOS builds MUST run on a macOS machine.
     steps:
