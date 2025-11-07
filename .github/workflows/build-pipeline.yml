@@ -291,6 +291,9 @@ jobs:
       - name: Configure native permissions
         run: npm run configure:native
         
+      - name: Sync Android project with Capacitor
+        run: npx capacitor sync android
+        
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
@@ -352,7 +355,7 @@ jobs:
 
   # Job 5: Build the native iOS App.
   build_ios:
-    name: BBuilduild iOS App
+    name: Build iOS App
     needs: build_web
     runs-on: macos-latest # iOS builds MUST run on a macOS machine.
     steps:
@@ -382,6 +385,9 @@ jobs:
 
       - name: Configure native permissions
         run: npm run configure:native
+
+      - name: Sync iOS project with Capacitor
+        run: npx capacitor sync ios
 
       - name: Update CocoaPods repositories
         run: pod repo update
