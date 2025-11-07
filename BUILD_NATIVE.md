@@ -35,11 +35,12 @@ This guide walks you through compiling the AIDE web app into a native Android AP
     ```
 
 3.  **Add and Sync the Android Platform:**
-    This command initializes the native Android project in the `/android` directory and copies the web assets into it.
+    This command initializes the native Android project, injects the custom browser plugin, runs the Capacitor sync process to automatically register it, and configures the necessary permissions.
     ```bash
+    npx capacitor add android
     npm run sync:native
     ```
-    *(Note: This single script handles `npx capacitor add android` and `npx capacitor sync` for convenience.)*
+    *(Note: The `sync:native` script is a convenient wrapper for the multi-step native setup process.)*
 
 4.  **Open in Android Studio:**
     Open the native project in Android Studio.
@@ -81,11 +82,11 @@ This guide explains how to compile the AIDE web app into a native iOS applicatio
     ```
 
 3.  **Add and Sync the iOS Platform:**
-    This initializes the native Xcode project in the `/ios` directory and copies the web assets.
+    This initializes the native Xcode project, injects the custom plugin, and syncs all configurations.
     ```bash
+    npx capacitor add ios
     npm run sync:native
     ```
-    *(Note: This also handles `npx capacitor add ios` and `npx capacitor sync`.)*
 
 4.  **Install iOS Dependencies:**
     Capacitor requires native dependencies managed by CocoaPods.
