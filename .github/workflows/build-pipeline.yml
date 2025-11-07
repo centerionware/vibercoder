@@ -290,12 +290,12 @@ jobs:
 
       - name: Decode Android Keystore
         if: env.SIGNING_KEY_PRESENT == 'true'
-        run: echo "${{ secrets.ENCODED_SIGNING_KEY }}" | base64 --decode > android/app/upload-keystore.jks
+        run: echo "${{ secrets.ENCODED_SIGNING_KEY }}" | base64 --decode > android/upload-keystore.jks
 
       - name: Create Keystore Properties File
         if: env.SIGNING_KEY_PRESENT == 'true'
         run: |
-          echo "storeFile=../upload-keystore.jks" > android/keystore.properties
+          echo "storeFile=upload-keystore.jks" > android/keystore.properties
           echo "storePassword=${{ secrets.SIGNING_KEY_STORE_PASSWORD }}" >> android/keystore.properties
           echo "keyAlias=${{ secrets.SIGNING_KEY_ALIAS }}" >> android/keystore.properties
           echo "keyPassword=${{ secrets.SIGNING_KEY_PASSWORD }}" >> android/keystore.properties
@@ -304,7 +304,8 @@ jobs:
         if: env.SIGNING_KEY_PRESENT == 'true'
         run: |
           echo "Checking signing certificate expiration date..."
-          EXP_DATE_STR=$(keytool -list -v -keystore android/app/upload-keystore.jks -storepass "${{ secrets.SIGNING_KEY_STORE_PASSWORD }}" -alias "${{ secrets.SIGNING_KEY_ALIAS }}" | grep 'Valid until:')
+          KEYSTORE_PATH="${{ github.workspace }}/android/upload-keystore.jks"
+          EXP_DATE_STR=$(keytool -list -v -keystore "$KEYSTORE_PATH" -storepass "${{ secrets.SIGNING_KEY_STORE_PASSWORD }}" -alias "${{ secrets.SIGNING_KEY_ALIAS }}" | grep 'Valid until:')
           echo "Certificate details: $EXP_DATE_STR"
           
           # Extract the date part (e.g., "Jan 1, 2034") from the verbose output
@@ -335,7 +336,7 @@ jobs:
             exit 1
           fi
           echo "Found apksigner at: $APKSIGNER_PATH"
-          AAB_FILE="android/app/build/outputs/bundle/release/app-release.aab"
+          AAB_FILE="${{ github.workspace }}/android/app/build/outputs/bundle/release/app-release.aab"
           echo "Verifying signature of $AAB_FILE..."
           $APKSIGNER_PATH verify --print-certs "$AAB_FILE"
           echo "SUCCESS: AAB signature is valid."
@@ -350,13 +351,13 @@ jobs:
           git config --global user.name 'GitHub Actions'
           git config --global user.email 'actions@github.com'
           
-          if [ -f "android/app/build/outputs/bundle/release/app-release.aab" ]; then
+          if [ -f "${{ github.workspace }}/android/app/build/outputs/bundle/release/app-release.aab" ]; then
             BRANCH_NAME="dev-builds/android-aab"
-            ARTIFACT_PATH="android/app/build/outputs/bundle/release/app-release.aab"
+            ARTIFACT_PATH="${{ github.workspace }}/android/app/build/outputs/bundle/release/app-release.aab"
             COMMIT_MESSAGE="Signed Android AAB build from commit ${{ github.sha }}"
           else
             BRANCH_NAME="dev-builds/android-apk"
-            ARTIFACT_PATH="android/app/build/outputs/apk/debug/app-debug.apk"
+            ARTIFACT_PATH="${{ github.workspace }}/android/app/build/outputs/apk/debug/app-debug.apk"
             COMMIT_MESSAGE="Debug Android APK build from commit ${{ github.sha }}"
           fi
           
