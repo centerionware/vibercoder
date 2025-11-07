@@ -216,7 +216,7 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Set up Java
+      - name: Set up Java and Android SDK
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
@@ -295,17 +295,54 @@ jobs:
       - name: Create Keystore Properties File
         if: env.SIGNING_KEY_PRESENT == 'true'
         run: |
-          echo "storeFile=upload-keystore.jks" > android/keystore.properties
+          echo "storeFile=../upload-keystore.jks" > android/keystore.properties
           echo "storePassword=${{ secrets.SIGNING_KEY_STORE_PASSWORD }}" >> android/keystore.properties
           echo "keyAlias=${{ secrets.SIGNING_KEY_ALIAS }}" >> android/keystore.properties
           echo "keyPassword=${{ secrets.SIGNING_KEY_PASSWORD }}" >> android/keystore.properties
       
+      - name: Verify Keystore Expiration (Pre-Build Check)
+        if: env.SIGNING_KEY_PRESENT == 'true'
+        run: |
+          echo "Checking signing certificate expiration date..."
+          EXP_DATE_STR=$(keytool -list -v -keystore android/app/upload-keystore.jks -storepass "${{ secrets.SIGNING_KEY_STORE_PASSWORD }}" -alias "${{ secrets.SIGNING_KEY_ALIAS }}" | grep 'Valid until:')
+          echo "Certificate details: $EXP_DATE_STR"
+          
+          # Extract the date part (e.g., "Jan 1, 2034") from the verbose output
+          EXP_DATE=$(echo "$EXP_DATE_STR" | sed 's/.*Valid until: //')
+          
+          # Convert expiration date and current date to epoch seconds for comparison
+          EXP_DATE_EPOCH=$(date -d "$EXP_DATE" +%s)
+          CURRENT_DATE_EPOCH=$(date +%s)
+          
+          if [ "$EXP_DATE_EPOCH" -lt "$CURRENT_DATE_EPOCH" ]; then
+            echo "::error::Android signing key has EXPIRED on $EXP_DATE. Please generate a new key."
+            exit 1
+          else
+            echo "Certificate is valid until $EXP_DATE. Proceeding with build."
+          fi
+
       - name: Build Android Release AAB
         if: env.SIGNING_KEY_PRESENT == 'true'
+        id: build_aab
         run: cd android && ./gradlew bundleRelease -PenvVersionName=${{ env.version_name }} -PenvVersionCode=${{ env.version_code }}
+
+      - name: Verify AAB Signature (Post-Build Check)
+        if: env.SIGNING_KEY_PRESENT == 'true' && steps.build_aab.outcome == 'success'
+        run: |
+          APKSIGNER_PATH=$(find $ANDROID_HOME/build-tools -name apksigner | sort -r | head -n 1)
+          if [ -z "$APKSIGNER_PATH" ]; then
+            echo "Error: apksigner tool not found in Android SDK build-tools."
+            exit 1
+          fi
+          echo "Found apksigner at: $APKSIGNER_PATH"
+          AAB_FILE="android/app/build/outputs/bundle/release/app-release.aab"
+          echo "Verifying signature of $AAB_FILE..."
+          $APKSIGNER_PATH verify --print-certs "$AAB_FILE"
+          echo "SUCCESS: AAB signature is valid."
 
       - name: Build Android Debug APK (Fallback)
         if: env.SIGNING_KEY_PRESENT == 'false'
+        id: build_apk
         run: cd android && ./gradlew assembleDebug -PenvVersionName=${{ env.version_name }} -PenvVersionCode=${{ env.version_code }}
 
       - name: Push Android Artifact to Branch
