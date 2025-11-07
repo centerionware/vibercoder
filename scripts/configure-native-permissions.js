@@ -147,18 +147,13 @@ class BrowserActivity : AppCompatActivity() {
 
 import android.os.Bundle
 import com.getcapacitor.BridgeActivity
-import com.getcapacitor.Plugin
-import java.util.ArrayList
 
 class MainActivity : BridgeActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Manually register the custom AideBrowserPlugin before super.onCreate()
+        // to ensure it's available to the Capacitor bridge at startup.
+        registerPlugin(AideBrowserPlugin::class.java)
         super.onCreate(savedInstanceState)
-        this.init(savedInstanceState, object : ArrayList<Class<out Plugin>>() {
-            init {
-                // Manually register the custom AideBrowserPlugin to ensure it's found by the Capacitor bridge.
-                add(AideBrowserPlugin::class.java)
-            }
-        })
     }
 }`
     }
