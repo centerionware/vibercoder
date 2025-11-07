@@ -56,6 +56,20 @@ function configureAndroid() {
         let buildGradle = fs.readFileSync(buildGradlePath, 'utf8');
         let gradleChangesMade = false;
 
+        // Add necessary imports if they are missing to prevent syntax errors
+        const importsToAdd = [];
+        if (!buildGradle.includes('import java.util.Properties')) {
+            importsToAdd.push('import java.util.Properties');
+        }
+        if (!buildGradle.includes('import java.io.FileInputStream')) {
+            importsToAdd.push('import java.io.FileInputStream');
+        }
+        if (importsToAdd.length > 0) {
+            buildGradle = importsToAdd.join('\n') + '\n\n' + buildGradle;
+            gradleChangesMade = true;
+            log(`  + Added missing imports: ${importsToAdd.join(', ')}`);
+        }
+
         // Configure Java Version
         if (!buildGradle.includes('JavaVersion.VERSION_17')) {
             const compileOptionsRegex = /compileOptions\s*{[^}]*}/;
@@ -92,7 +106,7 @@ function configureAndroid() {
     signingConfigs {
         release {
             if (keystorePropertiesFile.exists()) {
-                storeFile rootProject.file(keystoreProperties['storeFile'])
+                storeFile file(keystoreProperties['storeFile'])
                 storePassword keystoreProperties['storePassword']
                 keyAlias keystoreProperties['keyAlias']
                 keyPassword keystoreProperties['keyPassword']
