@@ -1,5 +1,4 @@
 
-
 import fs from 'fs';
 import path from 'path';
 
@@ -106,19 +105,19 @@ function configureAndroid() {
 
         // Check if signingConfigs block is missing
         if (!buildGradle.includes('signingConfigs {')) {
-            // FIX: The original logic incorrectly found the last '}' in the entire file,
-            // placing the signing config outside the 'android' block. This new logic
-            // correctly finds the closing brace of the 'android' block by looking
-            // for the last '}' before the 'dependencies' block that always follows it.
-            const dependenciesIndex = buildGradle.indexOf('dependencies {');
-            const injectionPoint = dependenciesIndex !== -1 ? buildGradle.lastIndexOf('}', dependenciesIndex) : -1;
+            // FIX: The previous logic was too brittle. This new approach is more robust.
+            // It finds the 'android {' block and injects the signing configuration
+            // right after the opening brace, ensuring it's always in the correct scope.
+            const androidBlockRegex = /android\s*{/;
+            const match = buildGradle.match(androidBlockRegex);
 
-            if (injectionPoint !== -1) {
+            if (match && match.index !== undefined) {
+                const injectionPoint = match.index + match[0].length;
                 buildGradle = buildGradle.substring(0, injectionPoint) + signingConfigBlock + '\n' + buildGradle.substring(injectionPoint);
                 gradleChangesMade = true;
                 log('  + Injected signingConfigs and release build type block into android block.');
             } else {
-                log('  ! Could not find a suitable injection point for signing config inside the android block.');
+                log('  ! Could not find android block to inject signing config.');
             }
         }
 
