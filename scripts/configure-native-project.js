@@ -79,7 +79,9 @@ function configureAndroid() {
         }
 
         // Configure Signing for Release Builds
-        const signingConfigBlock = `
+        // Step 1: Inject keystore properties and signingConfigs block if it doesn't exist.
+        if (!buildGradle.includes('signingConfigs {')) {
+            const propertiesAndSigningBlock = `
     // Dynamically added by configure-native-project.js for CI/CD signing
     def keystorePropertiesFile = rootProject.file("keystore.properties")
     def keystoreProperties = new Properties()
@@ -97,27 +99,30 @@ function configureAndroid() {
             }
         }
     }
-    buildTypes {
-        release {
-            signingConfig signingConfigs.release
-        }
-    }`;
-
-        // Check if signingConfigs block is missing
-        if (!buildGradle.includes('signingConfigs {')) {
-            // FIX: The previous logic was too brittle. This new approach is more robust.
-            // It finds the 'android {' block and injects the signing configuration
-            // right after the opening brace, ensuring it's always in the correct scope.
+`;
             const androidBlockRegex = /android\s*{/;
             const match = buildGradle.match(androidBlockRegex);
-
             if (match && match.index !== undefined) {
                 const injectionPoint = match.index + match[0].length;
-                buildGradle = buildGradle.substring(0, injectionPoint) + signingConfigBlock + '\n' + buildGradle.substring(injectionPoint);
+                buildGradle = buildGradle.substring(0, injectionPoint) + propertiesAndSigningBlock + buildGradle.substring(injectionPoint);
                 gradleChangesMade = true;
-                log('  + Injected signingConfigs and release build type block into android block.');
+                log('  + Injected keystore properties and signingConfigs block.');
             } else {
                 log('  ! Could not find android block to inject signing config.');
+            }
+        }
+        
+        // Step 2: Add signingConfig to the existing release build type.
+        if (!buildGradle.includes('signingConfig signingConfigs.release')) {
+            const releaseBlockRegex = /buildTypes\s*\{\s*release\s*\{/;
+            const match = buildGradle.match(releaseBlockRegex);
+            if (match && match.index !== undefined) {
+                const injectionPoint = match.index + match[0].length;
+                buildGradle = buildGradle.substring(0, injectionPoint) + '\n            signingConfig signingConfigs.release' + buildGradle.substring(injectionPoint);
+                gradleChangesMade = true;
+                log('  + Added signingConfig to release build type.');
+            } else {
+                log('  ! Could not find "buildTypes { release {" block to add signingConfig.');
             }
         }
 
