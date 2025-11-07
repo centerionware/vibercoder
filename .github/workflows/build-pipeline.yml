@@ -287,12 +287,12 @@ jobs:
 
       - name: Add Capacitor Android platform
         run: npx capacitor add android
+      
+      - name: Sync Android project with Capacitor
+        run: npx capacitor sync android
 
       - name: Configure native permissions
         run: npm run configure:native
-        
-      - name: Sync Android project with Capacitor
-        run: npx capacitor sync android
         
       - name: Make gradlew executable
         run: chmod +x android/gradlew
