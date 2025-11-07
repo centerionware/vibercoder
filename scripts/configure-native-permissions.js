@@ -1,31 +1,28 @@
 
 import fs from 'fs';
-import path, { dirname } from 'path';
-import { fileURLToPath } from 'url';
-
-// Replicate __dirname functionality in ES modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
+import path from 'path';
 
 const log = (message) => console.log(`[Native Config] ${message}`);
 const logPlugin = (message) => console.log(`[Plugin Injector] ${message}`);
 
+// Use process.cwd() for a reliable project root in CI environments.
+const projectRoot = process.cwd();
+log(`Project root determined as: ${projectRoot}`);
+
 // --- DYNAMICALLY GET APP ID ---
 const getAppId = () => {
-    const capacitorConfigPath = path.resolve(__dirname, '..', 'capacitor.config.json');
+    const capacitorConfigPath = path.resolve(projectRoot, 'capacitor.config.json');
     if (!fs.existsSync(capacitorConfigPath)) {
-        log('capacitor.config.json not found, falling back to AndroidManifest.xml');
-        // Fallback logic to read from manifest if capacitor.config.json isn't there
-        const manifestPath = path.resolve(__dirname, '..', 'android/app/src/main/AndroidManifest.xml');
+        log(`capacitor.config.json not found at ${capacitorConfigPath}. Falling back to AndroidManifest.xml`);
+        const manifestPath = path.resolve(projectRoot, 'android/app/src/main/AndroidManifest.xml');
         if (fs.existsSync(manifestPath)) {
             const manifest = fs.readFileSync(manifestPath, 'utf8');
             const match = manifest.match(/package="([^"]+)"/);
             if (match && match[1]) {
+                log(`App ID found in AndroidManifest.xml: ${match[1]}`);
                 return match[1];
             }
         }
-        // Last resort fallback
         log('Could not determine appId. Using default "com.aide.app". This might be incorrect.');
         return "com.aide.app";
     }
@@ -33,6 +30,7 @@ const getAppId = () => {
     if (!config.appId) {
         throw new Error('appId not found in capacitor.config.json');
     }
+    log(`App ID found in capacitor.config.json: ${config.appId}`);
     return config.appId;
 };
 
@@ -272,7 +270,7 @@ class BrowserViewController: UIViewController, WKNavigationDelegate {
 
 function injectAndroidPlugin() {
     logPlugin('Checking for Android platform...');
-    const androidDir = path.resolve(__dirname, '..', 'android');
+    const androidDir = path.resolve(projectRoot, 'android');
     if (!fs.existsSync(androidDir)) {
         logPlugin('Android directory not found, skipping Android plugin injection.');
         return;
@@ -287,27 +285,48 @@ function injectAndroidPlugin() {
     logPlugin('Injecting custom browser plugin and activity files for Android...');
     for (const fileKey of ['plugin', 'activity']) {
         const file = androidPluginFiles[fileKey];
-        const filePath = path.resolve(__dirname, '..', file.path);
+        const filePath = path.resolve(projectRoot, file.path);
         const fileDir = path.dirname(filePath);
 
         try {
             if (!fs.existsSync(filePath)) {
                 fs.mkdirSync(fileDir, { recursive: true });
                 fs.writeFileSync(filePath, file.content.trim(), 'utf8');
-                logPlugin(`  + Wrote file: ${file.path}`);
+                logPlugin(`  + Wrote file: ${filePath}`);
             } else {
-                logPlugin(`  ✓ File already exists: ${file.path}`);
+                logPlugin(`  ✓ File already exists: ${filePath}`);
             }
         } catch (e) {
-            logPlugin(`  ! Error writing file ${file.path}: ${e.message}`);
+            logPlugin(`  ! Error writing file ${filePath}: ${e.message}`);
         }
     }
 
-    // --- Surgically Modify MainActivity.kt using the correct modern method ---
     logPlugin('Modifying MainActivity.kt to register plugin...');
-    const mainActivityPath = path.resolve(__dirname, '..', `android/app/src/main/java/${packagePath}/MainActivity.kt`);
+    const mainActivityPath = path.resolve(projectRoot, `android/app/src/main/java/${packagePath}/MainActivity.kt`);
+    logPlugin(`Checking for MainActivity.kt at: ${mainActivityPath}`);
+
     if (!fs.existsSync(mainActivityPath)) {
-        logPlugin(`  ! CRITICAL: MainActivity.kt not found at ${mainActivityPath}. Cannot inject plugin registration.`);
+        logPlugin(`  ! MainActivity.kt not found. Creating it from a template...`);
+        try {
+            const mainActivityTemplate = `package ${appId}
+
+import android.os.Bundle
+import com.getcapacitor.BridgeActivity
+
+class MainActivity : BridgeActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        registerPlugin(AideBrowserPlugin::class.java)
+        super.onCreate(savedInstanceState)
+    }
+}
+`;
+            const mainActivityDir = path.dirname(mainActivityPath);
+            fs.mkdirSync(mainActivityDir, { recursive: true });
+            fs.writeFileSync(mainActivityPath, mainActivityTemplate.trim(), 'utf8');
+            logPlugin(`  + Successfully created and configured MainActivity.kt at ${mainActivityPath}.`);
+        } catch (e) {
+            logPlugin(`  ! CRITICAL: Failed to create MainActivity.kt: ${e.message}`);
+        }
         return;
     }
 
@@ -322,35 +341,26 @@ function injectAndroidPlugin() {
             return;
         }
 
-        // Add necessary imports if they don't exist
-        let importsChanged = false;
         if (!mainActivityContent.includes(`import ${appId}.AideBrowserPlugin`)) {
             mainActivityContent = mainActivityContent.replace(/(package .*)/, `$1\n\nimport ${appId}.AideBrowserPlugin`);
-            importsChanged = true;
+            logPlugin(`  + Added AideBrowserPlugin import.`);
         }
         if (!mainActivityContent.includes("import android.os.Bundle")) {
-            mainActivityContent = mainActivityContent.replace(/(package .*)/, `$1\n\nimport android.os.Bundle`);
-            importsChanged = true;
-        }
-        if (importsChanged) {
-            logPlugin(`  + Added required imports.`);
+            mainActivityContent = mainActivityContent.replace(/(package .*)/, `$1\nimport android.os.Bundle`);
+            logPlugin(`  + Added Bundle import.`);
         }
         
-        // Remove duplicate imports that may have been added
         const lines = mainActivityContent.split('\n');
         const uniqueLines = [...new Set(lines)];
         mainActivityContent = uniqueLines.join('\n');
 
-
         if (onCreateMethodRegex.test(mainActivityContent)) {
-            // onCreate() method exists, inject our line before super.onCreate().
             mainActivityContent = mainActivityContent.replace(
                 /(super\.onCreate\s*\(\s*savedInstanceState\s*\))/,
                 `        ${registrationLine}\n        $1`
             );
             logPlugin(`  + Injected registration into existing onCreate() method.`);
         } else if (classDeclarationRegex.test(mainActivityContent)) {
-            // onCreate() does not exist, add the entire method.
             const onCreateMethod = `
     override fun onCreate(savedInstanceState: Bundle?) {
         ${registrationLine}
@@ -367,17 +377,17 @@ function injectAndroidPlugin() {
         }
 
         fs.writeFileSync(mainActivityPath, mainActivityContent, 'utf8');
-        logPlugin(`  + Successfully updated MainActivity.kt.`);
+        logPlugin(`  + Successfully updated existing MainActivity.kt.`);
 
     } catch (e) {
-        logPlugin(`  ! CRITICAL: Error modifying MainActivity.kt: ${e.message}`);
+        logPlugin(`  ! CRITICAL: Error modifying existing MainActivity.kt: ${e.message}`);
     }
 }
 
 
 function injectIosPlugin() {
     logPlugin('Checking for iOS platform...');
-    const iosDir = path.resolve(__dirname, '..', 'ios');
+    const iosDir = path.resolve(projectRoot, 'ios');
     if (!fs.existsSync(iosDir)) {
         logPlugin('iOS directory not found, skipping iOS plugin injection.');
         return;
@@ -385,17 +395,17 @@ function injectIosPlugin() {
 
     logPlugin('Injecting custom browser plugin files for iOS...');
     for (const file of Object.values(iosPluginFiles)) {
-        const filePath = path.resolve(__dirname, '..', file.path);
+        const filePath = path.resolve(projectRoot, file.path);
         
         try {
             if (!fs.existsSync(filePath)) {
                 fs.writeFileSync(filePath, file.content.trim(), 'utf8');
-                logPlugin(`  + Created file: ${file.path}`);
+                logPlugin(`  + Created file: ${filePath}`);
             } else {
-                logPlugin(`  ✓ File already exists: ${file.path}`);
+                logPlugin(`  ✓ File already exists: ${filePath}`);
             }
         } catch (e) {
-            logPlugin(`  ! Error writing file ${file.path}: ${e.message}`);
+            logPlugin(`  ! Error writing file ${filePath}: ${e.message}`);
         }
     }
 }
@@ -405,10 +415,8 @@ function injectCustomBrowserPlugin() {
     injectIosPlugin();
 }
 
-// --- Android Configuration ---
 function configureAndroid() {
-    // Part 1: Configure AndroidManifest.xml for permissions
-    const manifestPath = path.resolve(__dirname, '..', 'android/app/src/main/AndroidManifest.xml');
+    const manifestPath = path.resolve(projectRoot, 'android/app/src/main/AndroidManifest.xml');
     if (!fs.existsSync(manifestPath)) {
         log('AndroidManifest.xml not found, skipping manifest configuration.');
     } else {
@@ -420,7 +428,7 @@ function configureAndroid() {
             'android.permission.INTERNET',
             'android.permission.CAMERA',
             'android.permission.RECORD_AUDIO',
-            'android.permission.MODIFY_AUDIO_SETTINGS' // Useful for audio routing
+            'android.permission.MODIFY_AUDIO_SETTINGS'
         ];
 
         const manifestMarker = '<application';
@@ -443,8 +451,7 @@ function configureAndroid() {
         }
     }
 
-    // Part 2: Configure build.gradle for Java 17
-    const buildGradlePath = path.resolve(__dirname, '..', 'android/app/build.gradle');
+    const buildGradlePath = path.resolve(projectRoot, 'android/app/build.gradle');
     if (!fs.existsSync(buildGradlePath)) {
         log('android/app/build.gradle not found, skipping Java version configuration.');
     } else {
@@ -469,10 +476,8 @@ function configureAndroid() {
     }
 }
 
-
-// --- iOS Configuration ---
 function configureIos() {
-    const infoPlistPath = path.resolve(__dirname, '..', 'ios/App/App/Info.plist');
+    const infoPlistPath = path.resolve(projectRoot, 'ios/App/App/Info.plist');
     if (!fs.existsSync(infoPlistPath)) {
         log('Info.plist not found, skipping iOS configuration.');
         return;
