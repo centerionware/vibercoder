@@ -314,7 +314,8 @@ jobs:
           echo "Keystore file found."
 
           echo "2. Running keytool to extract certificate details..."
-          KEYTOOL_OUTPUT=$(keytool -list -v -keystore "$KEYSTORE_PATH" -storepass "${{ secrets.SIGNING_KEY_STORE_PASSWORD }}" -alias "${{ secrets.SIGNING_KEY_ALIAS }}" 2>&1)
+          # Force locale to C to ensure consistent, non-localized output from keytool
+          KEYTOOL_OUTPUT=$(LANG=C keytool -list -v -keystore "$KEYSTORE_PATH" -storepass "${{ secrets.SIGNING_KEY_STORE_PASSWORD }}" -alias "${{ secrets.SIGNING_KEY_ALIAS }}" 2>&1)
           KEYTOOL_EXIT_CODE=$?
 
           if [ $KEYTOOL_EXIT_CODE -ne 0 ]; then
@@ -325,20 +326,22 @@ jobs:
           fi
           echo "keytool command executed successfully."
           
-          echo "3. Grepping for 'Valid until:' line..."
-          EXP_DATE_STR=$(echo "$KEYTOOL_OUTPUT" | grep 'Valid until:')
-          if [ -z "$EXP_DATE_STR" ]; then
-            echo "::error::Could not find 'Valid until:' line in keytool output. The alias or password might be incorrect."
+          echo "3. Grepping for validity line..."
+          # Find the line containing validity info, which is more robust than a fixed string.
+          VALIDITY_LINE=$(echo "$KEYTOOL_OUTPUT" | grep 'Valid from:')
+          if [ -z "$VALIDITY_LINE" ]; then
+            echo "::error::Could not find 'Valid from:' line in keytool output. The alias, password, or keystore format might be incorrect."
             echo "Full keytool output:"
             echo "$KEYTOOL_OUTPUT"
             exit 1
           fi
-          echo "Found line: $EXP_DATE_STR"
+          echo "Found line: $VALIDITY_LINE"
 
           echo "4. Extracting date part from string..."
-          EXP_DATE=$(echo "$EXP_DATE_STR" | sed 's/.*Valid until: //')
+          # Extract the date part after the "until:" string. This is more robust.
+          EXP_DATE=$(echo "$VALIDITY_LINE" | sed 's/.*until: //')
           if [ -z "$EXP_DATE" ]; then
-            echo "::error::Failed to extract date from the 'Valid until' line using sed."
+            echo "::error::Failed to extract date from the validity line using sed."
             exit 1
           fi
           echo "Extracted date string: '$EXP_DATE'"
