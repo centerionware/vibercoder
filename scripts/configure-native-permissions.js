@@ -443,6 +443,21 @@ function configureAndroid() {
             }
         }
 
+        // Register BrowserActivity
+        const activityTag = `<activity android:name=".BrowserActivity" android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode" android:launchMode="singleTop" />`;
+        if (!manifest.includes('android:name=".BrowserActivity"')) {
+            const applicationEndMarker = '</application>';
+            if (manifest.includes(applicationEndMarker)) {
+                manifest = manifest.replace(applicationEndMarker, `        ${activityTag}\n    ${applicationEndMarker}`);
+                manifestChangesMade = true;
+                log(`  + Added BrowserActivity declaration.`);
+            } else {
+                log(`  ! Could not find </application> tag to inject BrowserActivity.`);
+            }
+        } else {
+            log(`  ✓ BrowserActivity already declared.`);
+        }
+
         if (manifestChangesMade) {
             fs.writeFileSync(manifestPath, manifest, 'utf8');
             log('AndroidManifest.xml updated successfully.');
@@ -457,6 +472,8 @@ function configureAndroid() {
     } else {
         log(`Configuring build.gradle at: ${buildGradlePath}`);
         let buildGradle = fs.readFileSync(buildGradlePath, 'utf8');
+        let needsWrite = false;
+
         if (!buildGradle.includes('JavaVersion.VERSION_17')) {
             const compileOptionsRegex = /compileOptions\s*{[^}]*}/;
             const newCompileOptions = `compileOptions {
@@ -468,10 +485,26 @@ function configureAndroid() {
             } else {
                 buildGradle = buildGradle.replace(/android\s*{/, `android {\n    ${newCompileOptions}`);
             }
-            fs.writeFileSync(buildGradlePath, buildGradle, 'utf8');
+            needsWrite = true;
             log('  + Set Java compatibility to version 17.');
         } else {
             log('  ✓ Java version 17 already configured in build.gradle.');
+        }
+        
+        // Also update kotlinOptions if present to match
+        if (buildGradle.includes("jvmTarget = '1.8'")) {
+             buildGradle = buildGradle.replace("jvmTarget = '1.8'", "jvmTarget = '17'");
+             log("  + Set kotlinOptions.jvmTarget to '17'.");
+             needsWrite = true;
+        } else {
+             log("  ✓ kotlinOptions.jvmTarget is not '1.8' (no change needed).");
+        }
+
+        if (needsWrite) {
+            fs.writeFileSync(buildGradlePath, buildGradle, 'utf8');
+            log('build.gradle updated successfully.');
+        } else {
+            log('No changes needed for build.gradle.');
         }
     }
 }
