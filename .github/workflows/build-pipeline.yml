@@ -391,19 +391,17 @@ jobs:
           echo "Found AAB file: $AAB_FILE"
           
           echo "3. Verifying AAB signature..."
-          VERIFY_OUTPUT=$($APKSIGNER_PATH verify --print-certs "$AAB_FILE" 2>&1)
-          VERIFY_EXIT_CODE=$?
-          
-          if [ $VERIFY_EXIT_CODE -ne 0 ]; then
-              echo "::error::AAB signature verification failed with exit code $VERIFY_EXIT_CODE."
-              echo "apksigner output:"
-              echo "$VERIFY_OUTPUT"
-              exit 1
+          if VERIFY_OUTPUT=$($APKSIGNER_PATH verify --print-certs "$AAB_FILE" 2>&1); then
+            echo "apksigner output:"
+            echo "$VERIFY_OUTPUT"
+            echo "SUCCESS: AAB signature is valid."
+          else
+            VERIFY_EXIT_CODE=$?
+            echo "::error::AAB signature verification failed with exit code $VERIFY_EXIT_CODE."
+            echo "apksigner output:"
+            echo "$VERIFY_OUTPUT"
+            exit 1
           fi
-          
-          echo "apksigner output:"
-          echo "$VERIFY_OUTPUT"
-          echo "SUCCESS: AAB signature is valid."
 
       - name: Build Android Debug APK (Fallback)
         if: env.SIGNING_KEY_PRESENT == 'false'
