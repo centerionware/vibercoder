@@ -80,37 +80,42 @@ function configureAndroid() {
 
         // Configure Signing for Release Builds
         const signingConfigBlock = `
-// Dynamically added by configure-native-project.js for CI/CD signing
-def keystorePropertiesFile = rootProject.file("keystore.properties")
-def keystoreProperties = new Properties()
-if (keystorePropertiesFile.exists()) {
-    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
-}
+    // Dynamically added by configure-native-project.js for CI/CD signing
+    def keystorePropertiesFile = rootProject.file("keystore.properties")
+    def keystoreProperties = new Properties()
+    if (keystorePropertiesFile.exists()) {
+        keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+    }
 
-android.signingConfigs {
-    release {
-        if (keystorePropertiesFile.exists()) {
-            storeFile rootProject.file(keystoreProperties['storeFile'])
-            storePassword keystoreProperties['storePassword']
-            keyAlias keystoreProperties['keyAlias']
-            keyPassword keystoreProperties['keyPassword']
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                storeFile rootProject.file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
         }
     }
-}`;
-
-        const signingConfigAssignment = `android.buildTypes.release.signingConfig = android.signingConfigs.release`;
-
-        // Use a simple append strategy, which is safer than regex replacement
-        if (!buildGradle.includes('android.signingConfigs')) {
-            buildGradle += `\n\n${signingConfigBlock}`;
-            gradleChangesMade = true;
-            log('  + Injected signingConfigs block.');
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
         }
-        if (!buildGradle.includes('android.buildTypes.release.signingConfig')) {
-            buildGradle += `\n${signingConfigAssignment}`;
-            gradleChangesMade = true;
-            log('  + Applied release signingConfig to release build type.');
+    }`;
+
+        // Check if signingConfigs block is missing
+        if (!buildGradle.includes('signingConfigs {')) {
+            const androidBlockEnd = buildGradle.lastIndexOf('}');
+            if (androidBlockEnd !== -1) {
+                // Inject the entire block before the final '}' of the android block
+                buildGradle = buildGradle.substring(0, androidBlockEnd) + signingConfigBlock + '\n' + buildGradle.substring(androidBlockEnd);
+                gradleChangesMade = true;
+                log('  + Injected signingConfigs and release build type block.');
+            } else {
+                log('  ! Could not find android block closing tag to inject signing config.');
+            }
         }
+
 
         if (gradleChangesMade) {
             fs.writeFileSync(buildGradlePath, buildGradle, 'utf8');
