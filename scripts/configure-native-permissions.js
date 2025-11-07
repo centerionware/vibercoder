@@ -11,12 +11,37 @@ const __dirname = dirname(__filename);
 const log = (message) => console.log(`[Native Config] ${message}`);
 const logPlugin = (message) => console.log(`[Plugin Injector] ${message}`);
 
+// --- DYNAMICALLY GET APP ID ---
+const getAppId = () => {
+    const capacitorConfigPath = path.resolve(__dirname, '..', 'capacitor.config.json');
+    if (!fs.existsSync(capacitorConfigPath)) {
+        log('capacitor.config.json not found, falling back to AndroidManifest.xml');
+        // Fallback logic to read from manifest if capacitor.config.json isn't there
+        const manifestPath = path.resolve(__dirname, '..', 'android/app/src/main/AndroidManifest.xml');
+        if (fs.existsSync(manifestPath)) {
+            const manifest = fs.readFileSync(manifestPath, 'utf8');
+            const match = manifest.match(/package="([^"]+)"/);
+            if (match && match[1]) {
+                return match[1];
+            }
+        }
+        // Last resort fallback
+        log('Could not determine appId. Using default "com.aide.app". This might be incorrect.');
+        return "com.aide.app";
+    }
+    const config = JSON.parse(fs.readFileSync(capacitorConfigPath, 'utf8'));
+    if (!config.appId) {
+        throw new Error('appId not found in capacitor.config.json');
+    }
+    return config.appId;
+};
+
 // --- Plugin File Injection ---
 
-const androidPluginFiles = {
+const getAndroidPluginFiles = (appId, packagePath) => ({
     plugin: {
-        path: 'android/app/src/main/java/com/aide/app/AideBrowserPlugin.kt',
-        content: `package com.aide.app
+        path: `android/app/src/main/java/${packagePath}/AideBrowserPlugin.kt`,
+        content: `package ${appId}
 
 import android.content.Intent
 import androidx.activity.result.ActivityResult
@@ -76,8 +101,8 @@ class AideBrowserPlugin : Plugin() {
 }`
     },
     activity: {
-        path: 'android/app/src/main/java/com/aide/app/BrowserActivity.kt',
-        content: `package com.aide.app
+        path: `android/app/src/main/java/${packagePath}/BrowserActivity.kt`,
+        content: `package ${appId}
 
 import android.annotation.SuppressLint
 import android.os.Bundle
@@ -142,8 +167,8 @@ class BrowserActivity : AppCompatActivity() {
 }`
     },
     mainActivity: {
-        path: 'android/app/src/main/java/com/aide/app/MainActivity.kt',
-        content: `package com.aide.app
+        path: `android/app/src/main/java/${packagePath}/MainActivity.kt`,
+        content: `package ${appId}
 
 import android.os.Bundle
 import com.getcapacitor.BridgeActivity
@@ -157,7 +182,7 @@ class MainActivity : BridgeActivity() {
     }
 }`
     }
-};
+});
 
 const iosPluginFiles = {
     plugin: {
@@ -268,6 +293,14 @@ function injectAndroidPlugin() {
         logPlugin('Android directory not found, skipping Android plugin injection.');
         return;
     }
+
+    // --- DYNAMICALLY DETERMINE PATHS ---
+    const appId = getAppId();
+    const packagePath = appId.replace(/\./g, '/');
+    logPlugin(`Detected App ID: ${appId}`);
+    logPlugin(`Generated package path: ${packagePath}`);
+    const androidPluginFiles = getAndroidPluginFiles(appId, packagePath);
+    // ---
 
     logPlugin('Injecting custom browser plugin files for Android...');
     for (const file of Object.values(androidPluginFiles)) {
