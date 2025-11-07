@@ -140,6 +140,27 @@ class BrowserActivity : AppCompatActivity() {
         }
     }
 }`
+    },
+    mainActivity: {
+        path: 'android/app/src/main/java/com/aide/app/MainActivity.kt',
+        content: `package com.aide.app
+
+import android.os.Bundle
+import com.getcapacitor.BridgeActivity
+import com.getcapacitor.Plugin
+import java.util.ArrayList
+
+class MainActivity : BridgeActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        this.init(savedInstanceState, object : ArrayList<Class<out Plugin>>() {
+            init {
+                // Manually register the custom AideBrowserPlugin to ensure it's found by the Capacitor bridge.
+                add(AideBrowserPlugin::class.java)
+            }
+        })
+    }
+}`
     }
 };
 
@@ -259,10 +280,10 @@ function injectAndroidPlugin() {
         const fileDir = path.dirname(filePath);
 
         try {
-            if (!fs.existsSync(filePath)) {
+            if (!fs.existsSync(filePath) || file.path.includes('MainActivity')) {
                 fs.mkdirSync(fileDir, { recursive: true });
                 fs.writeFileSync(filePath, file.content.trim(), 'utf8');
-                logPlugin(`  + Created file: ${file.path}`);
+                logPlugin(`  + Wrote file: ${file.path}`);
             } else {
                 logPlugin(`  ✓ File already exists: ${file.path}`);
             }
