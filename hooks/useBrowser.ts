@@ -1,23 +1,19 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { Capacitor, registerPlugin, PluginListenerHandle } from '@capacitor/core';
 import { BrowserControls } from '../types';
-import { Capacitor } from '@capacitor/core';
 
-// Add type definitions for the Cordova InAppBrowser plugin to the window object.
-declare global {
-  interface Window {
-    cordova?: {
-      InAppBrowser?: {
-        open: (url: string, target: string, options: string) => InAppBrowserRef;
-      };
-    };
-  }
-  interface InAppBrowserRef {
-    addEventListener: (event: string, callback: (event: any) => void) => void;
-    removeEventListener: (event: string, callback: (event: any) => void) => void;
-    close: () => void;
-    executeScript: (details: { code: string }, callback: (result: any[]) => void) => void;
-  }
+// 1. Define the interface for our native plugin
+interface AideBrowserPlugin {
+  open(options: { url: string }): Promise<void>;
+  close(): Promise<void>;
+  executeScript<T>(options: { code: string }): Promise<{ value: T }>;
+  addListener(eventName: 'pageLoaded', listenerFunc: () => void): Promise<PluginListenerHandle>;
+  addListener(eventName: 'closed', listenerFunc: () => void): Promise<PluginListenerHandle>;
+  removeAllListeners(): Promise<void>;
 }
+
+// 2. Register the plugin with Capacitor. This is the bridge to our native code.
+const AideBrowser = registerPlugin<AideBrowserPlugin>('AideBrowser');
 
 interface BrowserState {
   isOpen: boolean;
@@ -25,120 +21,130 @@ interface BrowserState {
   isLoading: boolean;
 }
 
-// This hook now orchestrates the native InAppBrowser.
 export const useBrowser = () => {
   const [state, setState] = useState<BrowserState>({
     isOpen: false,
     currentUrl: 'about:blank',
     isLoading: false,
   });
-  const browserRef = useRef<InAppBrowserRef | null>(null);
+  const listenersRef = useRef<PluginListenerHandle[]>([]);
 
-  const isPluginAvailable = () => {
-    // The plugin is only available in a native Capacitor environment.
-    return Capacitor.isNativePlatform() && window.cordova && window.cordova.InAppBrowser;
-  }
+  const isPluginAvailable = () => Capacitor.isNativePlatform();
+
+  const removeAllListeners = useCallback(async () => {
+    // Remove listeners from the web side
+    for(const listener of listenersRef.current) {
+        await listener.remove();
+    }
+    listenersRef.current = [];
+    // Also ask the native plugin to clean up its side to prevent leaks
+    if (isPluginAvailable()) {
+        try {
+            await AideBrowser.removeAllListeners();
+        } catch (e) {
+            console.warn("Could not ask plugin to remove all listeners; it may not be initialized yet.", e);
+        }
+    }
+  }, []);
+
+  // Ensure listeners are cleaned up when the hook unmounts
+  useEffect(() => {
+    return () => {
+      removeAllListeners();
+    };
+  }, [removeAllListeners]);
 
   const openUrl = useCallback(async (url: string): Promise<void> => {
     if (!isPluginAvailable()) {
-      throw new Error("The native browser is not available in this web-only environment. This tool requires the native mobile app.");
+      throw new Error("The native browser tool is only available in the Capacitor mobile app.");
     }
 
-    // If a browser is already open, close it before opening a new one.
-    if (browserRef.current) {
-      browserRef.current.close();
-      browserRef.current = null;
-    }
+    // Clean up any existing listeners before opening a new instance
+    await removeAllListeners();
 
     setState({ isOpen: true, isLoading: true, currentUrl: url });
 
-    // Use the InAppBrowser plugin to open a native web view.
-    const ref = window.cordova!.InAppBrowser!.open(url, '_blank', 'location=yes,hidenavigationbuttons=yes,hideurlbar=yes,zoom=no');
-    browserRef.current = ref;
-
-    const onLoadStop = () => {
-      setState(prev => ({ ...prev, isLoading: false }));
-    };
-
-    const onExit = () => {
-      // Clean up listeners and state when the user closes the browser.
-      ref.removeEventListener('loadstop', onLoadStop);
-      ref.removeEventListener('exit', onExit);
-      browserRef.current = null;
-      setState({ isOpen: false, isLoading: false, currentUrl: 'about:blank' });
-    };
-
-    ref.addEventListener('loadstop', onLoadStop);
-    ref.addEventListener('exit', onExit);
-  }, []);
-
-  const closeBrowser = useCallback(() => {
-    if (browserRef.current) {
-      browserRef.current.close();
-      // The 'exit' event listener will handle the state cleanup.
-    }
-  }, []);
-
-  // Helper to wrap the callback-based executeScript in a Promise.
-  const executeScript = useCallback(<T,>(code: string): Promise<T> => {
-    return new Promise((resolve, reject) => {
-      if (!browserRef.current) {
-        return reject(new Error("Cannot execute script: browser is not open."));
-      }
-      browserRef.current.executeScript({ code }, (result) => {
-        // The result from executeScript is always an array.
-        if (result && result.length > 0) {
-          resolve(result[0] as T);
-        } else {
-          resolve(null as T); // Resolve with null if there's no return value from the script.
-        }
-      });
+    // Set up new listeners for the new browser instance
+    const pageLoadedHandle = await AideBrowser.addListener('pageLoaded', () => {
+        setState(prev => ({ ...prev, isLoading: false }));
     });
-  }, []);
+    const closedHandle = await AideBrowser.addListener('closed', () => {
+        setState({ isOpen: false, isLoading: false, currentUrl: 'about:blank' });
+        removeAllListeners(); // Clean up everything after the browser is confirmed closed
+    });
+    listenersRef.current.push(pageLoadedHandle, closedHandle);
+
+    try {
+        await AideBrowser.open({ url });
+    } catch (e) {
+        // If the native `open` call fails, clean up the state and listeners immediately
+        setState({ isOpen: false, isLoading: false, currentUrl: 'about:blank' });
+        await removeAllListeners();
+        throw e; // Re-throw the error for the tool orchestrator to handle
+    }
+  }, [removeAllListeners]);
+
+  const closeBrowser = useCallback(async () => {
+    if (!isPluginAvailable() || !state.isOpen) return;
+    await AideBrowser.close();
+    // The 'closed' event listener handles the actual state cleanup, ensuring a consistent state.
+  }, [state.isOpen]);
+
+  const executeScript = useCallback(async <T,>(code: string): Promise<T> => {
+    if (!isPluginAvailable() || !state.isOpen) {
+      throw new Error("Cannot execute script: browser is not open.");
+    }
+    // The native plugin will return an object like { value: ... }
+    const { value } = await AideBrowser.executeScript<T>({ code });
+    return value;
+  }, [state.isOpen]);
 
   const getPageContent = useCallback(async (): Promise<string> => {
-    if (!isPluginAvailable()) throw new Error("Native browser not available.");
-    // Injects a script to get the page's visible text content.
     return await executeScript<string>("document.body.innerText");
   }, [executeScript]);
   
   const interactWithPage = useCallback(async (selector: string, action: 'click' | 'type', value?: string): Promise<string> => {
-     if (!isPluginAvailable()) throw new Error("Native browser not available.");
+     // JS code injection is safer if we properly escape the inputs.
+     const escapedSelector = selector.replace(/'/g, "\\'");
+     const escapedValue = value?.replace(/'/g, "\\'") || '';
      const script = `
         try {
-            const el = document.querySelector('${selector}');
-            if (!el) throw new Error('Element not found');
-            if ('${action}' === 'click') el.click();
-            if ('${action}' === 'type') {
-                el.value = '${value || ''}';
+            const el = document.querySelector('${escapedSelector}');
+            if (!el) throw new Error('Element with selector "${escapedSelector}" not found');
+            if ('${action}' === 'click') {
+                el.click();
+            } else if ('${action}' === 'type') {
+                if(typeof el.value === 'undefined') throw new Error('Element does not have a value property to type into.');
+                el.value = '${escapedValue}';
                 el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
             }
-            'Success';
-        } catch (e) { e.message }
+            return 'Success'; // Return a success message
+        } catch (e) { 
+            return 'Error: ' + e.message; // Return a descriptive error message
+        }
      `;
      const result = await executeScript<string>(script);
-     if (result !== 'Success') throw new Error(result);
+     if (result.startsWith('Error:')) {
+         throw new Error(result);
+     }
      return result;
   }, [executeScript]);
 
   const captureBrowserScreenshot = useCallback(async (): Promise<string> => {
-     if (!isPluginAvailable()) throw new Error("Native browser not available.");
-     
-     // This script first injects html2canvas if it's not already there,
-     // then uses it to capture the page and return the base64 result.
      const script = `
         (async () => {
             try {
                 if (typeof html2canvas === 'undefined') {
                     const script = document.createElement('script');
-                    script.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+                    script.src = 'https://aistudiocdn.com/html2canvas@^1.4.1';
                     document.head.appendChild(script);
                     await new Promise((resolve, reject) => {
                         script.onload = resolve;
-                        script.onerror = () => reject('Failed to load html2canvas');
+                        script.onerror = () => reject(new Error('Failed to load html2canvas library into browser context'));
                     });
                 }
-                const canvas = await html2canvas(document.body, { useCORS: true });
+                const canvas = await html2canvas(document.body, { useCORS: true, allowTaint: true });
                 // Return just the base64 part of the data URL.
                 return canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
             } catch (e) {
@@ -152,7 +158,6 @@ export const useBrowser = () => {
      }
      return result;
   }, [executeScript]);
-
 
   const controls: BrowserControls = { openUrl, closeBrowser, getPageContent, interactWithPage, captureBrowserScreenshot };
 
