@@ -1,4 +1,5 @@
 
+
 import fs from 'fs';
 import path from 'path';
 
@@ -6,6 +7,7 @@ const log = (message) => console.log(`[Native Config] ${message}`);
 const projectRoot = process.cwd();
 
 function configureAndroid() {
+    // --- PART 1: AndroidManifest.xml ---
     const manifestPath = path.resolve(projectRoot, 'android/app/src/main/AndroidManifest.xml');
     if (fs.existsSync(manifestPath)) {
         log(`Configuring AndroidManifest.xml at: ${manifestPath}`);
@@ -48,12 +50,14 @@ function configureAndroid() {
         log('AndroidManifest.xml not found, skipping manifest configuration.');
     }
 
+    // --- PART 2: build.gradle ---
     const buildGradlePath = path.resolve(projectRoot, 'android/app/build.gradle');
     if (fs.existsSync(buildGradlePath)) {
         log(`Configuring build.gradle at: ${buildGradlePath}`);
         let buildGradle = fs.readFileSync(buildGradlePath, 'utf8');
-        let needsWrite = false;
+        let gradleChangesMade = false;
 
+        // Configure Java Version
         if (!buildGradle.includes('JavaVersion.VERSION_17')) {
             const compileOptionsRegex = /compileOptions\s*{[^}]*}/;
             const newCompileOptions = `compileOptions {
@@ -65,22 +69,58 @@ function configureAndroid() {
             } else {
                 buildGradle = buildGradle.replace(/android\s*{/, `android {\n    ${newCompileOptions}`);
             }
-            needsWrite = true;
+            gradleChangesMade = true;
             log('  + Set Java compatibility to version 17.');
         }
 
         if (buildGradle.includes("jvmTarget = '1.8'")) {
              buildGradle = buildGradle.replace("jvmTarget = '1.8'", "jvmTarget = '17'");
              log("  + Set kotlinOptions.jvmTarget to '17'.");
-             needsWrite = true;
+             gradleChangesMade = true;
         }
 
-        if (needsWrite) {
+        // Configure Signing for Release Builds
+        const signingConfigBlock = `
+// Dynamically added by configure-native-project.js for CI/CD signing
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
+android.signingConfigs {
+    release {
+        if (keystorePropertiesFile.exists()) {
+            storeFile file(keystoreProperties['storeFile'])
+            storePassword keystoreProperties['storePassword']
+            keyAlias keystoreProperties['keyAlias']
+            keyPassword keystoreProperties['keyPassword']
+        }
+    }
+}`;
+
+        const signingConfigAssignment = `android.buildTypes.release.signingConfig = android.signingConfigs.release`;
+
+        // Use a simple append strategy, which is safer than regex replacement
+        if (!buildGradle.includes('android.signingConfigs')) {
+            buildGradle += `\n\n${signingConfigBlock}`;
+            gradleChangesMade = true;
+            log('  + Injected signingConfigs block.');
+        }
+        if (!buildGradle.includes('android.buildTypes.release.signingConfig')) {
+            buildGradle += `\n${signingConfigAssignment}`;
+            gradleChangesMade = true;
+            log('  + Applied release signingConfig to release build type.');
+        }
+
+        if (gradleChangesMade) {
             fs.writeFileSync(buildGradlePath, buildGradle, 'utf8');
             log('build.gradle updated successfully.');
+        } else {
+            log('No changes needed for build.gradle.');
         }
     } else {
-        log('android/app/build.gradle not found, skipping Java version configuration.');
+        log('android/app/build.gradle not found, skipping gradle configuration.');
     }
 }
 
