@@ -5,6 +5,7 @@
   "type": "module",
   "main": "electron/main.js",
   "scripts": {
+    "postinstall": "patch-package",
     "lint": "tsc --noEmit",
     "build:web": "vite build",
     "configure:native": "node scripts/configure-native-permissions.js",
@@ -47,6 +48,7 @@
     "electron-builder": "^24.13.3",
     "esbuild": "^0.23.0",
     "memfs": "^4.49.0",
+    "patch-package": "^8.0.0",
     "typescript": "^5.5.4",
     "vite": "^7.1.9"
   },
