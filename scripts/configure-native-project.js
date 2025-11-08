@@ -199,7 +199,86 @@ function configureIos() {
     }
 }
 
+function createMainActivity() {
+    log('Ensuring MainActivity with custom plugin registration exists...');
+    
+    // Read App ID from capacitor.config.json to make this robust
+    const capacitorConfigPath = path.resolve(projectRoot, 'capacitor.config.json');
+    if (!fs.existsSync(capacitorConfigPath)) {
+        log('  ! capacitor.config.json not found. Cannot determine package ID. Skipping MainActivity creation.');
+        return;
+    }
+    const config = JSON.parse(fs.readFileSync(capacitorConfigPath, 'utf8'));
+    const mainAppId = config.appId;
+    if (!mainAppId) {
+        log('  ! appId not found in capacitor.config.json. Skipping MainActivity creation.');
+        return;
+    }
+    
+    const packagePath = mainAppId.replace(/\./g, '/');
+    const mainActivityPath = path.resolve(projectRoot, `android/app/src/main/java/${packagePath}`);
+    const mainActivityFile = path.resolve(mainActivityPath, 'MainActivity.java');
+    
+    // Ensure the directory for the MainActivity.java file exists
+    if (!fs.existsSync(mainActivityPath)) {
+        fs.mkdirSync(mainActivityPath, { recursive: true });
+        log(`  + Created directory: ${mainActivityPath}`);
+    }
+
+    const mainActivityContent = `package ${mainAppId};
+
+import com.getcapacitor.BridgeActivity;
+import android.os.Bundle;
+
+// Import the custom browser plugin
+import com.aide.browser.AideBrowserPlugin;
+
+public class MainActivity extends BridgeActivity {
+  @Override
+  public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+
+    // Register all custom plugins here to ensure they are available to Capacitor
+    registerPlugin(AideBrowserPlugin.class);
+  }
+}
+`;
+
+    if (!fs.existsSync(mainActivityFile)) {
+        fs.writeFileSync(mainActivityFile, mainActivityContent.trim(), 'utf8');
+        log(`  + Created MainActivity.java with AideBrowserPlugin registration.`);
+    } else {
+        let content = fs.readFileSync(mainActivityFile, 'utf8');
+        let changesMade = false;
+        
+        // Add import if it's missing
+        if (!content.includes('import com.aide.browser.AideBrowserPlugin;')) {
+            content = content.replace(/(import com\.getcapacitor\.BridgeActivity;)/, `$1\nimport com.aide.browser.AideBrowserPlugin;`);
+            changesMade = true;
+        }
+        
+        // Add registration call if it's missing
+        if (!content.includes('registerPlugin(AideBrowserPlugin.class);')) {
+            const onCreateMatch = content.match(/super\.onCreate\(savedInstanceState\);/);
+            if (onCreateMatch) {
+                content = content.replace(onCreateMatch[0], `${onCreateMatch[0]}\n\n    // Register custom plugins\n    registerPlugin(AideBrowserPlugin.class);`);
+                changesMade = true;
+            } else {
+                 log(`  ! Could not find super.onCreate() to inject plugin registration.`);
+            }
+        }
+        
+        if (changesMade) {
+             fs.writeFileSync(mainActivityFile, content, 'utf8');
+             log('  + Updated existing MainActivity.java to register AideBrowserPlugin.');
+        } else {
+            log('  ✓ MainActivity.java already includes AideBrowserPlugin registration.');
+        }
+    }
+}
+
 log('Starting native project configuration (manifests, gradle)...');
 configureAndroid();
 configureIos();
+createMainActivity();
 log('Native project configuration finished.');
