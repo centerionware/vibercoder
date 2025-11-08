@@ -71,6 +71,7 @@ android {
         targetSdkVersion project.hasProperty('targetSdkVersion') ? project.property('targetSdkVersion') : 34
         versionCode 1
         versionName "1.0"
+        consumerProguardFiles 'proguard-rules.pro'
     }
     buildTypes {
         release {
@@ -99,6 +100,12 @@ dependencies {
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
 }
+`,
+  // Proguard rules for Android release builds
+  'android/proguard-rules.pro': `
+-keep public class com.aide.browser.** { *; }
+-keep public class * extends com.getcapacitor.Plugin
+-keep public @com.getcapacitor.annotation.CapacitorPlugin class *
 `,
 
   // Android Manifest
