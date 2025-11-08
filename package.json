@@ -5,12 +5,12 @@
   "type": "module",
   "main": "electron/main.js",
   "scripts": {
+    "preinstall": "node scripts/create-native-plugins.js",
     "postinstall": "patch-package",
     "lint": "tsc --noEmit",
     "build:web": "vite build",
-    "inject:native": "node scripts/inject-native-plugin.js",
     "configure:project": "node scripts/configure-native-project.js",
-    "sync:native": "npm run inject:native && npx capacitor sync && npm run configure:project",
+    "sync:native": "npx capacitor sync && npm run configure:project",
     "open:android": "npx capacitor open android",
     "open:ios": "npx capacitor open ios",
     "start:electron": "electron .",
@@ -21,6 +21,7 @@
     "build:docker": "docker build -t aide:latest -f Dockerfile.json"
   },
   "dependencies": {
+    "@aide/browser": "file:native-plugins/aide-browser",
     "@capacitor/android": "^7.0.0",
     "@capacitor/camera": "*",
     "@capacitor/core": "^7.0.0",

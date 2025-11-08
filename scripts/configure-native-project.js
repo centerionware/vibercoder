@@ -29,16 +29,6 @@ function configureAndroid() {
             }
         }
 
-        const activityTag = `<activity android:name=".BrowserActivity" android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode" android:launchMode="singleTop" />`;
-        if (!manifest.includes('android:name=".BrowserActivity"')) {
-            const applicationEndMarker = '</application>';
-            if (manifest.includes(applicationEndMarker)) {
-                manifest = manifest.replace(applicationEndMarker, `        ${activityTag}\n    ${applicationEndMarker}`);
-                manifestChangesMade = true;
-                log(`  + Added BrowserActivity declaration.`);
-            }
-        }
-
         if (manifestChangesMade) {
             fs.writeFileSync(manifestPath, manifest, 'utf8');
             log('AndroidManifest.xml updated successfully.');
