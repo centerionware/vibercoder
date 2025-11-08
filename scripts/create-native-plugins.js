@@ -153,6 +153,14 @@ import com.getcapacitor.annotation.CapacitorPlugin
 @CapacitorPlugin(name = "AideBrowser")
 class AideBrowserPlugin : Plugin() {
 
+    companion object {
+        var instance: AideBrowserPlugin? = null
+    }
+
+    override fun load() {
+        instance = this
+    }
+
     @PluginMethod
     fun open(call: PluginCall) {
         val url = call.getString("url")
@@ -191,11 +199,6 @@ class AideBrowserPlugin : Plugin() {
     private fun browserResult(call: PluginCall?, result: ActivityResult) {
         call?.resolve()
     }
-    
-    override fun handleOnPause() {
-        super.handleOnPause()
-        BrowserActivity.closeInstance()
-    }
 }
 `,
   // Android Activity Kotlin file
@@ -207,7 +210,6 @@ import android.os.Bundle
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.appcompat.app.AppCompatActivity
-import com.getcapacitor.BridgeActivity
 
 class BrowserActivity : AppCompatActivity() {
 
@@ -243,7 +245,7 @@ class BrowserActivity : AppCompatActivity() {
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
-                mainActivity?.bridge?.getPlugin("AideBrowser")?.notifyListeners("pageLoaded", null)
+                AideBrowserPlugin.instance?.notifyListeners("pageLoaded", null)
             }
         }
 
@@ -258,13 +260,10 @@ class BrowserActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         if (instance == this) {
-            mainActivity?.bridge?.getPlugin("AideBrowser")?.notifyListeners("closed", null)
+            AideBrowserPlugin.instance?.notifyListeners("closed", null)
             instance = null
         }
     }
-    
-    private val mainActivity: BridgeActivity?
-        get() = BridgeActivity.getBridge()?.activity
 }
 `,
 
