@@ -276,9 +276,6 @@ jobs:
       - name: Add Capacitor Android platform
         run: npx capacitor add android
 
-      - name: Inject native plugin source files
-        run: npm run inject:native
-
       - name: Sync Capacitor project (discovers plugin)
         run: npx capacitor sync android
 
@@ -433,9 +430,6 @@ jobs:
 
       - name: Add Capacitor iOS platform
         run: npx capacitor add ios
-
-      - name: Inject native plugin source files
-        run: npm run inject:native
 
       - name: Sync Capacitor project (discovers plugin)
         run: npx capacitor sync ios
