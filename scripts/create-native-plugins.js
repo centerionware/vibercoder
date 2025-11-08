@@ -122,7 +122,7 @@ dependencies {
 `,
 
   // Android Plugin Kotlin file
-  'android/src.main/java/com/aide/browser/AideBrowserPlugin.kt': `
+  'android/src/main/java/com/aide/browser/AideBrowserPlugin.kt': `
 package com.aide.browser
 
 import android.content.Intent
@@ -183,7 +183,7 @@ class AideBrowserPlugin : Plugin() {
 }
 `,
   // Android Activity Kotlin file
-  'android/src.main/java/com/aide/browser/BrowserActivity.kt': `
+  'android/src/main/java/com/aide/browser/BrowserActivity.kt': `
 package com.aide.browser
 
 import android.annotation.SuppressLint
