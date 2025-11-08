@@ -224,7 +224,7 @@ class BrowserActivity : AppCompatActivity() {
         fun executeScript(code: String, callback: (String) -> Unit) {
             instance?.runOnUiThread {
                 instance?.webView?.evaluateJavascript(code) { result ->
-                    val resultString = result?.toString()?.removeSurrounding("\"") ?: "null"
+                    val resultString = result?.toString()?.removeSurrounding("\\"") ?: "null"
                     callback(resultString)
                 }
             }
