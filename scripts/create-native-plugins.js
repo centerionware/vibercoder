@@ -110,8 +110,7 @@ dependencies {
 
   // Android Manifest
   'android/src/main/AndroidManifest.xml': `
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.aide.browser">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
         <activity
             android:name="com.aide.browser.BrowserActivity"
