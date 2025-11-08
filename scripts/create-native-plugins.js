@@ -1,5 +1,3 @@
-
-
 import fs from 'fs';
 import path from 'path';
 
@@ -155,6 +153,16 @@ class AideBrowserPlugin : Plugin() {
 
     companion object {
         var instance: AideBrowserPlugin? = null
+
+        // Public bridge methods for the Activity to call, which can then safely
+        // access the protected 'notifyListeners' method.
+        fun notifyPageLoaded() {
+            instance?.notifyListeners("pageLoaded", null)
+        }
+
+        fun notifyClosed() {
+            instance?.notifyListeners("closed", null)
+        }
     }
 
     override fun load() {
@@ -226,6 +234,7 @@ class BrowserActivity : AppCompatActivity() {
         fun executeScript(code: String, callback: (String) -> Unit) {
             instance?.runOnUiThread {
                 instance?.webView?.evaluateJavascript(code) { result ->
+                    // FIX: Correctly escape the backslash for the string literal in Kotlin.
                     val resultString = result?.toString()?.removeSurrounding("\\"") ?: "null"
                     callback(resultString)
                 }
@@ -245,7 +254,8 @@ class BrowserActivity : AppCompatActivity() {
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
-                AideBrowserPlugin.instance?.notifyListeners("pageLoaded", null)
+                // Call the new public bridge method on the plugin
+                AideBrowserPlugin.notifyPageLoaded()
             }
         }
 
@@ -260,7 +270,8 @@ class BrowserActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         if (instance == this) {
-            AideBrowserPlugin.instance?.notifyListeners("closed", null)
+            // Call the new public bridge method on the plugin
+            AideBrowserPlugin.notifyClosed()
             instance = null
         }
     }
