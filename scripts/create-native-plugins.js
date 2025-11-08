@@ -212,6 +212,7 @@ class AideBrowserPlugin : Plugin() {
 package com.aide.browser
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.os.Bundle
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -265,6 +266,17 @@ class BrowserActivity : AppCompatActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val url = intent?.getStringExtra(EXTRA_URL)
+        if (url != null) {
+            webView.loadUrl(url)
+        } else {
+            finish()
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         if (instance == this) {
@@ -294,14 +306,22 @@ public class AideBrowserPlugin: CAPPlugin {
         }
 
         DispatchQueue.main.async {
-            self.viewController = BrowserViewController()
-            self.viewController!.plugin = self
-            self.viewController!.initialUrl = url
-            self.viewController!.modalPresentationStyle = .fullScreen
-            
-            self.bridge?.viewController?.present(self.viewController!, animated: true, completion: {
-                 call.resolve()
-            })
+            // Check if the browser view controller is already open and visible.
+            if let existingVC = self.viewController, existingVC.isViewLoaded, existingVC.view.window != nil {
+                // If it is, just tell it to load the new URL.
+                existingVC.loadUrl(url: url)
+                call.resolve()
+            } else {
+                // If not, create and present a new instance.
+                self.viewController = BrowserViewController()
+                self.viewController!.plugin = self
+                self.viewController!.initialUrl = url
+                self.viewController!.modalPresentationStyle = .fullScreen
+                
+                self.bridge?.viewController?.present(self.viewController!, animated: true, completion: {
+                     call.resolve()
+                })
+            }
         }
     }
 
@@ -363,6 +383,11 @@ class BrowserViewController: UIViewController, WKNavigationDelegate {
             let request = URLRequest(url: url)
             webView.load(request)
         }
+    }
+
+    public func loadUrl(url: URL) {
+        let request = URLRequest(url: url)
+        webView.load(request)
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
