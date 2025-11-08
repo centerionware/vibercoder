@@ -54,12 +54,19 @@ ext {
 }
 
 buildscript {
+    // Define versions needed for the buildscript's own dependencies here.
+    // This is a separate scope from the top-level 'ext' block.
+    ext {
+        kotlin_version = project.hasProperty('kotlinVersion') ? project.property('kotlinVersion') : '1.9.22'
+    }
+
     repositories {
         google()
         mavenCentral()
     }
     dependencies {
         classpath 'com.android.tools.build:gradle:8.2.1'
+        // This now correctly references the kotlin_version from the ext block *inside* buildscript.
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
     }
 }
@@ -100,6 +107,7 @@ repositories {
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
     implementation project(':capacitor-android')
+    // These correctly reference the variables from the top-level 'ext' block.
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
     testImplementation "junit:junit:$junitVersion"
