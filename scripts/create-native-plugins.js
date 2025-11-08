@@ -140,12 +140,10 @@ dependencies {
 package com.aide.browser
 
 import android.content.Intent
-import androidx.activity.result.ActivityResult
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
-import com.getcapacitor.annotation.ActivityCallback
 import com.getcapacitor.annotation.CapacitorPlugin
 
 @CapacitorPlugin(name = "AideBrowser")
@@ -179,7 +177,12 @@ class AideBrowserPlugin : Plugin() {
 
         val intent = Intent(context, BrowserActivity::class.java)
         intent.putExtra(BrowserActivity.EXTRA_URL, url)
-        startActivityForResult(call, intent, "browserResult")
+        
+        // Start the activity from the main Activity context
+        activity.startActivity(intent)
+
+        // Resolve the call immediately so the AI doesn't wait for the browser to close
+        call.resolve()
     }
 
     @PluginMethod
@@ -201,11 +204,6 @@ class AideBrowserPlugin : Plugin() {
             ret.put("value", result)
             call.resolve(ret)
         }
-    }
-
-    @ActivityCallback
-    private fun browserResult(call: PluginCall?, _activityResult: ActivityResult) {
-        call?.resolve()
     }
 }
 `,
