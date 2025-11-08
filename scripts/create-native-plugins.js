@@ -46,14 +46,13 @@ end
 `,
   // Android build.gradle
   'android/build.gradle': `
-ext {
-    junitVersion = project.hasProperty('junitVersion') ? project.property('junitVersion') : '4.13.2'
-    androidxAppCompatVersion = project.hasProperty('androidxAppCompatVersion') ? project.property('androidxAppCompatVersion') : '1.6.1'
-    androidxJunitVersion = project.hasProperty('androidxJunitVersion') ? project.property('androidxJunitVersion') : '1.1.5'
-    kotlin_version = project.hasProperty('kotlinVersion') ? project.property('kotlinVersion') : '1.9.22'
-}
-
 buildscript {
+    ext {
+        junitVersion = project.hasProperty('junitVersion') ? project.property('junitVersion') : '4.13.2'
+        androidxAppCompatVersion = project.hasProperty('androidxAppCompatVersion') ? project.property('androidxAppCompatVersion') : '1.6.1'
+        androidxJunitVersion = project.hasProperty('androidxJunitVersion') ? project.property('androidxJunitVersion') : '1.1.5'
+        kotlin_version = project.hasProperty('kotlinVersion') ? project.property('kotlinVersion') : '1.9.22'
+    }
     repositories {
         google()
         mavenCentral()
@@ -100,10 +99,10 @@ repositories {
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
     implementation project(':capacitor-android')
-    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
-    implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
-    testImplementation "junit:junit:$junitVersion"
-    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    implementation "androidx.appcompat:appcompat:$buildscript.androidxAppCompatVersion"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:$buildscript.kotlin_version"
+    testImplementation "junit:junit:$buildscript.junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$buildscript.androidxJunitVersion"
 }
 `,
   // Proguard rules for Android release builds
