@@ -99,10 +99,10 @@ repositories {
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
     implementation project(':capacitor-android')
-    implementation "androidx.appcompat:appcompat:$buildscript.androidxAppCompatVersion"
-    implementation "org.jetbrains.kotlin:kotlin-stdlib:$buildscript.kotlin_version"
-    testImplementation "junit:junit:$buildscript.junitVersion"
-    androidTestImplementation "androidx.test.ext:junit:$buildscript.androidxJunitVersion"
+    implementation "androidx.appcompat:appcompat:$buildscript.ext.androidxAppCompatVersion"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:$buildscript.ext.kotlin_version"
+    testImplementation "junit:junit:$buildscript.ext.junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$buildscript.ext.androidxJunitVersion"
 }
 `,
   // Proguard rules for Android release builds
