@@ -279,8 +279,10 @@ public class MainActivity extends BridgeActivity {
 
 function configureGradleForLocalPlugin() {
     log('Patching Gradle configuration for local browser plugin...');
-    const capacitorPluginId = ':@aide/browser'; // How Capacitor identifies the plugin from package.json
+    const invalidCapacitorPluginId = ':@aide/browser';
+    const validGradlePluginId = ':aide-browser'; // A valid Gradle project name
     const directPluginPath = '../native-plugins/aide-browser/android';
+    const correctPathForGradle = directPluginPath.replace(/\\/g, '/');
 
     // --- Patch settings.gradle ---
     const settingsGradlePath = path.resolve(projectRoot, 'android/settings.gradle');
@@ -292,34 +294,36 @@ function configureGradleForLocalPlugin() {
     let settingsGradle = fs.readFileSync(settingsGradlePath, 'utf8');
     let settingsChangesMade = false;
 
-    // Regex to find the projectDir assignment for our plugin, regardless of the path it currently has.
-    const projectDirRegex = new RegExp(`(project\\('${capacitorPluginId}'\\)\\.projectDir = new File\\(rootProject\\.projectDir, ')([^']+)('\\))`);
+    // 1. Sanitize the project name. This is the main fix for the '/' character issue.
+    if (settingsGradle.includes(invalidCapacitorPluginId)) {
+        settingsGradle = settingsGradle.replace(new RegExp(invalidCapacitorPluginId, 'g'), validGradlePluginId);
+        settingsChangesMade = true;
+        log(`  + Sanitized plugin name from '${invalidCapacitorPluginId}' to '${validGradlePluginId}'`);
+    }
+
+    // 2. Now patch the path using the *valid* name.
+    const projectDirRegex = new RegExp(`(project\\('${validGradlePluginId}'\\)\\.projectDir = new File\\(rootProject\\.projectDir, ')([^']+)('\\))`);
     
     const match = settingsGradle.match(projectDirRegex);
-
     if (match) {
         const currentPath = match[2];
-        // The path in gradle files uses forward slashes, even on Windows.
-        const correctPathForGradle = directPluginPath.replace(/\\/g, '/');
-
         if (currentPath !== correctPathForGradle) {
             settingsGradle = settingsGradle.replace(projectDirRegex, `$1${correctPathForGradle}$3`);
             settingsChangesMade = true;
-            log(`  + Patched projectDir for ${capacitorPluginId}:`);
+            log(`  + Patched projectDir for ${validGradlePluginId}:`);
             log(`    - Old path: ${currentPath}`);
             log(`    - New path: ${correctPathForGradle}`);
         } else {
-            log(`  ✓ projectDir for ${capacitorPluginId} is already correct.`);
+            log(`  ✓ projectDir for ${validGradlePluginId} is already correct.`);
         }
     } else {
-        log(`  ! Could not find projectDir line for '${capacitorPluginId}' to patch. Attempting to add it.`);
-        // Fallback: If `capacitor sync` failed to add it, add it ourselves.
-        const includeStatement = `include '${capacitorPluginId}'`;
+        log(`  ! Could not find projectDir line for '${validGradlePluginId}' to patch. Assuming it needs to be added.`);
+        const includeStatement = `include '${validGradlePluginId}'`;
         if (!settingsGradle.includes(includeStatement)) {
             settingsGradle += `\n${includeStatement}`;
             settingsChangesMade = true;
         }
-        const projectDirStatement = `project('${capacitorPluginId}').projectDir = new File(rootProject.projectDir, '${directPluginPath.replace(/\\/g, '/')}')`;
+        const projectDirStatement = `project('${validGradlePluginId}').projectDir = new File(rootProject.projectDir, '${correctPathForGradle}')`;
         if (!settingsGradle.includes(projectDirStatement)) {
             settingsGradle += `\n${projectDirStatement}\n`;
             settingsChangesMade = true;
@@ -329,10 +333,11 @@ function configureGradleForLocalPlugin() {
     if (settingsChangesMade) {
         fs.writeFileSync(settingsGradlePath, settingsGradle, 'utf8');
         log('  ✓ settings.gradle updated for local plugin.');
+    } else {
+        log('  ✓ No changes needed for settings.gradle.');
     }
 
-    // --- Verify app/build.gradle ---
-    // We just need to make sure the dependency exists. `capacitor sync` should add this, so this is just a safety check.
+    // --- Patch app/build.gradle ---
     const appBuildGradlePath = path.resolve(projectRoot, 'android/app/build.gradle');
     if (!fs.existsSync(appBuildGradlePath)) {
         log('  ! android/app/build.gradle not found. Cannot verify dependency.');
@@ -342,15 +347,24 @@ function configureGradleForLocalPlugin() {
     let appBuildGradle = fs.readFileSync(appBuildGradlePath, 'utf8');
     let appChangesMade = false;
 
-    const implementationStatement = `implementation project('${capacitorPluginId}')`;
-    if (!appBuildGradle.includes(implementationStatement)) {
+    // Sanitize the project name here as well.
+    const invalidImplementationStatement = `implementation project('${invalidCapacitorPluginId}')`;
+    const validImplementationStatement = `implementation project('${validGradlePluginId}')`;
+    if (appBuildGradle.includes(invalidImplementationStatement)) {
+        appBuildGradle = appBuildGradle.replace(invalidImplementationStatement, validImplementationStatement);
+        appChangesMade = true;
+        log(`  + Sanitized plugin dependency name in app/build.gradle.`);
+    }
+
+    // Safety check: if the dependency is missing entirely, add the valid one.
+    if (!appBuildGradle.includes(validImplementationStatement)) {
         const dependenciesRegex = /dependencies\s*\{/;
         const match = appBuildGradle.match(dependenciesRegex);
         if (match && match.index !== undefined) {
             const injectionPoint = match.index + match[0].length;
-            appBuildGradle = appBuildGradle.substring(0, injectionPoint) + `\n    ${implementationStatement}` + appBuildGradle.substring(injectionPoint);
+            appBuildGradle = appBuildGradle.substring(0, injectionPoint) + `\n    ${validImplementationStatement}` + appBuildGradle.substring(injectionPoint);
             appChangesMade = true;
-            log(`  + Added fallback dependency to app/build.gradle: ${implementationStatement}`);
+            log(`  + Added fallback dependency to app/build.gradle: ${validImplementationStatement}`);
         } else {
             log('  ! Could not find dependencies block in app/build.gradle to inject plugin.');
         }
@@ -360,7 +374,7 @@ function configureGradleForLocalPlugin() {
         fs.writeFileSync(appBuildGradlePath, appBuildGradle, 'utf8');
         log('  ✓ app/build.gradle updated for local plugin.');
     } else {
-        log('  ✓ app/build.gradle already has local plugin dependency.');
+        log('  ✓ No changes needed for app/build.gradle.');
     }
 }
 
