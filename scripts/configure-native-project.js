@@ -92,6 +92,26 @@ function configureAndroid() {
              gradleChangesMade = true;
         }
 
+        // Configure dynamic versioning for CI/CD
+        const versionCodeRegex = /versionCode\s+\d+/;
+        const versionNameRegex = /versionName\s+".*"/;
+
+        if (versionCodeRegex.test(buildGradle)) {
+            buildGradle = buildGradle.replace(versionCodeRegex, `versionCode project.hasProperty('envVersionCode') ? project.property('envVersionCode').toInteger() : 1`);
+            gradleChangesMade = true;
+            log('  + Replaced static versionCode with dynamic property.');
+        } else {
+            log('  ! Could not find static versionCode to replace.');
+        }
+
+        if (versionNameRegex.test(buildGradle)) {
+            buildGradle = buildGradle.replace(versionNameRegex, `versionName project.hasProperty('envVersionName') ? project.property('envVersionName') : "1.0"`);
+            gradleChangesMade = true;
+            log('  + Replaced static versionName with dynamic property.');
+        } else {
+            log('  ! Could not find static versionName to replace.');
+        }
+
         // Configure Signing for Release Builds
         // Step 1: Inject keystore properties and signingConfigs block if it doesn't exist.
         if (!buildGradle.includes('signingConfigs {')) {
