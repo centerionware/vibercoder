@@ -279,8 +279,9 @@ public class MainActivity extends BridgeActivity {
 
 function configureGradleForLocalPlugin() {
     log('Ensuring local browser plugin is linked in Gradle...');
-    const pluginName = '@aide/browser';
     const gradlePluginName = 'aide-browser'; // Capacitor's convention
+    // Use a direct path to the plugin's source code, bypassing node_modules symlink issues.
+    const pluginPath = '../native-plugins/aide-browser/android';
 
     // --- Part 1: settings.gradle ---
     const settingsGradlePath = path.resolve(projectRoot, 'android/settings.gradle');
@@ -299,11 +300,17 @@ function configureGradleForLocalPlugin() {
         log(`  + Added to settings.gradle: ${includeStatement}`);
     }
     
-    const projectDirStatement = `project(':${gradlePluginName}').projectDir = new File(rootProject.projectDir, '../node_modules/${pluginName}/android')`;
-    if (!settingsGradle.includes(projectDirStatement)) {
+    const projectDirStatement = `project(':${gradlePluginName}').projectDir = new File(rootProject.projectDir, '${pluginPath}')`;
+    const oldProjectDirStatementRegex = new RegExp(`project\\(':${gradlePluginName}'\\)\\.projectDir = new File\\(rootProject\\.projectDir, '..(\\\\/|/)node_modules(\\\\/|/)@aide(\\\\/|/)browser(\\\\/|/)android'\\)`);
+
+    if (oldProjectDirStatementRegex.test(settingsGradle)) {
+        settingsGradle = settingsGradle.replace(oldProjectDirStatementRegex, projectDirStatement);
+        settingsChangesMade = true;
+        log(`  + Updated projectDir for ${gradlePluginName} in settings.gradle to use direct path.`);
+    } else if (!settingsGradle.includes(projectDirStatement)) {
         settingsGradle = settingsGradle.trim() + `\n${projectDirStatement}\n`;
         settingsChangesMade = true;
-        log(`  + Added projectDir for ${gradlePluginName} to settings.gradle.`);
+        log(`  + Added projectDir for ${gradlePluginName} to settings.gradle using direct path.`);
     }
 
     if (settingsChangesMade) {
@@ -344,6 +351,7 @@ function configureGradleForLocalPlugin() {
         log('  ✓ app/build.gradle already has local plugin dependency.');
     }
 }
+
 
 log('Starting native project configuration (manifests, gradle)...');
 configureAndroid();
