@@ -277,8 +277,77 @@ public class MainActivity extends BridgeActivity {
     }
 }
 
+function configureGradleForLocalPlugin() {
+    log('Ensuring local browser plugin is linked in Gradle...');
+    const pluginName = '@aide/browser';
+    const gradlePluginName = 'aide-browser'; // Capacitor's convention
+
+    // --- Part 1: settings.gradle ---
+    const settingsGradlePath = path.resolve(projectRoot, 'android/settings.gradle');
+    if (!fs.existsSync(settingsGradlePath)) {
+        log('  ! android/settings.gradle not found. Skipping local plugin linking.');
+        return;
+    }
+    
+    let settingsGradle = fs.readFileSync(settingsGradlePath, 'utf8');
+    let settingsChangesMade = false;
+    
+    const includeStatement = `include ':${gradlePluginName}'`;
+    if (!settingsGradle.includes(includeStatement)) {
+        settingsGradle = settingsGradle.trim() + `\n${includeStatement}\n`;
+        settingsChangesMade = true;
+        log(`  + Added to settings.gradle: ${includeStatement}`);
+    }
+    
+    const projectDirStatement = `project(':${gradlePluginName}').projectDir = new File(rootProject.projectDir, '../node_modules/${pluginName}/android')`;
+    if (!settingsGradle.includes(projectDirStatement)) {
+        settingsGradle = settingsGradle.trim() + `\n${projectDirStatement}\n`;
+        settingsChangesMade = true;
+        log(`  + Added projectDir for ${gradlePluginName} to settings.gradle.`);
+    }
+
+    if (settingsChangesMade) {
+        fs.writeFileSync(settingsGradlePath, settingsGradle, 'utf8');
+        log('  ✓ settings.gradle updated for local plugin.');
+    } else {
+        log('  ✓ settings.gradle already configured for local plugin.');
+    }
+
+    // --- Part 2: android/app/build.gradle ---
+    const appBuildGradlePath = path.resolve(projectRoot, 'android/app/build.gradle');
+    if (!fs.existsSync(appBuildGradlePath)) {
+        log('  ! android/app/build.gradle not found. Skipping dependency injection.');
+        return;
+    }
+    
+    let appBuildGradle = fs.readFileSync(appBuildGradlePath, 'utf8');
+    let appChangesMade = false;
+
+    const implementationStatement = `implementation project(':${gradlePluginName}')`;
+    if (!appBuildGradle.includes(implementationStatement)) {
+        const dependenciesRegex = /dependencies\s*\{/;
+        const match = appBuildGradle.match(dependenciesRegex);
+        if (match && match.index !== undefined) {
+            const injectionPoint = match.index + match[0].length;
+            appBuildGradle = appBuildGradle.substring(0, injectionPoint) + `\n    ${implementationStatement}` + appBuildGradle.substring(injectionPoint);
+            appChangesMade = true;
+            log(`  + Added dependency to app/build.gradle: ${implementationStatement}`);
+        } else {
+            log('  ! Could not find dependencies block in app/build.gradle to inject plugin.');
+        }
+    }
+    
+    if (appChangesMade) {
+        fs.writeFileSync(appBuildGradlePath, appBuildGradle, 'utf8');
+        log('  ✓ app/build.gradle updated for local plugin.');
+    } else {
+        log('  ✓ app/build.gradle already has local plugin dependency.');
+    }
+}
+
 log('Starting native project configuration (manifests, gradle)...');
 configureAndroid();
 configureIos();
 createMainActivity();
+configureGradleForLocalPlugin();
 log('Native project configuration finished.');
