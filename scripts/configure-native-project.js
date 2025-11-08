@@ -278,59 +278,71 @@ public class MainActivity extends BridgeActivity {
 }
 
 function configureGradleForLocalPlugin() {
-    log('Ensuring local browser plugin is linked in Gradle...');
-    const gradlePluginName = 'aide-browser'; // Capacitor's convention
-    // Use a direct path to the plugin's source code, bypassing node_modules symlink issues.
-    const pluginPath = '../native-plugins/aide-browser/android';
+    log('Patching Gradle configuration for local browser plugin...');
+    const capacitorPluginId = ':@aide/browser'; // How Capacitor identifies the plugin from package.json
+    const directPluginPath = '../native-plugins/aide-browser/android';
 
-    // --- Part 1: settings.gradle ---
+    // --- Patch settings.gradle ---
     const settingsGradlePath = path.resolve(projectRoot, 'android/settings.gradle');
     if (!fs.existsSync(settingsGradlePath)) {
-        log('  ! android/settings.gradle not found. Skipping local plugin linking.');
+        log('  ! android/settings.gradle not found. Cannot patch local plugin path.');
         return;
     }
     
     let settingsGradle = fs.readFileSync(settingsGradlePath, 'utf8');
     let settingsChangesMade = false;
-    
-    const includeStatement = `include ':${gradlePluginName}'`;
-    if (!settingsGradle.includes(includeStatement)) {
-        settingsGradle = settingsGradle.trim() + `\n${includeStatement}\n`;
-        settingsChangesMade = true;
-        log(`  + Added to settings.gradle: ${includeStatement}`);
-    }
-    
-    const projectDirStatement = `project(':${gradlePluginName}').projectDir = new File(rootProject.projectDir, '${pluginPath}')`;
-    const oldProjectDirStatementRegex = new RegExp(`project\\(':${gradlePluginName}'\\)\\.projectDir = new File\\(rootProject\\.projectDir, '..(\\\\/|/)node_modules(\\\\/|/)@aide(\\\\/|/)browser(\\\\/|/)android'\\)`);
 
-    if (oldProjectDirStatementRegex.test(settingsGradle)) {
-        settingsGradle = settingsGradle.replace(oldProjectDirStatementRegex, projectDirStatement);
-        settingsChangesMade = true;
-        log(`  + Updated projectDir for ${gradlePluginName} in settings.gradle to use direct path.`);
-    } else if (!settingsGradle.includes(projectDirStatement)) {
-        settingsGradle = settingsGradle.trim() + `\n${projectDirStatement}\n`;
-        settingsChangesMade = true;
-        log(`  + Added projectDir for ${gradlePluginName} to settings.gradle using direct path.`);
+    // Regex to find the projectDir assignment for our plugin, regardless of the path it currently has.
+    const projectDirRegex = new RegExp(`(project\\('${capacitorPluginId}'\\)\\.projectDir = new File\\(rootProject\\.projectDir, ')([^']+)('\\))`);
+    
+    const match = settingsGradle.match(projectDirRegex);
+
+    if (match) {
+        const currentPath = match[2];
+        // The path in gradle files uses forward slashes, even on Windows.
+        const correctPathForGradle = directPluginPath.replace(/\\/g, '/');
+
+        if (currentPath !== correctPathForGradle) {
+            settingsGradle = settingsGradle.replace(projectDirRegex, `$1${correctPathForGradle}$3`);
+            settingsChangesMade = true;
+            log(`  + Patched projectDir for ${capacitorPluginId}:`);
+            log(`    - Old path: ${currentPath}`);
+            log(`    - New path: ${correctPathForGradle}`);
+        } else {
+            log(`  ✓ projectDir for ${capacitorPluginId} is already correct.`);
+        }
+    } else {
+        log(`  ! Could not find projectDir line for '${capacitorPluginId}' to patch. Attempting to add it.`);
+        // Fallback: If `capacitor sync` failed to add it, add it ourselves.
+        const includeStatement = `include '${capacitorPluginId}'`;
+        if (!settingsGradle.includes(includeStatement)) {
+            settingsGradle += `\n${includeStatement}`;
+            settingsChangesMade = true;
+        }
+        const projectDirStatement = `project('${capacitorPluginId}').projectDir = new File(rootProject.projectDir, '${directPluginPath.replace(/\\/g, '/')}')`;
+        if (!settingsGradle.includes(projectDirStatement)) {
+            settingsGradle += `\n${projectDirStatement}\n`;
+            settingsChangesMade = true;
+        }
     }
 
     if (settingsChangesMade) {
         fs.writeFileSync(settingsGradlePath, settingsGradle, 'utf8');
         log('  ✓ settings.gradle updated for local plugin.');
-    } else {
-        log('  ✓ settings.gradle already configured for local plugin.');
     }
 
-    // --- Part 2: android/app/build.gradle ---
+    // --- Verify app/build.gradle ---
+    // We just need to make sure the dependency exists. `capacitor sync` should add this, so this is just a safety check.
     const appBuildGradlePath = path.resolve(projectRoot, 'android/app/build.gradle');
     if (!fs.existsSync(appBuildGradlePath)) {
-        log('  ! android/app/build.gradle not found. Skipping dependency injection.');
+        log('  ! android/app/build.gradle not found. Cannot verify dependency.');
         return;
     }
     
     let appBuildGradle = fs.readFileSync(appBuildGradlePath, 'utf8');
     let appChangesMade = false;
 
-    const implementationStatement = `implementation project(':${gradlePluginName}')`;
+    const implementationStatement = `implementation project('${capacitorPluginId}')`;
     if (!appBuildGradle.includes(implementationStatement)) {
         const dependenciesRegex = /dependencies\s*\{/;
         const match = appBuildGradle.match(dependenciesRegex);
@@ -338,7 +350,7 @@ function configureGradleForLocalPlugin() {
             const injectionPoint = match.index + match[0].length;
             appBuildGradle = appBuildGradle.substring(0, injectionPoint) + `\n    ${implementationStatement}` + appBuildGradle.substring(injectionPoint);
             appChangesMade = true;
-            log(`  + Added dependency to app/build.gradle: ${implementationStatement}`);
+            log(`  + Added fallback dependency to app/build.gradle: ${implementationStatement}`);
         } else {
             log('  ! Could not find dependencies block in app/build.gradle to inject plugin.');
         }
