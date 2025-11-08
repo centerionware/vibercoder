@@ -1,3 +1,4 @@
+
 import fs from 'fs';
 import path from 'path';
 
@@ -266,10 +267,10 @@ class BrowserActivity : AppCompatActivity() {
         }
     }
 
-    override fun onNewIntent(intent: Intent?) {
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        val url = intent?.getStringExtra(EXTRA_URL)
+        val url = intent.getStringExtra(EXTRA_URL)
         if (url != null) {
             webView.loadUrl(url)
         } else {
