@@ -1,4 +1,5 @@
 
+
 import fs from 'fs';
 import path from 'path';
 
@@ -60,25 +61,32 @@ function configureAndroid() {
             log(`  + Added missing imports: ${importsToAdd.join(', ')}`);
         }
 
-        // Configure Java Version
-        if (!buildGradle.includes('JavaVersion.VERSION_17')) {
-            const compileOptionsRegex = /compileOptions\s*{[^}]*}/;
-            const newCompileOptions = `compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
+        // Configure Java Version to 21
+        const compileOptionsRegex = /compileOptions\s*{[^}]*}/;
+        const newCompileOptions = `compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
     }`;
-            if (compileOptionsRegex.test(buildGradle)) {
+        if (compileOptionsRegex.test(buildGradle)) {
+            const currentOptions = buildGradle.match(compileOptionsRegex)[0];
+            if (!currentOptions.includes('JavaVersion.VERSION_21')) {
                 buildGradle = buildGradle.replace(compileOptionsRegex, newCompileOptions);
-            } else {
-                buildGradle = buildGradle.replace(/android\s*{/, `android {\n    ${newCompileOptions}`);
+                gradleChangesMade = true;
+                log('  + Updated Java compatibility to version 21.');
             }
+        } else {
+            buildGradle = buildGradle.replace(/android\s*{/, `android {\n    ${newCompileOptions}`);
             gradleChangesMade = true;
-            log('  + Set Java compatibility to version 17.');
+            log('  + Added Java compatibility for version 21.');
         }
 
         if (buildGradle.includes("jvmTarget = '1.8'")) {
-             buildGradle = buildGradle.replace("jvmTarget = '1.8'", "jvmTarget = '17'");
-             log("  + Set kotlinOptions.jvmTarget to '17'.");
+             buildGradle = buildGradle.replace("jvmTarget = '1.8'", "jvmTarget = '21'");
+             log("  + Set kotlinOptions.jvmTarget to '21'.");
+             gradleChangesMade = true;
+        } else if (buildGradle.includes("jvmTarget = '17'")) {
+             buildGradle = buildGradle.replace("jvmTarget = '17'", "jvmTarget = '21'");
+             log("  + Set kotlinOptions.jvmTarget to '21'.");
              gradleChangesMade = true;
         }
 
