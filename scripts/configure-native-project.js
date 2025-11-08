@@ -160,6 +160,47 @@ function configureAndroid() {
     } else {
         log('android/app/build.gradle not found, skipping gradle configuration.');
     }
+
+    // --- PART 3: Manual Plugin Registration ---
+    log('Configuring manual registration for AideBrowser plugin...');
+    const mainActivityPackagePath = 'android/app/src/main/java/com/aide/app';
+    const mainActivityPath = path.resolve(projectRoot, mainActivityPackagePath, 'MainActivity.java');
+
+    const mainActivityContent = `
+package com.aide.app;
+
+import android.os.Bundle;
+import com.getcapacitor.BridgeActivity;
+import com.getcapacitor.Plugin;
+import java.util.ArrayList;
+
+// Import the custom plugin
+import com.aide.browser.AideBrowserPlugin;
+
+public class MainActivity extends BridgeActivity {
+  @Override
+  public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+
+    // Manually register the AideBrowserPlugin
+    this.init(savedInstanceState, new ArrayList<Class<? extends Plugin>>() {{
+      add(AideBrowserPlugin.class);
+    }});
+  }
+}
+`;
+
+    try {
+      if (fs.existsSync(mainActivityPath)) {
+        log('  - MainActivity.java already exists. Assuming plugin is registered.');
+      } else {
+        // The directory should already exist from `npx cap add android`
+        fs.writeFileSync(mainActivityPath, mainActivityContent.trim(), 'utf8');
+        log('  ✓ Created MainActivity.java with manual plugin registration.');
+      }
+    } catch (e) {
+      log('  ! Error creating MainActivity.java: ' + e.message);
+    }
 }
 
 function configureIos() {
