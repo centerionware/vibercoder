@@ -204,7 +204,7 @@ class AideBrowserPlugin : Plugin() {
     }
 
     @ActivityCallback
-    private fun browserResult(call: PluginCall?, _: ActivityResult) {
+    private fun browserResult(call: PluginCall?, _activityResult: ActivityResult) {
         call?.resolve()
     }
 }
