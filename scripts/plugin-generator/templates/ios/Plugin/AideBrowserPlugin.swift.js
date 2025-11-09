@@ -57,10 +57,22 @@ public class AideBrowserPlugin: CAPPlugin, WKNavigationDelegate {
         let width = call.getDouble("width") ?? 0
         let height = call.getDouble("height") ?? 0
         
-        // The coordinates from getBoundingClientRect() are relative to the viewport,
-        // which corresponds to the viewController's view coordinate space.
         DispatchQueue.main.async {
-            self.webView?.frame = CGRect(x: x, y: y, width: width, height: height)
+            guard let bridgeWebView = self.bridge?.webView else {
+                call.reject("Bridge webview not available")
+                return
+            }
+            
+            // getBoundingClientRect() provides coordinates relative to the web viewport.
+            // We need to convert these to be relative to the screen's coordinate space
+            // by adding the origin of the main Capacitor webView, which accounts for
+            // safe areas and status bars.
+            let webViewFrame = bridgeWebView.frame
+            
+            let newX = webViewFrame.origin.x + x
+            let newY = webViewFrame.origin.y + y
+            
+            self.webView?.frame = CGRect(x: newX, y: newY, width: width, height: height)
             call.resolve()
         }
     }

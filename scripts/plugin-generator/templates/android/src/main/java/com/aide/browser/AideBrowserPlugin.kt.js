@@ -70,15 +70,23 @@ class AideBrowserPlugin : Plugin() {
     
     @PluginMethod
     fun setBounds(call: PluginCall) {
+        // Values from JS are in device-independent pixels (dp)
         val x = call.getFloat("x") ?: 0f
         val y = call.getFloat("y") ?: 0f
         val width = call.getFloat("width") ?: 0f
         val height = call.getFloat("height") ?: 0f
 
         bridge.activity.runOnUiThread {
-            val layoutParams = FrameLayout.LayoutParams(width.toInt(), height.toInt())
-            layoutParams.leftMargin = x.toInt()
-            layoutParams.topMargin = y.toInt()
+            // Android's LayoutParams require physical pixels (px), so we must convert from dp.
+            val density = bridge.activity.resources.displayMetrics.density
+
+            val layoutParams = FrameLayout.LayoutParams(
+                (width * density).toInt(),
+                (height * density).toInt()
+            )
+            layoutParams.leftMargin = (x * density).toInt()
+            layoutParams.topMargin = (y * density).toInt()
+            
             webView?.layoutParams = layoutParams
             call.resolve()
         }
