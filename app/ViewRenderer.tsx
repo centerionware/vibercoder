@@ -49,7 +49,7 @@ const ViewRenderer: React.FC<AppLogic> = (props) => {
                 onClearConsole={props.handleClearConsoleLogs}
             />;
         case View.Browser:
-            return <BrowserView />;
+            return <BrowserView setContainer={props.setBrowserContainer} />;
         case View.Ai:
             return <AiView 
                 activeThread={props.activeThread}

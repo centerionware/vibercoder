@@ -17,7 +17,7 @@ export const openUrlFunction: FunctionDeclaration = {
 
 export const closeBrowserFunction: FunctionDeclaration = {
   name: 'closeBrowser',
-  description: 'Hides the browser view and returns to the previous view.',
+  description: 'Closes and destroys the current browser view.',
   parameters: {
     type: Type.OBJECT,
   },
@@ -85,15 +85,13 @@ export const getImplementations = ({ browserControlsRef, setActiveView }: Pick<T
 
     return {
         openUrl: async (args: { url: string }) => {
-            // The container is no longer needed for the new architecture.
-            await getControls().open(args.url, document.body); // Pass a dummy element.
+            await getControls().open(args.url);
             setActiveView(View.Browser);
             return { success: true, message: `Browser opened to ${args.url}.` };
         },
         closeBrowser: async () => {
             await getControls().close();
-            // The logic to switch to the previous view is now handled by the event listener
-            // in useAppLogic, which listens for the browser 'closed' event.
+            // The logic to switch to the previous view is handled by app logic reacting to the browser state.
             return { success: true, message: "Browser has been closed." };
         },
         getBrowserPageContent: async () => {
@@ -109,8 +107,7 @@ export const getImplementations = ({ browserControlsRef, setActiveView }: Pick<T
         },
         searchWeb: async (args: { query: string }) => {
             const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(args.query)}`;
-            // The container is no longer needed.
-            await getControls().open(searchUrl, document.body); // Pass a dummy element.
+            await getControls().open(searchUrl);
             setActiveView(View.Browser);
             return { success: true, message: `Browser opened with search results for "${args.query}".` };
         },

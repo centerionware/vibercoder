@@ -1,42 +1,71 @@
 export const content = `
 import Foundation
 import Capacitor
+import WebKit
 
 @objc(AideBrowserPlugin)
-public class AideBrowserPlugin: CAPPlugin {
-    var viewController: BrowserViewController?
+public class AideBrowserPlugin: CAPPlugin, WKNavigationDelegate {
+    
+    private var webView: WKWebView?
 
     @objc func open(_ call: CAPPluginCall) {
         let urlString = call.getString("url") ?? ""
-        
         guard let url = URL(string: urlString) else {
             call.reject("Invalid URL")
             return
         }
 
         DispatchQueue.main.async {
-            if let existingVC = self.viewController, existingVC.isViewLoaded, existingVC.view.window != nil {
-                existingVC.loadUrl(url: url)
-                call.resolve()
-            } else {
-                self.viewController = BrowserViewController()
-                self.viewController!.plugin = self
-                self.viewController!.initialUrl = url
-                self.viewController!.modalPresentationStyle = .fullScreen
-                
-                self.bridge?.viewController?.present(self.viewController!, animated: true, completion: {
-                     call.resolve()
-                })
+            if self.webView == nil {
+                let webConfiguration = WKWebViewConfiguration()
+                self.webView = WKWebView(frame: .zero, configuration: webConfiguration)
+                self.webView?.navigationDelegate = self
+                self.webView?.isHidden = true
+                self.bridge?.viewController?.view.addSubview(self.webView!)
             }
+            
+            let request = URLRequest(url: url)
+            self.webView?.load(request)
+            call.resolve()
+        }
+    }
+
+    @objc func show(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            self.webView?.isHidden = false
+            // Bring to front if other views were added
+            if let wv = self.webView {
+                self.bridge?.viewController?.view.bringSubviewToFront(wv)
+            }
+            call.resolve()
+        }
+    }
+
+    @objc func hide(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            self.webView?.isHidden = true
+            call.resolve()
+        }
+    }
+
+    @objc func setBounds(_ call: CAPPluginCall) {
+        let x = call.getDouble("x") ?? 0
+        let y = call.getDouble("y") ?? 0
+        let width = call.getDouble("width") ?? 0
+        let height = call.getDouble("height") ?? 0
+
+        DispatchQueue.main.async {
+            self.webView?.frame = CGRect(x: x, y: y, width: width, height: height)
+            call.resolve()
         }
     }
 
     @objc func close(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
-            self.viewController?.dismiss(animated: true) {
-                self.viewController = nil
-                call.resolve()
-            }
+            self.webView?.removeFromSuperview()
+            self.webView = nil
+            self.notifyListeners("closed", data: nil)
+            call.resolve()
         }
     }
     
@@ -44,7 +73,7 @@ public class AideBrowserPlugin: CAPPlugin {
         let code = call.getString("code") ?? ""
         
         DispatchQueue.main.async {
-            guard let webView = self.viewController?.webView else {
+            guard let webView = self.webView else {
                 call.reject("Browser is not open or webView is not available.")
                 return
             }
@@ -62,6 +91,10 @@ public class AideBrowserPlugin: CAPPlugin {
                 }
             }
         }
+    }
+
+    public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        self.notifyListeners("pageLoaded", data: nil)
     }
 }
 `;

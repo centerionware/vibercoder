@@ -1,16 +1,29 @@
-import React from 'react';
-import BrowserIcon from '../icons/BrowserIcon';
+import React, { useRef, useEffect } from 'react';
 
-// This view now serves as a placeholder. The actual browser content is rendered
-// in a native Activity (Android) or ViewController (iOS) on top of the webview.
-const BrowserView: React.FC = () => {
+interface BrowserViewProps {
+  setContainer: (element: HTMLElement | null) => void;
+}
+
+const BrowserView: React.FC<BrowserViewProps> = ({ setContainer }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (containerRef.current) {
+      setContainer(containerRef.current);
+    }
+    // Return a cleanup function to unregister the container when the view is unmounted.
+    return () => {
+      setContainer(null);
+    };
+  }, [setContainer]);
+
   return (
-    <div className="flex flex-col flex-1 h-full bg-vibe-bg-deep items-center justify-center text-center p-4">
-        <BrowserIcon className="w-16 h-16 text-vibe-comment mb-4 animate-pulse" />
-        <p className="text-vibe-comment max-w-sm">
-            The native browser is active. Use the AI to navigate or close it.
-        </p>
-    </div>
+    <div
+      ref={containerRef}
+      className="flex-1 w-full h-full bg-black"
+      // This container defines the area where the native browser view will be displayed.
+      // The `useBrowser` hook will observe this element's size and position.
+    />
   );
 };
 

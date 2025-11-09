@@ -103,7 +103,6 @@ export interface UseAiChatProps {
   onEndAiRequest: () => void;
 }
 
-// FIX: Created a dedicated interface for the live session controls to break type circular dependencies.
 export interface LiveSessionControls {
     startLiveSession: () => Promise<boolean>;
     stopLiveSession: (options?: { immediate?: boolean; isUnmount?: boolean }) => void;
@@ -115,7 +114,6 @@ export interface LiveSessionControls {
     setAudioPipe: (target: 'ai' | 'none') => void;
 }
 
-// FIX: Removed `liveSessionControls` from props. A hook's props should not include its own return value.
 export interface UseAiLiveProps extends UseAiChatProps {
     activeView: View;
     onPermissionError: (message: string) => void;
@@ -259,7 +257,7 @@ export interface UseWakeWordProps {
 
 // --- Browser Tool ---
 export interface BrowserControls {
-  open(url: string, container: HTMLElement): Promise<void>;
+  open(url: string): Promise<void>;
   close(): Promise<void>;
   show(): Promise<void>;
   hide(): Promise<void>;
@@ -271,8 +269,6 @@ export interface BrowserControls {
 
 
 // --- Tooling ---
-// FIX: The DELETED_FILE_SENTINEL was a Symbol, which is not serializable and caused crashes
-// when saving the VFS session to IndexedDB. It has been replaced with a unique, constant string.
 export const DELETED_FILE_SENTINEL = '__VFS_DELETED__' as const;
 
 export interface AiVirtualFileSystem {
@@ -293,10 +289,8 @@ export interface ToolImplementationsDependencies {
     onSettingsChange: (settings: AppSettings) => void;
     bundleLogs: string[];
     previewConsoleLogs: PreviewLogEntry[];
-    // FIX: Changed to a ref to solve a circular dependency in useAppLogic.
     liveSessionControlsRef: React.RefObject<LiveSessionControls | undefined>;
     browserControlsRef: React.RefObject<BrowserControls | undefined>;
-    // FIX: Replaced 'activeThread' with a getter function 'getActiveThread' to prevent stale state issues in tool implementations.
     getActiveThread: () => ChatThread | undefined;
     updateThread: (threadId: string, updates: Partial<ChatThread>) => void;
     setScreenshotPreview: (dataUrl: string | null) => void;

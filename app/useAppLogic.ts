@@ -436,14 +436,19 @@ export const useAppLogic = () => {
     const browser = useBrowser();
     const browserControlsRef = useRef<BrowserControls>();
     browserControlsRef.current = browser.controls;
-
-    // Listen for the native browser 'closed' event to navigate back.
+    
+    const [browserContainer, setBrowserContainer] = useState<HTMLElement | null>(null);
     useEffect(() => {
-        if (browser.state.isInitialized === false && activeView === View.Browser) {
-            console.log("Browser was closed, returning to last active view:", lastActiveView);
-            setActiveView(lastActiveView);
+        browser.controls.setContainer(browserContainer);
+    }, [browser, browserContainer]);
+
+    useEffect(() => {
+        if (activeView === View.Browser) {
+            browser.controls.show();
+        } else {
+            browser.controls.hide();
         }
-    }, [browser.state.isInitialized, activeView, lastActiveView]);
+    }, [activeView, browser.controls]);
 
 
     const liveControlsRef = useRef<LiveSessionControls>();
@@ -545,5 +550,6 @@ export const useAppLogic = () => {
         onProxyNavigate: handleProxyNavigate,
         // Browser State
         browser,
+        setBrowserContainer, // Expose the container setter
     };
 };
