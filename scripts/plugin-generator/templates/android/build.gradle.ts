@@ -24,15 +24,15 @@ android {
         versionName "1.0"
     }
     
+    // This is the critical change to fix the "No matching variant" error.
+    // It explicitly tells Gradle to publish artifacts for all build types (debug, release),
+    // making them discoverable by the main app.
+    publishNonDefault = true
+
     buildTypes {
         release {
             minifyEnabled false
         }
-    }
-
-    publishing {
-        singleVariant("release")
-        singleVariant("debug")
     }
 
     lintOptions {
