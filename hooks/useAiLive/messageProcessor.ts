@@ -104,7 +104,6 @@ export const createMessageProcessor = (deps: MessageProcessorDependencies) => {
         sessionRefs.current.currentThinkingContent = '';
         sessionRefs.current.currentToolCalls = [];
 
-        inactivity.startInactivityTimer();
     };
 
     self.processModelOutput = async (message: any) => {
@@ -247,8 +246,13 @@ export const createMessageProcessor = (deps: MessageProcessorDependencies) => {
         if (message.serverContent?.turnComplete) {
             if (!sessionRefs.current.isTurnFinalizing) {
                 sessionRefs.current.isTurnFinalizing = true;
+                // FIX: The inactivity timer must only be started after a natural turn completion.
+                // It was previously called inside finalizeTurn, creating a loop.
                 endOfTurnTimerRef.current = window.setTimeout(
-                    () => self.finalizeTurn(), 1000
+                    () => {
+                        self.finalizeTurn();
+                        inactivity.startInactivityTimer();
+                    }, 1000
                 );
             }
         }
