@@ -5,6 +5,7 @@
   "type": "module",
   "main": "electron/main.js",
   "scripts": {
+    "preinstall": "node scripts/create-native-plugins.js",
     "postinstall": "patch-package",
     "lint": "tsc --noEmit",
     "build:web": "vite build",
@@ -20,6 +21,7 @@
     "build:docker": "docker build -t aide:latest -f Dockerfile.json"
   },
   "dependencies": {
+    "@aide/browser": "file:native-plugins/aide-browser",
     "@capacitor/android": "^7.0.0",
     "@capacitor/camera": "*",
     "@capacitor/core": "^7.0.0",
