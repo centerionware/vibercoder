@@ -1,3 +1,4 @@
+
 import fs from 'fs';
 import path from 'path';
 
@@ -45,30 +46,18 @@ end
 `,
   // Android build.gradle
   'android/build.gradle': `
+// Use the modern plugins DSL for better variant-aware dependency management
+plugins {
+    id 'com.android.library'
+    id 'org.jetbrains.kotlin.android'
+}
+
 ext {
     junitVersion = project.hasProperty('junitVersion') ? project.property('junitVersion') : '4.13.2'
     androidxAppCompatVersion = project.hasProperty('androidxAppCompatVersion') ? project.property('androidxAppCompatVersion') : '1.6.1'
     androidxJunitVersion = project.hasProperty('androidxJunitVersion') ? project.property('androidxJunitVersion') : '1.1.5'
     kotlin_version = project.hasProperty('kotlinVersion') ? project.property('kotlinVersion') : '1.9.22'
 }
-
-buildscript {
-    ext {
-        kotlin_version = project.hasProperty('kotlinVersion') ? project.property('kotlinVersion') : '1.9.22'
-    }
-
-    repositories {
-        google()
-        mavenCentral()
-    }
-    dependencies {
-        classpath 'com.android.tools.build:gradle:8.7.2'
-        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
-    }
-}
-
-apply plugin: 'com.android.library'
-apply plugin: 'kotlin-android'
 
 android {
     namespace "com.aide.browser"
@@ -79,28 +68,27 @@ android {
         versionCode 1
         versionName "1.0"
     }
-    // This is a deprecated flag, but it's often more reliable in complex build environments
-    // than the newer 'publishing' block for ensuring variants are published.
-    publishNonDefault true
+    
     buildTypes {
         release {
             minifyEnabled false
         }
-        debug {
-            minifyEnabled false
-        }
     }
-    lintOptions {
+
+    // lintOptions is deprecated, use lint
+    lint {
         abortOnError false
     }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_21
         targetCompatibility JavaVersion.VERSION_21
     }
+
     kotlinOptions {
         jvmTarget = '21'
     }
-    // It's good practice for library modules not to generate a BuildConfig file.
+
     buildFeatures {
         buildConfig false
     }
