@@ -1,3 +1,4 @@
+
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { BrowserControls } from '../types';
@@ -123,7 +124,7 @@ export const useBrowser = () => {
   }, [isPluginAvailable, state.isInitialized]);
 
   const getPageContent = useCallback(async () => {
-    const result = await executeScript<{ body: string }>(`
+    const result = await executeScript<string>(`
       (function() {
         return document.body.innerHTML;
       })();
