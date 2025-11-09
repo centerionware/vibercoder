@@ -12,7 +12,7 @@ const files = {
 {
   "name": "@aide/browser",
   "version": "1.0.0",
-  "description": "AIDE In-App Browser Plugin (Native Only)",
+  "description": "AIDE Embedded In-App Browser Plugin (Native Only)",
   "capacitor": {
     "ios": {
       "src": "ios"
@@ -54,8 +54,6 @@ ext {
 }
 
 buildscript {
-    // Define versions needed for the buildscript's own dependencies here.
-    // This is a separate scope from the top-level 'ext' block.
     ext {
         kotlin_version = project.hasProperty('kotlinVersion') ? project.property('kotlinVersion') : '1.9.22'
     }
@@ -66,7 +64,6 @@ buildscript {
     }
     dependencies {
         classpath 'com.android.tools.build:gradle:8.2.1'
-        // This now correctly references the kotlin_version from the ext block *inside* buildscript.
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
     }
 }
@@ -82,7 +79,6 @@ android {
         targetSdkVersion project.hasProperty('targetSdkVersion') ? project.property('targetSdkVersion') : 34
         versionCode 1
         versionName "1.0"
-        consumerProguardFiles 'proguard-rules.pro'
     }
     buildTypes {
         release {
@@ -110,37 +106,27 @@ repositories {
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
     implementation project(':capacitor-android')
-    // These correctly reference the variables from the top-level 'ext' block.
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
-    testImplementation "junit:junit:$junitVersion"
-    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
 }
 `,
-  // Proguard rules for Android release builds
-  'android/proguard-rules.pro': `
--keep public class com.aide.browser.** { *; }
--keep public class * extends com.getcapacitor.Plugin
--keep public @com.getcapacitor.annotation.CapacitorPlugin class *
-`,
 
-  // Android Manifest
+  // Android Manifest (empty, as we are not using a separate Activity anymore)
   'android/src/main/AndroidManifest.xml': `
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application>
-        <activity
-            android:name="com.aide.browser.BrowserActivity"
-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
-            android:launchMode="singleTop" />
-    </application>
 </manifest>
 `,
 
-  // Android Plugin Kotlin file
+  // Android Plugin Kotlin file with new embedded logic
   'android/src/main/java/com/aide/browser/AideBrowserPlugin.kt': `
 package com.aide.browser
 
-import android.content.Intent
+import android.annotation.SuppressLint
+import android.view.View
+import android.view.ViewGroup
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.widget.FrameLayout
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
@@ -150,188 +136,167 @@ import com.getcapacitor.annotation.CapacitorPlugin
 @CapacitorPlugin(name = "AideBrowser")
 class AideBrowserPlugin : Plugin() {
 
-    companion object {
-        var instance: AideBrowserPlugin? = null
+    private var webView: WebView? = null
 
-        // Public bridge methods for the Activity to call, which can then safely
-        // access the protected 'notifyListeners' method.
-        fun notifyPageLoaded() {
-            instance?.notifyListeners("pageLoaded", null)
-        }
-
-        fun notifyClosed() {
-            instance?.notifyListeners("closed", null)
-        }
-    }
-
-    override fun load() {
-        instance = this
-    }
-
+    @SuppressLint("SetJavaScriptEnabled")
     @PluginMethod
     fun open(call: PluginCall) {
-        val url = call.getString("url")
-        if (url == null) {
-            call.reject("Must provide a URL")
-            return
+        val url = call.getString("url") ?: return call.reject("Must provide a URL")
+        val bounds = call.getObject("bounds") ?: return call.reject("Must provide bounds")
+
+        activity.runOnUiThread {
+            if (webView == null) {
+                webView = WebView(context)
+                webView!!.settings.javaScriptEnabled = true
+                webView!!.webViewClient = object : WebViewClient() {
+                    override fun onPageFinished(view: WebView?, url: String?) {
+                        super.onPageFinished(view, url)
+                    }
+                }
+                val layoutParams = FrameLayout.LayoutParams(0, 0)
+                (bridge.view.parent as ViewGroup).addView(webView, layoutParams)
+            }
+            updateBounds(call)
+            webView?.loadUrl(url)
+            call.resolve()
         }
-
-        val intent = Intent(context, BrowserActivity::class.java)
-        intent.putExtra(BrowserActivity.EXTRA_URL, url)
-        
-        // Start the activity from the main Activity context
-        activity.startActivity(intent)
-
-        // Resolve the call immediately so the AI doesn't wait for the browser to close
-        call.resolve()
     }
 
     @PluginMethod
     fun close(call: PluginCall) {
-        BrowserActivity.closeInstance()
-        call.resolve()
+        activity.runOnUiThread {
+            if (webView != null) {
+                (bridge.view.parent as ViewGroup).removeView(webView)
+                webView?.destroy()
+                webView = null
+            }
+            call.resolve()
+        }
+    }
+
+    @PluginMethod
+    fun show(call: PluginCall) {
+        activity.runOnUiThread {
+            webView?.visibility = View.VISIBLE
+            call.resolve()
+        }
+    }
+
+    @PluginMethod
+    fun hide(call: PluginCall) {
+        activity.runOnUiThread {
+            webView?.visibility = View.GONE
+            call.resolve()
+        }
+    }
+
+    @PluginMethod
+    fun updateBounds(call: PluginCall) {
+        val bounds = call.getObject("bounds") ?: return call.reject("Must provide bounds")
+        val x = bounds.getInteger("x", 0)
+        val y = bounds.getInteger("y", 0)
+        val width = bounds.getInteger("width", 0)
+        val height = bounds.getInteger("height", 0)
+
+        activity.runOnUiThread {
+            val layoutParams = webView?.layoutParams as? FrameLayout.LayoutParams
+            if (layoutParams != null) {
+                layoutParams.width = width
+                layoutParams.height = height
+                layoutParams.leftMargin = x
+                layoutParams.topMargin = y
+                webView?.layoutParams = layoutParams
+            }
+            call.resolve()
+        }
     }
     
     @PluginMethod
     fun executeScript(call: PluginCall) {
-        val code = call.getString("code")
-        if (code == null) {
-            call.reject("Must provide code to execute")
-            return
-        }
+        val code = call.getString("code") ?: return call.reject("Must provide code to execute")
         
-        BrowserActivity.executeScript(code) { result ->
-            val ret = JSObject()
-            ret.put("value", result)
-            call.resolve(ret)
+        activity.runOnUiThread {
+            webView?.evaluateJavascript(code) { result ->
+                val escapedResult = result?.toString()?.removeSurrounding("\\"") ?: "null"
+                val ret = JSObject()
+                ret.put("value", escapedResult)
+                call.resolve(ret)
+            }
         }
     }
 }
 `,
-  // Android Activity Kotlin file
-  'android/src/main/java/com/aide/browser/BrowserActivity.kt': `
-package com.aide.browser
-
-import android.annotation.SuppressLint
-import android.content.Intent
-import android.os.Bundle
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import androidx.appcompat.app.AppCompatActivity
-
-class BrowserActivity : AppCompatActivity() {
-
-    lateinit var webView: WebView
-
-    companion object {
-        const val EXTRA_URL = "extra_url"
-        private var instance: BrowserActivity? = null
-
-        fun closeInstance() {
-            instance?.finish()
-        }
-        
-        fun executeScript(code: String, callback: (String) -> Unit) {
-            instance?.runOnUiThread {
-                instance?.webView?.evaluateJavascript(code) { result ->
-                    // FIX: Correctly escape the backslash for the string literal in Kotlin.
-                    val resultString = result?.toString()?.removeSurrounding("\\"") ?: "null"
-                    callback(resultString)
-                }
-            }
-        }
-    }
-
-    @SuppressLint("SetJavaScriptEnabled")
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        instance = this
-
-        webView = WebView(this)
-        setContentView(webView)
-
-        webView.settings.javaScriptEnabled = true
-        webView.webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView?, url: String?) {
-                super.onPageFinished(view, url)
-                // Call the new public bridge method on the plugin
-                AideBrowserPlugin.notifyPageLoaded()
-            }
-        }
-
-        val url = intent.getStringExtra(EXTRA_URL)
-        if (url != null) {
-            webView.loadUrl(url)
-        } else {
-            finish()
-        }
-    }
-
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        val url = intent.getStringExtra(EXTRA_URL)
-        if (url != null) {
-            webView.loadUrl(url)
-        } else {
-            finish()
-        }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        if (instance == this) {
-            // Call the new public bridge method on the plugin
-            AideBrowserPlugin.notifyClosed()
-            instance = null
-        }
-    }
-}
-`,
-
   // iOS Plugin Swift file
   'ios/Plugin/AideBrowserPlugin.swift': `
 import Foundation
 import Capacitor
+import WebKit
 
 @objc(AideBrowserPlugin)
-public class AideBrowserPlugin: CAPPlugin {
-    var viewController: BrowserViewController?
+public class AideBrowserPlugin: CAPPlugin, WKNavigationDelegate {
+    var webView: WKWebView?
 
     @objc func open(_ call: CAPPluginCall) {
         let urlString = call.getString("url") ?? ""
-        
         guard let url = URL(string: urlString) else {
             call.reject("Invalid URL")
             return
         }
+        guard let bounds = call.getObject("bounds") else {
+            call.reject("Must provide bounds")
+            return
+        }
 
         DispatchQueue.main.async {
-            // Check if the browser view controller is already open and visible.
-            if let existingVC = self.viewController, existingVC.isViewLoaded, existingVC.view.window != nil {
-                // If it is, just tell it to load the new URL.
-                existingVC.loadUrl(url: url)
-                call.resolve()
-            } else {
-                // If not, create and present a new instance.
-                self.viewController = BrowserViewController()
-                self.viewController!.plugin = self
-                self.viewController!.initialUrl = url
-                self.viewController!.modalPresentationStyle = .fullScreen
-                
-                self.bridge?.viewController?.present(self.viewController!, animated: true, completion: {
-                     call.resolve()
-                })
+            if self.webView == nil {
+                let webConfiguration = WKWebViewConfiguration()
+                self.webView = WKWebView(frame: .zero, configuration: webConfiguration)
+                self.webView!.navigationDelegate = self
+                self.bridge?.viewController?.view.addSubview(self.webView!)
             }
+            
+            self.updateBounds(call)
+            let request = URLRequest(url: url)
+            self.webView?.load(request)
+            call.resolve()
         }
     }
 
     @objc func close(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
-            self.viewController?.dismiss(animated: true) {
-                self.viewController = nil
-                call.resolve()
-            }
+            self.webView?.removeFromSuperview()
+            self.webView = nil
+            call.resolve()
+        }
+    }
+
+    @objc func show(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            self.webView?.isHidden = false
+            call.resolve()
+        }
+    }
+
+    @objc func hide(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            self.webView?.isHidden = true
+            call.resolve()
+        }
+    }
+    
+    @objc func updateBounds(_ call: CAPPluginCall) {
+        guard let bounds = call.getObject("bounds") else {
+            call.reject("Must provide bounds")
+            return
+        }
+        let x = bounds["x"] as? CGFloat ?? 0
+        let y = bounds["y"] as? CGFloat ?? 0
+        let width = bounds["width"] as? CGFloat ?? 0
+        let height = bounds["height"] as? CGFloat ?? 0
+
+        DispatchQueue.main.async {
+            self.webView?.frame = CGRect(x: x, y: y, width: width, height: height)
+            call.resolve()
         }
     }
     
@@ -339,71 +304,24 @@ public class AideBrowserPlugin: CAPPlugin {
         let code = call.getString("code") ?? ""
         
         DispatchQueue.main.async {
-            guard let webView = self.viewController?.webView else {
-                call.reject("Browser is not open or webView is not available.")
+            guard let webView = self.webView else {
+                call.reject("Browser is not open.")
                 return
             }
             webView.evaluateJavaScript(code) { (result, error) in
                 if let error = error {
                     call.reject("Script evaluation error: \\(error.localizedDescription)")
                 } else {
-                    var resultValue: Any
-                    if result == nil || type(of: result) == NSNull.self {
-                        resultValue = NSNull()
-                    } else {
-                        resultValue = result!
-                    }
-                    call.resolve(["value": resultValue])
+                    call.resolve(["value": result ?? NSNull()])
                 }
             }
         }
     }
 }
 `,
-  // iOS ViewController Swift file
-  'ios/Plugin/BrowserViewController.swift': `
-import UIKit
-import WebKit
-import Capacitor
-
-class BrowserViewController: UIViewController, WKNavigationDelegate {
-    
-    weak var plugin: CAPPlugin?
-    var webView: WKWebView!
-    var initialUrl: URL?
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-
-        let webConfiguration = WKWebViewConfiguration()
-        webView = WKWebView(frame: .zero, configuration: webConfiguration)
-        webView.navigationDelegate = self
-        view = webView
-        
-        if let url = initialUrl {
-            let request = URLRequest(url: url)
-            webView.load(request)
-        }
-    }
-
-    public func loadUrl(url: URL) {
-        let request = URLRequest(url: url)
-        webView.load(request)
-    }
-
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        plugin?.notifyListeners("pageLoaded", data: nil)
-    }
-    
-    override func viewDidDisappear(_ animated: Bool) {
-        super.viewDidDisappear(animated)
-        plugin?.notifyListeners("closed", data: nil)
-    }
-}
-`
 };
 
-log('Starting native plugin generation...');
+log('Starting embedded native plugin generation...');
 if (!fs.existsSync(pluginDir)) {
     log(`Creating plugin directory: ${pluginDir}`);
     fs.mkdirSync(pluginDir, { recursive: true });
@@ -419,4 +337,4 @@ for (const [filePath, content] of Object.entries(files)) {
     log(`  ✓ Wrote ${filePath}`);
 }
 
-log('Native browser plugin generated successfully.');
+log('Embedded native browser plugin generated successfully.');

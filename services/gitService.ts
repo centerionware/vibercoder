@@ -38,9 +38,9 @@ class MainThreadGitService implements GitService {
     private fs: any;
     private dir = '/';
     private http: any;
-    private getAuth: (operation: 'read' | 'write') => ({ token: string | undefined; author: GitAuthor; proxyUrl: string; }) | null;
+    private getAuth: (operation: 'read' | 'write') => ({ token: string | undefined; author: GitAuthor; }) | null;
 
-    constructor(projectId: string, getAuthCallback: (operation: 'read' | 'write') => ({ token: string | undefined; author: GitAuthor; proxyUrl: string; }) | null) {
+    constructor(projectId: string, getAuthCallback: (operation: 'read' | 'write') => ({ token: string | undefined; author: GitAuthor; }) | null) {
         // Use a unique FS name to avoid collisions, especially when running inside the preview iframe.
         const fsName = `aide-fs-main-${window.self !== window.top ? 'iframe-' : ''}${projectId}`;
         this.fs = new LightningFS(fsName);
@@ -87,7 +87,6 @@ class MainThreadGitService implements GitService {
 
     async clone(url: string, onProgress?: (progress: GitProgress) => void): Promise<{ files: Record<string, string> }> {
         const auth = this.getAuth('read');
-        const isNative = Capacitor.isNativePlatform() || !!window.electron?.isElectron;
         await this.clearFs();
 
         const options = {
@@ -98,10 +97,6 @@ class MainThreadGitService implements GitService {
             onAuth: () => ({ username: auth?.token }),
             onProgress,
         };
-
-        if (!isNative) {
-            (options as any).corsProxy = auth?.proxyUrl;
-        }
 
         await git.clone(options as any);
         const files = await this.getWorkingDirFiles();
@@ -236,7 +231,6 @@ class MainThreadGitService implements GitService {
         if (!branch) {
             throw new Error("Cannot push: Not currently on a branch.");
         }
-        const isNative = Capacitor.isNativePlatform() || !!window.electron?.isElectron;
 
         const options = {
             fs: this.fs,
@@ -247,10 +241,6 @@ class MainThreadGitService implements GitService {
             ref: branch,
         };
 
-        if (!isNative) {
-            (options as any).corsProxy = auth.proxyUrl;
-        }
-
         return git.push(options as any);
     }
 
@@ -260,7 +250,6 @@ class MainThreadGitService implements GitService {
         if (!author) throw new Error("Cannot pull: Git author information is not configured.");
         const branch = await git.currentBranch({ fs: this.fs, dir: this.dir });
         if (!branch) throw new Error("Not on a branch, cannot pull.");
-        const isNative = Capacitor.isNativePlatform() || !!window.electron?.isElectron;
         
         const options = {
             fs: this.fs,
@@ -273,10 +262,6 @@ class MainThreadGitService implements GitService {
             onAuth: () => ({ username: auth?.token }),
             onProgress,
         };
-
-        if (!isNative) {
-            (options as any).corsProxy = auth?.proxyUrl;
-        }
 
         await git.pull(options as any);
         const newFiles = await this.getWorkingDirFiles();
@@ -331,7 +316,7 @@ class WorkerGitService implements GitService {
     private requests: Map<string, { resolve: (value: any) => void; reject: (reason?: any) => void; }> = new Map();
     private mockService = new MockGitService();
     private initPromise: Promise<void> | null = null;
-    private getAuth: (operation: 'read' | 'write') => ({ token: string | undefined; author: GitAuthor; proxyUrl: string; }) | null = () => null;
+    private getAuth: (operation: 'read' | 'write') => ({ token: string | undefined; author: GitAuthor; }) | null = () => null;
 
     constructor(projectId: string) {
         try {
@@ -399,11 +384,6 @@ class WorkerGitService implements GitService {
 
         const auth = this.getAuth(operation);
         const finalPayload = { ...payload, auth };
-
-        const isElectron = !!window.electron?.isElectron;
-        if (isElectron && finalPayload.auth) {
-            delete (finalPayload.auth as any).proxyUrl;
-        }
 
         const id = uuidv4();
         

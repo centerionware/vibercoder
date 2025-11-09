@@ -7,6 +7,7 @@ import AiView from '../components/views/AiView';
 import GitView from '../components/views/GitView';
 import SettingsView from '../components/views/SettingsView';
 import PromptsView from '../components/views/PromptsView';
+import BrowserView from '../components/views/BrowserView';
 import { useAppLogic } from './useAppLogic';
 
 type AppLogic = ReturnType<typeof useAppLogic>;
@@ -47,6 +48,8 @@ const ViewRenderer: React.FC<AppLogic> = (props) => {
                 onConsoleMessage={props.handleConsoleMessage}
                 onClearConsole={props.handleClearConsoleLogs}
             />;
+        case View.Browser:
+            return <BrowserView setContainer={props.browser.controls.setContainer} />;
         case View.Ai:
             return <AiView 
                 activeThread={props.activeThread}

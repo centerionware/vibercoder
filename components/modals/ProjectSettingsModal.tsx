@@ -19,7 +19,6 @@ const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = (props) => {
       userName: globalSettings.gitUserName,
       userEmail: globalSettings.gitUserEmail,
       authToken: '',
-      corsProxy: globalSettings.gitCorsProxy,
   });
   
   useEffect(() => {
@@ -31,7 +30,6 @@ const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = (props) => {
             userName: globalSettings.gitUserName,
             userEmail: globalSettings.gitUserEmail,
             authToken: '',
-            corsProxy: globalSettings.gitCorsProxy,
         });
     }
   }, [project, globalSettings]);
@@ -123,10 +121,6 @@ const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = (props) => {
                      <div>
                         <label className="text-sm">Auth Token</label>
                         <input type="password" value={customSettings.authToken} onChange={e => setCustomSettings({...customSettings, authToken: e.target.value})} className="w-full bg-vibe-bg p-2 rounded-md mt-1" />
-                     </div>
-                     <div>
-                        <label className="text-sm">CORS Proxy URL</label>
-                        <input type="text" value={customSettings.corsProxy} onChange={e => setCustomSettings({...customSettings, corsProxy: e.target.value})} className="w-full bg-vibe-bg p-2 rounded-md mt-1" />
                      </div>
                 </div>
             )}

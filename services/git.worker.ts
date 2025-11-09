@@ -49,7 +49,7 @@ async function clearFs(): Promise<void> {
 
 // This is a proxy function. The actual `getGitAuth` lives on the main thread.
 // The main thread will pass the *result* of its `getGitAuth` call with each command.
-const getAuthFromPayload = (payload: any): { token: string | undefined; author: GitAuthor; proxyUrl: string; } => {
+const getAuthFromPayload = (payload: any): { token: string | undefined; author: GitAuthor; } => {
     if (!payload.auth) {
         throw new Error(`Authentication details not provided for Git operation.`);
     }
@@ -81,7 +81,7 @@ self.onmessage = async (event: MessageEvent) => {
         await clearFs();
 
         await git.clone({
-          fs, http, dir, corsProxy: cloneAuth.proxyUrl, url: payload.url,
+          fs, http, dir, url: payload.url,
           onAuth: () => ({ username: cloneAuth.token }),
           onProgress: (progress) => {
             self.postMessage({ type: 'progress', id, payload: progress });
@@ -219,7 +219,7 @@ self.onmessage = async (event: MessageEvent) => {
             throw new Error("Cannot push: Not currently on a branch.");
         }
         result = await git.push({
-            fs, http, dir, corsProxy: pushAuth.proxyUrl,
+            fs, http, dir,
             ref: branch,
             onAuth: () => ({ username: pushAuth.token }),
             onProgress: (progress) => {
@@ -235,7 +235,7 @@ self.onmessage = async (event: MessageEvent) => {
           throw new Error("Not on a branch, cannot pull. Please checkout a branch first.");
         }
         await git.pull({
-            fs, http, dir, corsProxy: pullAuth.proxyUrl,
+            fs, http, dir,
             onAuth: () => ({ username: pullAuth.token }),
             author: pullAuth.author,
             ref: currentBranch,

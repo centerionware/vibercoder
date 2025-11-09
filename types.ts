@@ -10,6 +10,7 @@ export enum View {
   Git = 'git',
   Settings = 'settings',
   Prompts = 'prompts',
+  Browser = 'browser',
 }
 
 export interface AppSettings {
@@ -22,7 +23,6 @@ export interface AppSettings {
   gitUserName: string;
   gitUserEmail: string;
   gitAuthToken: string;
-  gitCorsProxy: string;
   wakeWord: string;
   wakeWordEnabled: boolean;
   autoEnableLiveMode: boolean;
@@ -211,7 +211,6 @@ export interface GitSettings {
     userName: string;
     userEmail: string;
     authToken: string;
-    corsProxy: string;
   };
 }
 
@@ -260,12 +259,14 @@ export interface UseWakeWordProps {
 
 // --- Browser Tool ---
 export interface BrowserControls {
-  // FIX: The `openUrl` function in `useBrowser.ts` returns a Promise and is awaited by consumers. The type is updated from `void` to `Promise<void>` to match the implementation and fix the type error.
-  openUrl: (url: string) => Promise<void>;
-  closeBrowser: () => void;
-  getPageContent: () => Promise<string>;
-  interactWithPage: (selector: string, action: 'click' | 'type', value?: string) => Promise<string>;
-  captureBrowserScreenshot: () => Promise<string>;
+  open(url: string, container: HTMLElement): Promise<void>;
+  close(): Promise<void>;
+  show(): Promise<void>;
+  hide(): Promise<void>;
+  getPageContent(): Promise<string>;
+  interactWithPage(selector: string, action: 'click' | 'type', value?: string): Promise<string>;
+  captureBrowserScreenshot(): Promise<string>;
+  setContainer(element: HTMLElement | null): void;
 }
 
 

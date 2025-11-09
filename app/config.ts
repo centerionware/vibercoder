@@ -14,7 +14,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   gitUserName: 'AIDECoder',
   gitUserEmail: 'aidecoder@git.great',
   gitAuthToken: '',
-  gitCorsProxy: 'https://cors.isomorphic-git.org',
   wakeWord: 'hey vibe',
   // Default wake word to disabled as requested.
   wakeWordEnabled: false,

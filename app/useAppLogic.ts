@@ -66,7 +66,7 @@ export const useAppLogic = () => {
     const [cloningProgress, setCloningProgress] = useState<string | null>(null);
     const [isProjectLoaded, setIsProjectLoaded] = useState(false);
     
-    const getAuth = useCallback((operation: 'read' | 'write'): ({ token: string | undefined; author: GitAuthor; proxyUrl: string; }) | null => {
+    const getAuth = useCallback((operation: 'read' | 'write'): ({ token: string | undefined; author: GitAuthor; }) | null => {
         const projectGitSettings = activeProject?.gitSettings || { source: 'global' };
         let credential: GitCredential | undefined;
         let finalSettings: Partial<AppSettings> = {};
@@ -84,7 +84,6 @@ export const useAppLogic = () => {
                         gitUserName: projectGitSettings.custom.userName,
                         gitUserEmail: projectGitSettings.custom.userEmail,
                         gitAuthToken: projectGitSettings.custom.authToken,
-                        gitCorsProxy: projectGitSettings.custom.corsProxy,
                     };
                 }
                 break;
@@ -98,11 +97,10 @@ export const useAppLogic = () => {
             email: finalSettings.gitUserEmail || settings.gitUserEmail,
         };
         const token = finalSettings.gitAuthToken || credential?.token || settings.gitAuthToken;
-        const proxyUrl = finalSettings.gitCorsProxy || settings.gitCorsProxy;
         
         if (operation === 'write' && (!author.name || !author.email)) return null;
 
-        return { token, author, proxyUrl };
+        return { token, author };
     }, [activeProject, settings, gitCredentials]);
 
     useEffect(() => {
@@ -231,6 +229,7 @@ export const useAppLogic = () => {
 
     // --- 4. Main UI State & Bundler ---
     const [activeView, setActiveView] = useState<View>(View.Ai);
+    const [lastActiveView, setLastActiveView] = useState<View>(View.Code);
     const [previewConsoleLogs, setPreviewConsoleLogs] = useState<PreviewLogEntry[]>([]);
     const [bundleLogs, setBundleLogs] = useState<string[]>([]);
 
@@ -268,13 +267,12 @@ export const useAppLogic = () => {
 
         try {
             const isNative = isNativeEnvironment();
-            const proxyUrl = settings.gitCorsProxy;
-
-            if (!isNative && !proxyUrl) {
-                throw new Error("Cannot proxy fetch: CORS Proxy URL is not configured in settings for web environment.");
+            
+            if (!isNative) {
+                throw new Error("Cannot proxy fetch: CORS Proxy is disabled in web environment.");
             }
 
-            const finalUrl = isNative ? url : `${proxyUrl.replace(/\/$/, '')}/${url}`;
+            const finalUrl = url;
             console.log(`[Proxy] Fetching final URL: ${finalUrl}`);
             
             const response = await fetch(finalUrl, options);
@@ -306,7 +304,7 @@ export const useAppLogic = () => {
                 error: error instanceof Error ? error.message : 'An unknown proxy error occurred.',
             }, { targetOrigin: event.origin });
         }
-    }, [settings.gitCorsProxy]);
+    }, []);
 
     const handleProxyIframeLoad = useCallback(async (event: MessageEvent) => {
         const { requestId, payload } = event.data;
@@ -321,11 +319,7 @@ export const useAppLogic = () => {
             let finalUrl = url;
 
             if (!isNative) {
-                const proxyUrl = settings.gitCorsProxy;
-                if (!proxyUrl) {
-                    throw new Error("Cannot proxy iframe content: CORS Proxy URL is not configured in settings for web environment.");
-                }
-                finalUrl = `${proxyUrl.replace(/\/$/, '')}/${url}`;
+                throw new Error("Cannot proxy iframe content: CORS Proxy is disabled in web environment.");
             }
 
             console.log(`[Proxy] Fetching proxied iframe content from: ${finalUrl}`);
@@ -358,7 +352,7 @@ export const useAppLogic = () => {
                 payload: { error: error instanceof Error ? error.message : 'An unknown proxy error occurred.' },
             }, { targetOrigin: event.origin });
         }
-    }, [settings.gitCorsProxy]);
+    }, []);
     
     const handleProxyNavigate = useCallback(async (event: MessageEvent) => {
         const { requestId, payload } = event.data;
@@ -370,12 +364,11 @@ export const useAppLogic = () => {
 
         try {
             const isNative = isNativeEnvironment();
-            const proxyUrl = settings.gitCorsProxy;
-            if (!isNative && !proxyUrl) {
-                throw new Error("Cannot proxy navigation: CORS Proxy URL is not configured in settings for web environment.");
+            if (!isNative) {
+                throw new Error("Cannot proxy navigation: CORS Proxy is disabled in web environment.");
             }
             
-            const finalUrl = isNative ? url : `${proxyUrl.replace(/\/$/, '')}/${url}`;
+            const finalUrl = url;
 
             const fetchOptions: RequestInit = { method: method || 'GET', headers: {} };
 
@@ -430,7 +423,7 @@ export const useAppLogic = () => {
                 payload: { error: error instanceof Error ? error.message : 'An unknown proxy error occurred.' },
             }, { targetOrigin: event.origin });
         }
-    }, [settings.gitCorsProxy]);
+    }, []);
 
     // --- 5. AI Services ---
     const aiRef = useRef<GoogleGenAI | null>(null);
@@ -443,6 +436,19 @@ export const useAppLogic = () => {
     const browser = useBrowser();
     const browserControlsRef = useRef<BrowserControls>();
     browserControlsRef.current = browser.controls;
+
+    // Browser view management
+    useEffect(() => {
+        if (activeView === View.Browser) {
+            if (browser.state.isInitialized) {
+                browser.controls.show();
+            }
+        } else {
+            if (browser.state.isInitialized) {
+                browser.controls.hide();
+            }
+        }
+    }, [activeView, browser.state.isInitialized, browser.controls]);
 
     const liveControlsRef = useRef<LiveSessionControls>();
     
@@ -500,12 +506,19 @@ export const useAppLogic = () => {
         onPermissionError: uiState.setPermissionError,
     });
     
+    const handleNavigate = (view: View) => {
+        if (view !== View.Browser && activeView === View.Browser) {
+            setLastActiveView(activeView);
+        }
+        setActiveView(view);
+    };
+
     // --- 6. Return Aggregated State ---
     return {
         // Project & File State
         activeProject, projects, files, activeFile, isProjectLoaded,
         // UI State & Navigation
-        activeView, onNavigate: setActiveView, ...uiState,
+        activeView, onNavigate: handleNavigate, ...uiState,
         isFullScreen: uiState.isFullScreen, onToggleFullScreen: () => uiState.setIsFullScreen(p => !p),
         // Settings, Credentials, Prompts
         settings, setSettings, gitCredentials, prompts,

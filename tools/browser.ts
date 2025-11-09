@@ -1,11 +1,11 @@
 import { FunctionDeclaration, Type } from '@google/genai';
-import { ToolImplementationsDependencies } from '../types';
+import { ToolImplementationsDependencies, View } from '../types';
 
 // --- Function Declarations ---
 
 export const openUrlFunction: FunctionDeclaration = {
   name: 'openUrl',
-  description: 'Opens a web browser as a full-screen overlay to the specified URL. Any previously open browser will be closed.',
+  description: 'Opens a web browser in the dedicated browser view to the specified URL. If the browser is already open, it navigates to the new URL.',
   parameters: {
     type: Type.OBJECT,
     properties: {
@@ -17,7 +17,7 @@ export const openUrlFunction: FunctionDeclaration = {
 
 export const closeBrowserFunction: FunctionDeclaration = {
   name: 'closeBrowser',
-  description: 'Closes the currently open browser overlay.',
+  description: 'Hides the browser view and returns to the previous view.',
   parameters: {
     type: Type.OBJECT,
   },
@@ -47,7 +47,7 @@ export const interactWithBrowserPageFunction: FunctionDeclaration = {
 
 export const searchWebFunction: FunctionDeclaration = {
   name: 'searchWeb',
-  description: 'Performs a web search using Google, opening the results in a browser overlay.',
+  description: 'Performs a web search using Google, opening the results in the browser view.',
   parameters: {
     type: Type.OBJECT,
     properties: {
@@ -76,7 +76,7 @@ export const declarations = [
 
 // --- Implementations Factory ---
 
-export const getImplementations = ({ browserControlsRef }: Pick<ToolImplementationsDependencies, 'browserControlsRef'>) => {
+export const getImplementations = ({ browserControlsRef, setActiveView }: Pick<ToolImplementationsDependencies, 'browserControlsRef' | 'setActiveView'>) => {
     const getControls = () => {
         const controls = browserControlsRef.current;
         if (!controls) throw new Error("Browser controls are not available.");
@@ -85,12 +85,20 @@ export const getImplementations = ({ browserControlsRef }: Pick<ToolImplementati
 
     return {
         openUrl: async (args: { url: string }) => {
-            await getControls().openUrl(args.url);
+            const container = document.querySelector('#browser-container');
+            if (!container) throw new Error('Could not find browser container element in the DOM.');
+            await getControls().open(args.url, container as HTMLElement);
+            setActiveView(View.Browser);
             return { success: true, message: `Browser opened to ${args.url}.` };
         },
         closeBrowser: async () => {
-            getControls().closeBrowser();
-            return { success: true, message: "Browser has been closed." };
+            // In the new model, "close" means hide and navigate away.
+            // The actual native view is persistent until the app closes.
+            getControls().hide();
+            // Note: The logic to switch to lastActiveView is handled in useAppLogic
+            // when the view changes away from Browser. We just need to trigger the change.
+            setActiveView(View.Code); // Switch to a default safe view.
+            return { success: true, message: "Browser has been hidden." };
         },
         getBrowserPageContent: async () => {
             const content = await getControls().getPageContent();
@@ -102,7 +110,10 @@ export const getImplementations = ({ browserControlsRef }: Pick<ToolImplementati
         },
         searchWeb: async (args: { query: string }) => {
             const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(args.query)}`;
-            await getControls().openUrl(searchUrl);
+            const container = document.querySelector('#browser-container');
+            if (!container) throw new Error('Could not find browser container element in the DOM.');
+            await getControls().open(searchUrl, container as HTMLElement);
+            setActiveView(View.Browser);
             return { success: true, message: `Browser opened with search results for "${args.query}".` };
         },
         captureBrowserScreenshot: async () => {
