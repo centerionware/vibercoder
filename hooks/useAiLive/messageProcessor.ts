@@ -64,6 +64,7 @@ export const createMessageProcessor = (deps: MessageProcessorDependencies) => {
     const self = {} as {
       processModelOutput: (message: any) => Promise<void>;
       finalizeTurn: () => void;
+      onMessage: (message: any) => void;
     };
 
     self.finalizeTurn = () => {
@@ -215,7 +216,7 @@ export const createMessageProcessor = (deps: MessageProcessorDependencies) => {
         }
     };
     
-    const onMessage = (message: any) => {
+    self.onMessage = (message: any) => {
         if (!sessionRefs.current) return;
         
         isSessionDirty.current = true;
@@ -253,5 +254,5 @@ export const createMessageProcessor = (deps: MessageProcessorDependencies) => {
         }
     };
 
-    return { onMessage, processModelOutput: self.processModelOutput, finalizeTurn: self.finalizeTurn };
+    return self;
 };

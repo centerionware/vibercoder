@@ -80,6 +80,13 @@ export const useAiLive = (props: UseAiLiveProps) => {
         if (stateRef.current.isLive && refs.isSessionDirty.current) {
             console.log("[AI Live] Inactivity timer fired. Performing silent session reset.");
             refs.isSessionDirty.current = false;
+            
+            // 1. Finalize the client-side turn state. This cleans up the UI and in-flight message state.
+            messageProcessor.finalizeTurn();
+            
+            // 2. Create a new server-side session. This clears the server's context.
+            // The client-side shortTermMemory is intentionally preserved. The AI will rediscover it
+            // via tools in the new session, forcing it to re-evaluate its context.
             sessionManager.hotSwapSession();
         }
     };
