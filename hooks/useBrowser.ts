@@ -130,31 +130,129 @@ export const useBrowser = () => {
 
 
   const getPageContent = useCallback(async () => {
-    const result = await executeScript<string>(`document.body.innerHTML`);
-    if (typeof result?.value === 'string' && result.value !== 'null') {
-        try {
-            // The result from native is a JSON-encoded string. We need to parse it to get the raw HTML.
-            return JSON.parse(result.value);
-        } catch (e) {
-            console.error("Failed to parse page content from browser script:", e);
-            // Fallback to returning the raw value if it's not valid JSON
-            return result.value;
+    const script = `
+      (function() {
+        let aideIdCounter = 0;
+        const interestingTags = new Set(['A', 'BUTTON', 'INPUT', 'TEXTAREA', 'SELECT', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'P', 'LI', 'LABEL', 'IMG']);
+
+        function simplifyNode(node) {
+          if (node.nodeType === Node.TEXT_NODE) {
+            const text = node.textContent.trim();
+            return text ? { tag: 'text', text: text } : null;
+          }
+
+          if (node.nodeType !== Node.ELEMENT_NODE || node.tagName === 'SCRIPT' || node.tagName === 'STYLE' || node.tagName === 'NOSCRIPT') {
+            return null;
+          }
+
+          let current = node;
+          while (current) {
+              const style = window.getComputedStyle(current);
+              if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+                  return null;
+              }
+              current = current.parentElement;
+          }
+
+          const isInteresting = interestingTags.has(node.tagName);
+          const simplified = {
+            tag: node.tagName.toLowerCase(),
+            attributes: {},
+            children: []
+          };
+          
+          const isInteractable = ['A', 'BUTTON', 'INPUT', 'TEXTAREA', 'SELECT'].includes(node.tagName);
+
+          if (isInteractable) {
+            aideIdCounter++;
+            const aideId = 'aide-' + aideIdCounter;
+            node.dataset.aideId = aideId;
+            simplified.attributes.aideId = aideId;
+          }
+
+          const attrsToKeep = ['href', 'aria-label', 'placeholder', 'type', 'name', 'value', 'alt', 'src'];
+          for (const attr of attrsToKeep) {
+            if (node.hasAttribute(attr)) {
+              simplified.attributes[attr] = node.getAttribute(attr);
+            }
+          }
+          
+          let directText = '';
+          for (const child of Array.from(node.childNodes)) {
+              if (child.nodeType === Node.TEXT_NODE) {
+                  directText += child.textContent;
+              }
+          }
+          directText = directText.trim();
+          if (directText) {
+              simplified.text = directText;
+          }
+
+          for (const child of Array.from(node.childNodes)) {
+            const simplifiedChild = simplifyNode(child);
+            if (simplifiedChild) {
+              simplified.children.push(simplifiedChild);
+            }
+          }
+          
+          if (simplified.children.length === 1 && simplified.children[0].tag === 'text' && !simplified.text) {
+              simplified.text = simplified.children[0].text;
+              simplified.children = [];
+          }
+
+          if (!isInteresting && simplified.children.length === 0 && !simplified.text) {
+              return null;
+          }
+          if (!isInteresting && simplified.children.length > 0) {
+              return simplified.children;
+          }
+
+          return simplified;
         }
+        
+        try {
+            const simplifiedBody = simplifyNode(document.body);
+            return JSON.stringify(simplifiedBody, null, 2);
+        } catch(e) {
+            return JSON.stringify({ error: 'Failed to simplify page content: ' + e.message });
+        }
+      })();
+    `;
+
+    const result = await executeScript<string>(script);
+    if (typeof result?.value === 'string' && result.value !== 'null') {
+      try {
+        const jsResultString = JSON.parse(result.value);
+        return JSON.parse(jsResultString);
+      } catch (e) {
+        console.error("Failed to parse simplified page content from browser script:", e, result.value);
+        return { error: `Failed to parse page content. Raw value: ${result.value}` };
+      }
     }
-    return '';
+    return { error: 'Could not retrieve page content.' };
   }, [executeScript]);
 
   const interactWithPage = useCallback(async (selector: string, action: 'click' | 'type', value?: string) => {
     const script = `
       (function() {
         try {
-          const el = document.querySelector('${selector.replace(/'/g, "\\'")}');
+          const selector = '${selector.replace(/'/g, "\\'")}';
+          let el = document.querySelector(\`[data-aide-id="\${selector}"]\`);
+
           if (!el) {
-            return JSON.stringify({ error: 'Element not found with selector: ${selector.replace(/'/g, "\\'")}' });
+            el = document.querySelector(selector);
           }
+
+          if (!el) {
+            return JSON.stringify({ error: 'Element not found with selector: ' + selector });
+          }
+
           if ('${action}' === 'click') {
             el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
           } else if ('${action}' === 'type') {
+            if ('${value || ''}' === undefined) {
+                 return JSON.stringify({ error: 'A "value" must be provided for the "type" action.'});
+            }
             el.focus();
             el.value = '${(value || '').replace(/'/g, "\\'")}';
             el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -170,8 +268,6 @@ export const useBrowser = () => {
     const result = await executeScript<string>(script);
     try {
         if (result?.value && result.value !== 'null') {
-            // The native side returns a JSON-encoded string of the JS result.
-            // Our JS result is ALSO a JSON string. So we need to parse twice.
             const jsResultString = JSON.parse(result.value);
             const parsed = JSON.parse(jsResultString);
             if (parsed.error) {
@@ -181,10 +277,8 @@ export const useBrowser = () => {
         }
     } catch (e) {
         console.error("Failed to parse interaction result from browser script:", e, result?.value);
-        // Better error for the AI
         return `Error: Failed to process script result. It might not be valid JSON. Raw value: ${result?.value}`;
     }
-    // Better error for the AI
     return 'Error: Script execution returned no result.';
   }, [executeScript]);
   

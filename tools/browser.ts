@@ -26,7 +26,7 @@ export const closeBrowserFunction: FunctionDeclaration = {
 
 export const getBrowserPageContentFunction: FunctionDeclaration = {
   name: 'getBrowserPageContent',
-  description: "Retrieves the HTML content of the document's body from the currently active web page in the browser. Use this to 'see' the structure of the page and find CSS selectors for interaction.",
+  description: "Retrieves a simplified JSON structure of the visible elements on the current web page. This structure includes tags, text content, and important attributes for interactable elements (like links and inputs). Each interactable element is assigned a unique `aideId` attribute, which you MUST use as the `selector` for the `interactWithBrowserPage` tool.",
   parameters: {
     type: Type.OBJECT,
     properties: {},
@@ -35,11 +35,11 @@ export const getBrowserPageContentFunction: FunctionDeclaration = {
 
 export const interactWithBrowserPageFunction: FunctionDeclaration = {
   name: 'interactWithBrowserPage',
-  description: 'Interacts with an element on the currently active web page, like clicking a button or typing.',
+  description: 'Interacts with an element on the currently active web page. You MUST use the `aideId` of the target element (obtained from `getBrowserPageContent`) as the `selector`.',
   parameters: {
     type: Type.OBJECT,
     properties: {
-      selector: { type: Type.STRING, description: 'A CSS selector to find the element.' },
+      selector: { type: Type.STRING, description: 'The `aideId` of the target element.' },
       action: { type: Type.STRING, description: 'The action to perform.', enum: ['click', 'type'] },
       value: { type: Type.STRING, description: 'The text to type (required for "type" action).' },
     },
