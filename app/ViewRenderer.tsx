@@ -23,7 +23,7 @@ const ViewRenderer: React.FC<AppLogic> = (props) => {
                 onFileChange={props.onFileChange}
                 onFileSelect={props.onFileSelect}
                 onFileAdd={props.onFileAdd}
-                onFileRemove={props.onRemoveFile}
+                onFileRemove={props.onFileRemove}
                 isFullScreen={props.isFullScreen}
                 onToggleFullScreen={props.onToggleFullScreen}
             />;
@@ -49,7 +49,7 @@ const ViewRenderer: React.FC<AppLogic> = (props) => {
                 onClearConsole={props.handleClearConsoleLogs}
             />;
         case View.Browser:
-            return <BrowserView setContainer={props.browser.controls.setContainer} />;
+            return <BrowserView />;
         case View.Ai:
             return <AiView 
                 activeThread={props.activeThread}

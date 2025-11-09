@@ -85,20 +85,16 @@ export const getImplementations = ({ browserControlsRef, setActiveView }: Pick<T
 
     return {
         openUrl: async (args: { url: string }) => {
-            const container = document.querySelector('#browser-container');
-            if (!container) throw new Error('Could not find browser container element in the DOM.');
-            await getControls().open(args.url, container as HTMLElement);
+            // The container is no longer needed for the new architecture.
+            await getControls().open(args.url, document.body); // Pass a dummy element.
             setActiveView(View.Browser);
             return { success: true, message: `Browser opened to ${args.url}.` };
         },
         closeBrowser: async () => {
-            // In the new model, "close" means hide and navigate away.
-            // The actual native view is persistent until the app closes.
-            getControls().hide();
-            // Note: The logic to switch to lastActiveView is handled in useAppLogic
-            // when the view changes away from Browser. We just need to trigger the change.
-            setActiveView(View.Code); // Switch to a default safe view.
-            return { success: true, message: "Browser has been hidden." };
+            await getControls().close();
+            // The logic to switch to the previous view is now handled by the event listener
+            // in useAppLogic, which listens for the browser 'closed' event.
+            return { success: true, message: "Browser has been closed." };
         },
         getBrowserPageContent: async () => {
             const content = await getControls().getPageContent();
@@ -106,18 +102,23 @@ export const getImplementations = ({ browserControlsRef, setActiveView }: Pick<T
         },
         interactWithBrowserPage: async (args: { selector: string, action: 'click' | 'type', value?: string }) => {
             const result = await getControls().interactWithPage(args.selector, args.action, args.value);
+            if (result.startsWith('Error:')) {
+                throw new Error(result);
+            }
             return { result };
         },
         searchWeb: async (args: { query: string }) => {
             const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(args.query)}`;
-            const container = document.querySelector('#browser-container');
-            if (!container) throw new Error('Could not find browser container element in the DOM.');
-            await getControls().open(searchUrl, container as HTMLElement);
+            // The container is no longer needed.
+            await getControls().open(searchUrl, document.body); // Pass a dummy element.
             setActiveView(View.Browser);
             return { success: true, message: `Browser opened with search results for "${args.query}".` };
         },
         captureBrowserScreenshot: async () => {
             const base64Image = await getControls().captureBrowserScreenshot();
+            if (!base64Image) {
+                return { base64Image: null, message: "Screenshot capture is not supported in this browser implementation." };
+            }
             return { base64Image };
         },
     };
