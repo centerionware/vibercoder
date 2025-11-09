@@ -46,6 +46,7 @@ export const viewActiveFileFunction: FunctionDeclaration = {
     description: 'Check which file the user is currently viewing in the code editor.',
     parameters: {
         type: Type.OBJECT,
+        properties: {},
     },
 };
 
@@ -84,6 +85,7 @@ export const viewBuildEnvironmentFunction: FunctionDeclaration = {
     description: 'Inspect the configuration of the in-browser bundler (esbuild-wasm) to understand the build environment, such as JSX settings, module resolution logic, and entry point conventions.',
     parameters: {
         type: Type.OBJECT,
+        properties: {},
     },
 };
 
@@ -92,6 +94,7 @@ export const viewSettingsFunction: FunctionDeclaration = {
     description: "View the application's current settings and the available options for each setting.",
     parameters: {
         type: Type.OBJECT,
+        properties: {},
     },
 };
 
@@ -135,6 +138,7 @@ export const stopListeningFunction: FunctionDeclaration = {
     description: 'Stops the voice assistant session completely. The microphone will be turned off.',
     parameters: {
         type: Type.OBJECT,
+        properties: {},
     },
 };
 
@@ -143,6 +147,7 @@ export const captureAppScreenshotFunction: FunctionDeclaration = {
   description: "Captures a real-time screenshot of the user's entire application window (the AIDE interface itself), exactly as they see it. Use this tool as your 'eyes' to analyze the UI, read text, inspect layouts, or see the output of code.",
   parameters: {
     type: Type.OBJECT,
+    properties: {},
   },
 };
 
@@ -151,6 +156,7 @@ export const enableScreenshotPreviewFunction: FunctionDeclaration = {
     description: 'Re-enables the screenshot preview modal if the user has previously disabled it for the session. Use this if the user asks to see the screenshots again.',
     parameters: {
         type: Type.OBJECT,
+        properties: {},
     },
 };
 
@@ -183,6 +189,7 @@ export const enableLiveVideoFunction: FunctionDeclaration = {
   description: 'Enables the live video stream of the user\'s screen. The stream provides a 1 FPS feed and acts as your "eyes", providing visual context for your next turn. It will automatically disable after 30 seconds to save resources. Use this when you need to see the UI to perform a task or answer a visual question.',
   parameters: {
     type: Type.OBJECT,
+    properties: {},
   },
 };
 
@@ -191,6 +198,7 @@ export const disableLiveVideoFunction: FunctionDeclaration = {
   description: 'Manually disables the live video stream. The stream also disables automatically after a short period, so this is only needed for explicit control.',
   parameters: {
     type: Type.OBJECT,
+    properties: {},
   },
 };
 

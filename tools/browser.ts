@@ -20,6 +20,7 @@ export const closeBrowserFunction: FunctionDeclaration = {
   description: 'Closes and destroys the current browser view.',
   parameters: {
     type: Type.OBJECT,
+    properties: {},
   },
 };
 
@@ -28,6 +29,7 @@ export const getBrowserPageContentFunction: FunctionDeclaration = {
   description: "Retrieves the HTML content of the document's body from the currently active web page in the browser. Use this to 'see' the structure of the page and find CSS selectors for interaction.",
   parameters: {
     type: Type.OBJECT,
+    properties: {},
   },
 };
 
@@ -62,6 +64,7 @@ export const captureBrowserScreenshotFunction: FunctionDeclaration = {
   description: 'Captures a screenshot of the content inside the currently open web browser. Use this as your "eyes" to see the content of external websites.',
   parameters: {
     type: Type.OBJECT,
+    properties: {},
   },
 };
 

@@ -9,6 +9,7 @@ export const listFilesFunction: FunctionDeclaration = {
   description: 'List all files in the current workspace directory.',
   parameters: {
     type: Type.OBJECT,
+    properties: {},
   },
 };
 

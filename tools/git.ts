@@ -9,6 +9,7 @@ export const listBranchesFunction: FunctionDeclaration = {
   description: 'List all local branches in the Git repository.',
   parameters: {
     type: Type.OBJECT,
+    properties: {},
   },
 };
 
@@ -32,6 +33,7 @@ export const gitLogFunction: FunctionDeclaration = {
   description: 'View the commit history for the current branch.',
   parameters: {
     type: Type.OBJECT,
+    properties: {},
   },
 };
 
@@ -55,6 +57,7 @@ export const gitPushFunction: FunctionDeclaration = {
   description: 'Push committed changes to the configured remote repository.',
   parameters: {
     type: Type.OBJECT,
+    properties: {},
   },
 };
 
@@ -92,13 +95,14 @@ export const discardWorkspaceChangesFunction: FunctionDeclaration = {
     description: 'Reverts all uncommitted changes in the workspace to match the last commit (HEAD). This will delete new files, restore deleted files, and undo all modifications. This action is irreversible.',
     parameters: {
         type: Type.OBJECT,
+        properties: {},
     },
 };
 
 export const viewWorkspaceChangesFunction: FunctionDeclaration = {
     name: 'viewWorkspaceChanges',
     description: 'Lists all files with uncommitted changes and provides their diffs. This is the first step in the commit workflow. After calling this tool, you MUST analyze the returned diffs and formulate a commit message adhering to modern Git standards. Then, you MUST use the `populateCommitMessage` tool to place your generated message into the UI.',
-    parameters: { type: Type.OBJECT },
+    parameters: { type: Type.OBJECT, properties: {} },
 };
 
 export const populateCommitMessageFunction: FunctionDeclaration = {

@@ -131,9 +131,15 @@ export const useBrowser = () => {
 
   const getPageContent = useCallback(async () => {
     const result = await executeScript<string>(`document.body.innerHTML`);
-    // The native side now returns a JSON string, so we need to handle it properly
-    if (typeof result?.value === 'string') {
-        return result.value;
+    if (typeof result?.value === 'string' && result.value !== 'null') {
+        try {
+            // The result from native is a JSON-encoded string. We need to parse it to get the raw HTML.
+            return JSON.parse(result.value);
+        } catch (e) {
+            console.error("Failed to parse page content from browser script:", e);
+            // Fallback to returning the raw value if it's not valid JSON
+            return result.value;
+        }
     }
     return '';
   }, [executeScript]);
@@ -163,16 +169,23 @@ export const useBrowser = () => {
     `;
     const result = await executeScript<string>(script);
     try {
-        if (result?.value) {
-            const parsed = JSON.parse(result.value);
-            if(parsed.error) return `Error: ${parsed.error}`;
+        if (result?.value && result.value !== 'null') {
+            // The native side returns a JSON-encoded string of the JS result.
+            // Our JS result is ALSO a JSON string. So we need to parse twice.
+            const jsResultString = JSON.parse(result.value);
+            const parsed = JSON.parse(jsResultString);
+            if (parsed.error) {
+                return `Error: ${parsed.error}`;
+            }
             return parsed.message || 'Success';
         }
-    } catch(e) {
-        // Fallback for non-JSON string
-        return result?.value || 'Error: Script execution failed to return a value.';
+    } catch (e) {
+        console.error("Failed to parse interaction result from browser script:", e, result?.value);
+        // Better error for the AI
+        return `Error: Failed to process script result. It might not be valid JSON. Raw value: ${result?.value}`;
     }
-    return 'Error: Script execution failed.';
+    // Better error for the AI
+    return 'Error: Script execution returned no result.';
   }, [executeScript]);
   
   const captureBrowserScreenshot = useCallback(async () => {
