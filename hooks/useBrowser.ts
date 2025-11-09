@@ -117,12 +117,12 @@ export const useBrowser = () => {
   }, [isPluginAvailable, state.isInitialized, state.isVisible]);
   
   const executeScript = useCallback(async <T,>(code: string): Promise<T> => {
-    if (!isPluginAvailable() || !state.isInitialized) {
+    if (!isPluginAvailable || !state.isInitialized) {
       throw new Error("Cannot execute script: browser is not initialized.");
     }
     const { value } = await AideBrowser.executeScript<T>({ code });
     return value;
-  }, [state.isInitialized]);
+  }, [isPluginAvailable, state.isInitialized]);
 
   const getPageContent = useCallback(async (): Promise<string> => {
     return await executeScript<string>("document.body.innerHTML");
