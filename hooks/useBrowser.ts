@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Capacitor, PluginListenerHandle, registerPlugin } from '@capacitor/core';
 import { BrowserControls } from '../types';
+import { safeLocalStorage } from '../utils/environment';
 
 // This interface defines the new, more advanced API for the native plugin
 // that supports a persistent, resizable browser view.
@@ -25,6 +26,8 @@ interface BrowserState {
   currentUrl: string;
 }
 
+const BROWSER_HISTORY_KEY = 'aide_browser_lastUrl';
+
 export const useBrowser = () => {
   const [state, setState] = useState<BrowserState>({
     isOpen: false,
@@ -34,6 +37,26 @@ export const useBrowser = () => {
   });
   const [container, setContainer] = useState<HTMLElement | null>(null);
   const isPluginAvailable = Capacitor.isNativePlatform();
+
+  const open = useCallback(async (url: string) => {
+    if (!isPluginAvailable) return;
+    await AideBrowser.open({ url });
+    safeLocalStorage.setItem(BROWSER_HISTORY_KEY, url);
+    setState(s => ({ ...s, isOpen: true, isPageLoaded: false, currentUrl: url }));
+  }, [isPluginAvailable]);
+
+  useEffect(() => {
+    if (!isPluginAvailable) return;
+
+    const lastUrl = safeLocalStorage.getItem(BROWSER_HISTORY_KEY);
+    // Only restore if the app is freshly loaded and browser isn't open yet.
+    if (lastUrl && !state.isOpen) {
+      console.log(`[Browser] Restoring last session at: ${lastUrl}`);
+      // The `open` function creates the instance, but it remains hidden
+      // until the user navigates to the Browser view.
+      open(lastUrl);
+    }
+  }, [isPluginAvailable, state.isOpen, open]);
 
   useEffect(() => {
     if (!isPluginAvailable) return;
@@ -57,17 +80,10 @@ export const useBrowser = () => {
     };
   }, [isPluginAvailable]);
 
-  const open = useCallback(async (url: string) => {
-    if (!isPluginAvailable) return;
-    await AideBrowser.open({ url });
-    setState(s => ({ ...s, isOpen: true, isPageLoaded: false, currentUrl: url }));
-  }, [isPluginAvailable]);
-
   const close = useCallback(async () => {
     if (!isPluginAvailable || !state.isOpen) return;
-    await AideBrowser.close();
-    // The 'closed' event listener will handle the final state change.
-    setState(s => ({ ...s, isOpen: false, isVisible: false }));
+    await AideBrowser.hide();
+    setState(s => ({ ...s, isVisible: false }));
   }, [isPluginAvailable, state.isOpen]);
 
   const show = useCallback(async () => {

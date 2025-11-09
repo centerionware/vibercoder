@@ -79,7 +79,7 @@ export const declarations = [
 
 // --- Implementations Factory ---
 
-export const getImplementations = ({ browserControlsRef, setActiveView }: Pick<ToolImplementationsDependencies, 'browserControlsRef' | 'setActiveView'>) => {
+export const getImplementations = ({ browserControlsRef, setActiveView, lastActiveView }: ToolImplementationsDependencies) => {
     const getControls = () => {
         const controls = browserControlsRef.current;
         if (!controls) throw new Error("Browser controls are not available.");
@@ -94,8 +94,10 @@ export const getImplementations = ({ browserControlsRef, setActiveView }: Pick<T
         },
         closeBrowser: async () => {
             await getControls().close();
-            // The logic to switch to the previous view is handled by app logic reacting to the browser state.
-            return { success: true, message: "Browser has been closed." };
+            // When browser closes, we want to go back to where we were.
+            // If for some reason the last view was browser, default to code view.
+            setActiveView(lastActiveView === View.Browser ? View.Code : lastActiveView);
+            return { success: true, message: "Browser has been hidden." };
         },
         getBrowserPageContent: async () => {
             const content = await getControls().getPageContent();

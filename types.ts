@@ -283,6 +283,7 @@ export interface ToolImplementationsDependencies {
     setActiveFile: (filename: string | null) => void;
     activeView: View;
     setActiveView: (view: View) => void;
+    lastActiveView: View;
     aiRef: React.RefObject<any>; // GoogleGenAI
     gitServiceRef: React.RefObject<GitService | null>;
     settings: AppSettings;

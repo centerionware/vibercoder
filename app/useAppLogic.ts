@@ -461,6 +461,7 @@ export const useAppLogic = () => {
     
     const toolImplementations = createToolImplementations({
         files, setFiles, activeFile, setActiveFile, activeView, setActiveView,
+        lastActiveView,
         aiRef, gitServiceRef, settings, onSettingsChange: setSettings,
         bundleLogs, 
         previewConsoleLogs,
