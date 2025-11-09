@@ -1,4 +1,3 @@
-
 import fs from 'fs';
 import path from 'path';
 
@@ -6,8 +5,10 @@ const log = (message) => console.log(`[Plugin Generator] ${message}`);
 const projectRoot = process.cwd();
 const pluginDir = path.resolve(projectRoot, 'native-plugins/aide-browser');
 
-const files = {
-  // package.json for the plugin
+// --- File Content Definitions ---
+// All file contents are defined here as template literals within logical groups.
+
+const rootFiles = {
   'package.json': `
 {
   "name": "@aide/browser",
@@ -23,8 +24,6 @@ const files = {
   }
 }
 `,
-
-  // Podspec for iOS
   'aide-browser.podspec': `
 require 'json'
 
@@ -44,20 +43,24 @@ Pod::Spec.new do |s|
   s.swift_version = '5.1'
 end
 `,
-  // Android build.gradle
+};
+
+const androidFiles = {
   'android/build.gradle': `
-// Use the modern plugins DSL for better variant-aware dependency management
-plugins {
-    id 'com.android.library'
-    id 'org.jetbrains.kotlin.android'
+buildscript {
+    ext.kotlin_version = project.hasProperty('kotlinVersion') ? project.property('kotlinVersion') : '1.9.22'
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.7.2'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+    }
 }
 
-ext {
-    junitVersion = project.hasProperty('junitVersion') ? project.property('junitVersion') : '4.13.2'
-    androidxAppCompatVersion = project.hasProperty('androidxAppCompatVersion') ? project.property('androidxAppCompatVersion') : '1.6.1'
-    androidxJunitVersion = project.hasProperty('androidxJunitVersion') ? project.property('androidxJunitVersion') : '1.1.5'
-    kotlin_version = project.hasProperty('kotlinVersion') ? project.property('kotlinVersion') : '1.9.22'
-}
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
 
 android {
     namespace "com.aide.browser"
@@ -75,7 +78,6 @@ android {
         }
     }
 
-    // lintOptions is deprecated, use lint
     lint {
         abortOnError false
     }
@@ -84,14 +86,14 @@ android {
         sourceCompatibility JavaVersion.VERSION_21
         targetCompatibility JavaVersion.VERSION_21
     }
-
+    
     kotlinOptions {
         jvmTarget = '21'
     }
 
-    buildFeatures {
-        buildConfig false
-    }
+    // A deprecated but often necessary flag to ensure library variants are published.
+    // This is the most reliable way to solve the recurring "No matching variant" error.
+    publishNonDefault true
 }
 
 repositories {
@@ -99,22 +101,17 @@ repositories {
     mavenCentral()
 }
 
-
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
     implementation project(':capacitor-android')
-    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.appcompat:appcompat:1.6.1"
     implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
 }
 `,
-
-  // Android Manifest (empty, as we are not using a separate Activity anymore)
   'android/src/main/AndroidManifest.xml': `
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 </manifest>
 `,
-
-  // Android Plugin Kotlin file with new embedded logic
   'android/src/main/java/com/aide/browser/AideBrowserPlugin.kt': `
 package com.aide.browser
 
@@ -214,16 +211,21 @@ class AideBrowserPlugin : Plugin() {
         
         activity.runOnUiThread {
             webView?.evaluateJavascript(code) { result ->
-                val escapedResult = result?.toString()?.removeSurrounding("\\"") ?: "null"
+                // The result from evaluateJavascript is a JSON string of the JS result.
+                // We need to parse it if it's a string, otherwise it's just the value.
+                // For simplicity, we pass it back as a string to be handled by JS side.
+                val jsResult = result ?: "null"
                 val ret = JSObject()
-                ret.put("value", escapedResult)
+                ret.put("value", jsResult)
                 call.resolve(ret)
             }
         }
     }
 }
 `,
-  // iOS Plugin Swift file
+};
+
+const iosFiles = {
   'ios/Plugin/AideBrowserPlugin.swift': `
 import Foundation
 import Capacitor
@@ -247,6 +249,7 @@ public class AideBrowserPlugin: CAPPlugin, WKNavigationDelegate {
         DispatchQueue.main.async {
             if self.webView == nil {
                 let webConfiguration = WKWebViewConfiguration()
+                webConfiguration.allowsInlineMediaPlayback = true
                 self.webView = WKWebView(frame: .zero, configuration: webConfiguration)
                 self.webView!.navigationDelegate = self
                 self.bridge?.viewController?.view.addSubview(self.webView!)
@@ -286,12 +289,14 @@ public class AideBrowserPlugin: CAPPlugin, WKNavigationDelegate {
             call.reject("Must provide bounds")
             return
         }
-        let x = bounds["x"] as? CGFloat ?? 0
-        let y = bounds["y"] as? CGFloat ?? 0
-        let width = bounds["width"] as? CGFloat ?? 0
-        let height = bounds["height"] as? CGFloat ?? 0
+        let x = bounds["x"] as? Double ?? 0
+        let y = bounds["y"] as? Double ?? 0
+        let width = bounds["width"] as? Double ?? 0
+        let height = bounds["height"] as? Double ?? 0
 
         DispatchQueue.main.async {
+            // Ensure the main view has its layout updated before calculating frames
+            self.bridge?.viewController?.view.layoutIfNeeded()
             self.webView?.frame = CGRect(x: x, y: y, width: width, height: height)
             call.resolve()
         }
@@ -318,13 +323,18 @@ public class AideBrowserPlugin: CAPPlugin, WKNavigationDelegate {
 `,
 };
 
+// --- Main Execution Logic ---
+
 log('Starting embedded native plugin generation...');
+
 if (!fs.existsSync(pluginDir)) {
     log(`Creating plugin directory: ${pluginDir}`);
     fs.mkdirSync(pluginDir, { recursive: true });
 }
 
-for (const [filePath, content] of Object.entries(files)) {
+const allFiles = { ...rootFiles, ...androidFiles, ...iosFiles };
+
+for (const [filePath, content] of Object.entries(allFiles)) {
     const fullPath = path.resolve(pluginDir, filePath);
     const dirName = path.dirname(fullPath);
     if (!fs.existsSync(dirName)) {

@@ -11,9 +11,7 @@ interface State {
 }
 
 class ErrorBoundary extends Component<Props, State> {
-  // FIX: The state property initializer was causing a TypeScript error where `this.props` was not found on the component instance. By reverting to a standard constructor, we explicitly call `super(props)`, which correctly sets up `this.props` and resolves the type error.
-  state: State;
-
+  // FIX: A class component's constructor must accept `props` and call `super(props)` to ensure `this.props` is correctly initialized. The constructor has been corrected to follow this pattern.
   constructor(props: Props) {
     super(props);
     this.state = {
