@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Capacitor, PluginListenerHandle, registerPlugin } from '@capacitor/core';
 import { BrowserControls } from '../types';
 
@@ -32,7 +32,7 @@ export const useBrowser = () => {
     isPageLoaded: false,
     currentUrl: '',
   });
-  const containerRef = useRef<HTMLElement | null>(null);
+  const [container, setContainer] = useState<HTMLElement | null>(null);
   const isPluginAvailable = Capacitor.isNativePlatform();
 
   useEffect(() => {
@@ -82,41 +82,35 @@ export const useBrowser = () => {
     setState(s => ({ ...s, isVisible: false }));
   }, [isPluginAvailable, state.isOpen, state.isVisible]);
 
-  const setContainer = useCallback((element: HTMLElement | null) => {
-    containerRef.current = element;
-  }, []);
-
   useEffect(() => {
-    if (!isPluginAvailable || !containerRef.current) return;
+    if (!isPluginAvailable || !container) return;
 
     const observer = new ResizeObserver(entries => {
       if (!entries || entries.length === 0 || !state.isOpen) return;
       const rect = entries[0].target.getBoundingClientRect();
-      const dpr = window.devicePixelRatio || 1;
       
       AideBrowser.setBounds({
-        x: rect.left * dpr,
-        y: rect.top * dpr,
-        width: rect.width * dpr,
-        height: rect.height * dpr,
+        x: rect.left,
+        y: rect.top,
+        width: rect.width,
+        height: rect.height,
       });
     });
 
-    observer.observe(containerRef.current);
+    observer.observe(container);
     
     // Initial bounds setting
-    const rect = containerRef.current.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
+    const rect = container.getBoundingClientRect();
     AideBrowser.setBounds({
-        x: rect.left * dpr,
-        y: rect.top * dpr,
-        width: rect.width * dpr,
-        height: rect.height * dpr,
+        x: rect.left,
+        y: rect.top,
+        width: rect.width,
+        height: rect.height,
     });
 
 
     return () => observer.disconnect();
-  }, [isPluginAvailable, state.isOpen]); // Re-observe if the container element itself changes via the ref
+  }, [isPluginAvailable, state.isOpen, container]);
 
   const executeScript = useCallback(async <T extends any>(code: string): Promise<{ value: T } | null> => {
     if (!isPluginAvailable || !state.isOpen) {
