@@ -100,7 +100,7 @@ export const useBrowser = () => {
   }, [state.isOpen]);
 
   const getPageContent = useCallback(async (): Promise<string> => {
-    return await executeScript<string>("document.body.innerText");
+    return await executeScript<string>("document.body.innerHTML");
   }, [executeScript]);
   
   const interactWithPage = useCallback(async (selector: string, action: 'click' | 'type', value?: string): Promise<string> => {

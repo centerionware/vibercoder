@@ -14,14 +14,14 @@ const content = `This protocol guides you in using the web browser tools to find
 
 3.  **Execute Search:** Call the \`searchWeb()\` tool with your formulated query. This opens the search results in the browser overlay.
 
-4.  **Read Search Results:** Immediately after the browser opens, you MUST call \`getBrowserPageContent()\` to read the text from the search results page. This is how you "see" the search results.
+4.  **Read Search Results:** Immediately after the browser opens, you MUST call \`getBrowserPageContent()\` to read the **HTML structure** from the search results page. This is how you "see" the page layout and find links.
 
 5.  **Analyze and Navigate:**
-    a. Read through the text content returned by \`getBrowserPageContent()\`.
-    b. Use the \`think\` tool to identify the most promising URL from the search snippets and state your choice. The best links are usually official documentation or highly-rated community posts.
+    a. **Parse the HTML content** returned by \`getBrowserPageContent()\` to identify the most promising links (\`<a>\` tags with \`href\` attributes). You MUST analyze the link text and surrounding content to choose the best URL.
+    b. Use the \`think\` tool to state your chosen URL.
     c. You MUST then call \`openUrl()\` with the single best URL you identified. This navigates the browser to the actual article or documentation page.
 
-6.  **Read Article Content:** After the browser navigates to the new page, you MUST call \`getBrowserPageContent()\` again to read the full text of the article.
+6.  **Read Article Content:** After the browser navigates to the new page, you MUST call \`getBrowserPageContent()\` again to read the full **HTML content** of the article.
 
 7.  **Synthesize and Memorize:**
     a. Analyze the detailed content from the article.

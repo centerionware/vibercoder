@@ -25,7 +25,7 @@ export const closeBrowserFunction: FunctionDeclaration = {
 
 export const getBrowserPageContentFunction: FunctionDeclaration = {
   name: 'getBrowserPageContent',
-  description: 'Retrieves the visible text content from the currently active web page in the browser.',
+  description: "Retrieves the HTML content of the document's body from the currently active web page in the browser. Use this to 'see' the structure of the page and find CSS selectors for interaction.",
   parameters: {
     type: Type.OBJECT,
   },
