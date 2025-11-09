@@ -30,6 +30,11 @@ android {
         }
     }
 
+    publishing {
+        singleVariant("release")
+        singleVariant("debug")
+    }
+
     lintOptions {
         abortOnError false
     }
