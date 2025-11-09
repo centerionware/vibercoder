@@ -1,3 +1,4 @@
+
 export const content = `
 import Foundation
 import Capacitor
