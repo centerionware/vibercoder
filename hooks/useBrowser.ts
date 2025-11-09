@@ -104,29 +104,48 @@ export const useBrowser = () => {
   }, [executeScript]);
   
   const interactWithPage = useCallback(async (selector: string, action: 'click' | 'type', value?: string): Promise<string> => {
-     // JS code injection is safer if we properly escape the inputs.
      const escapedSelector = selector.replace(/'/g, "\\'");
      const escapedValue = value?.replace(/'/g, "\\'") || '';
+
+     // This more robust script simulates user events more accurately.
      const script = `
-        try {
-            const el = document.querySelector('${escapedSelector}');
-            if (!el) throw new Error('Element with selector "${escapedSelector}" not found');
-            if ('${action}' === 'click') {
-                el.click();
-            } else if ('${action}' === 'type') {
-                if(typeof el.value === 'undefined') throw new Error('Element does not have a value property to type into.');
-                el.value = '${escapedValue}';
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-                el.dispatchEvent(new Event('change', { bubbles: true }));
+        (() => { // Wrap in an IIFE to avoid polluting global scope
+            try {
+                const el = document.querySelector('${escapedSelector}');
+                if (!el) {
+                    return 'Error: Element with selector "${escapedSelector}" not found';
+                }
+
+                if ('${action}' === 'click') {
+                    // Dispatching a real MouseEvent is more reliable than .click()
+                    const clickEvent = new MouseEvent('click', {
+                        view: window,
+                        bubbles: true,
+                        cancelable: true
+                    });
+                    el.dispatchEvent(clickEvent);
+                } else if ('${action}' === 'type') {
+                    if (typeof el.value === 'undefined') {
+                        return 'Error: Element does not have a value property to type into.';
+                    }
+                    el.focus();
+                    el.value = '${escapedValue}';
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                    el.blur();
+                } else {
+                    return 'Error: Unsupported action "${action}"';
+                }
+                
+                return 'Success'; // Return a success message
+            } catch (e) { 
+                return 'Error: ' + e.message; // Return a descriptive error message
             }
-            return 'Success'; // Return a success message
-        } catch (e) { 
-            return 'Error: ' + e.message; // Return a descriptive error message
-        }
+        })(); // Immediately execute
      `;
      const result = await executeScript<string>(script);
      if (result.startsWith('Error:')) {
-         throw new Error(result);
+         throw new Error(result.substring(7)); // Remove 'Error: ' prefix and throw
      }
      return result;
   }, [executeScript]);
