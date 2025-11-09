@@ -3,7 +3,7 @@ export const content = `
 // designed for compatibility with AGP 8.7.2+
 plugins {
     id 'com.android.library'
-    id 'org.jetbrains.kotlin.android'
+    id 'org.jetbrains.kotlin.android' version '1.9.22'
 }
 
 android {
