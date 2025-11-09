@@ -79,6 +79,9 @@ android {
         versionCode 1
         versionName "1.0"
     }
+    // This is a deprecated flag, but it's often more reliable in complex build environments
+    // than the newer 'publishing' block for ensuring variants are published.
+    publishNonDefault true
     buildTypes {
         release {
             minifyEnabled false
@@ -97,9 +100,9 @@ android {
     kotlinOptions {
         jvmTarget = '21'
     }
-    publishing {
-        singleVariant('release')
-        singleVariant('debug')
+    // It's good practice for library modules not to generate a BuildConfig file.
+    buildFeatures {
+        buildConfig false
     }
 }
 
