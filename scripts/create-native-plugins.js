@@ -1,4 +1,5 @@
 
+
 import fs from 'fs';
 import path from 'path';
 
@@ -63,7 +64,7 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:8.2.1'
+        classpath 'com.android.tools.build:gradle:8.4.1'
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
     }
 }
@@ -73,6 +74,7 @@ apply plugin: 'kotlin-android'
 
 android {
     namespace "com.aide.browser"
+    publishNonDefault true
     compileSdk project.hasProperty('compileSdkVersion') ? project.property('compileSdkVersion') : 34
     defaultConfig {
         minSdkVersion project.hasProperty('minSdkVersion') ? project.property('minSdkVersion') : 22
