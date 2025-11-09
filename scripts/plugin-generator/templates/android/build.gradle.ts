@@ -16,6 +16,7 @@ buildscript {
         mavenCentral()
     }
     dependencies {
+        // This version now matches the requirement from the main app's build environment.
         classpath 'com.android.tools.build:gradle:8.7.2'
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
     }
