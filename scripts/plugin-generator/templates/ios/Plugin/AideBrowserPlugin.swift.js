@@ -7,7 +7,7 @@ import WebKit
 @objc(AideBrowserPlugin)
 public class AideBrowserPlugin: CAPPlugin, WKNavigationDelegate {
     
-    private var webView: WKWebView?
+    var aideWebView: WKWebView?
 
     @objc func open(_ call: CAPPluginCall) {
         let urlString = call.getString("url") ?? ""
@@ -17,27 +17,27 @@ public class AideBrowserPlugin: CAPPlugin, WKNavigationDelegate {
         }
 
         DispatchQueue.main.async {
-            if self.webView == nil {
+            if self.aideWebView == nil {
                 let webConfiguration = WKWebViewConfiguration()
-                self.webView = WKWebView(frame: .zero, configuration: webConfiguration)
-                self.webView?.navigationDelegate = self
-                self.webView?.isHidden = true
+                self.aideWebView = WKWebView(frame: .zero, configuration: webConfiguration)
+                self.aideWebView?.navigationDelegate = self
+                self.aideWebView?.isHidden = true
                 // Add the new webview as a subview of the main view controller's view.
                 // This makes it a sibling of the main Capacitor webview, which is better for layout.
-                self.bridge?.viewController?.view.addSubview(self.webView!)
+                self.bridge?.viewController?.view.addSubview(self.aideWebView!)
             }
             
             let request = URLRequest(url: url)
-            self.webView?.load(request)
+            self.aideWebView?.load(request)
             call.resolve()
         }
     }
 
     @objc func show(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
-            self.webView?.isHidden = false
+            self.aideWebView?.isHidden = false
             // Bring to front if other views were added
-            if let wv = self.webView {
+            if let wv = self.aideWebView {
                 self.bridge?.viewController?.view.bringSubviewToFront(wv)
             }
             call.resolve()
@@ -46,7 +46,7 @@ public class AideBrowserPlugin: CAPPlugin, WKNavigationDelegate {
 
     @objc func hide(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
-            self.webView?.isHidden = true
+            self.aideWebView?.isHidden = true
             call.resolve()
         }
     }
@@ -72,15 +72,15 @@ public class AideBrowserPlugin: CAPPlugin, WKNavigationDelegate {
             let newX = webViewFrame.origin.x + x
             let newY = webViewFrame.origin.y + y
             
-            self.webView?.frame = CGRect(x: newX, y: newY, width: width, height: height)
+            self.aideWebView?.frame = CGRect(x: newX, y: newY, width: width, height: height)
             call.resolve()
         }
     }
 
     @objc func close(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
-            self.webView?.removeFromSuperview()
-            self.webView = nil
+            self.aideWebView?.removeFromSuperview()
+            self.aideWebView = nil
             self.notifyListeners("closed", data: nil)
             call.resolve()
         }
@@ -90,7 +90,7 @@ public class AideBrowserPlugin: CAPPlugin, WKNavigationDelegate {
         let code = call.getString("code") ?? ""
         
         DispatchQueue.main.async {
-            guard let webView = self.webView else {
+            guard let webView = self.aideWebView else {
                 call.reject("Browser is not open or webView is not available.")
                 return
             }
