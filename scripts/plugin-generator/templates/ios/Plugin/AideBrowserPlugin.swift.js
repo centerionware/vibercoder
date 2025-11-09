@@ -1,3 +1,4 @@
+
 export const content = `
 import Foundation
 import Capacitor
@@ -21,7 +22,9 @@ public class AideBrowserPlugin: CAPPlugin, WKNavigationDelegate {
                 self.webView = WKWebView(frame: .zero, configuration: webConfiguration)
                 self.webView?.navigationDelegate = self
                 self.webView?.isHidden = true
-                self.bridge?.viewController?.view.addSubview(self.webView!)
+                // Add the new webview as a subview of the main Capacitor webview.
+                // This ensures it is part of the same layout and coordinate system.
+                self.bridge?.webView?.addSubview(self.webView!)
             }
             
             let request = URLRequest(url: url)
@@ -35,7 +38,7 @@ public class AideBrowserPlugin: CAPPlugin, WKNavigationDelegate {
             self.webView?.isHidden = false
             // Bring to front if other views were added
             if let wv = self.webView {
-                self.bridge?.viewController?.view.bringSubviewToFront(wv)
+                self.bridge?.webView?.bringSubviewToFront(wv)
             }
             call.resolve()
         }
@@ -54,17 +57,10 @@ public class AideBrowserPlugin: CAPPlugin, WKNavigationDelegate {
         let width = call.getDouble("width") ?? 0
         let height = call.getDouble("height") ?? 0
         
-        // Convert screen points from webview to native view coordinates.
-        // The webview's coordinate system has its origin at the top-left of the web content,
-        // while the native view's coordinate system has its origin at the top-left of the screen.
-        let frame = self.bridge?.webView?.frame ?? .zero
-        let nativeX = x / Double(self.bridge?.webView?.scrollView.zoomScale ?? 1.0) + Double(frame.origin.x)
-        let nativeY = y / Double(self.bridge?.webView?.scrollView.zoomScale ?? 1.0) + Double(frame.origin.y)
-        let nativeWidth = width / Double(self.bridge?.webView?.scrollView.zoomScale ?? 1.0)
-        let nativeHeight = height / Double(self.bridge?.webView?.scrollView.zoomScale ?? 1.0)
-
+        // Since our webview is a child of the main webview, the coordinates
+        // passed from the web layer can be used directly.
         DispatchQueue.main.async {
-            self.webView?.frame = CGRect(x: nativeX, y: nativeY, width: nativeWidth, height: nativeHeight)
+            self.webView?.frame = CGRect(x: x, y: y, width: width, height: height)
             call.resolve()
         }
     }

@@ -1,3 +1,4 @@
+
 export const content = `
 package com.aide.browser
 
@@ -28,6 +29,9 @@ class AideBrowserPlugin : Plugin() {
 
         bridge.activity.runOnUiThread {
             if (webView == null) {
+                val bridgeWebView = bridge.webView
+                val container = bridgeWebView.parent as ViewGroup
+
                 webView = WebView(context)
                 webView?.settings?.javaScriptEnabled = true
                 webView?.webViewClient = object : WebViewClient() {
@@ -36,11 +40,10 @@ class AideBrowserPlugin : Plugin() {
                         notifyListeners("pageLoaded", null)
                     }
                 }
-                val layoutParams = FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
-                )
-                bridge.activity.addContentView(webView, layoutParams)
+                // Initialize with 0 size; setBounds will position it correctly.
+                val layoutParams = FrameLayout.LayoutParams(0, 0)
+                webView?.layoutParams = layoutParams
+                container.addView(webView)
                 webView?.visibility = View.GONE // Start hidden
             }
             webView?.loadUrl(url)
@@ -52,6 +55,7 @@ class AideBrowserPlugin : Plugin() {
     fun show(call: PluginCall) {
         bridge.activity.runOnUiThread {
             webView?.visibility = View.VISIBLE
+            webView?.bringToFront() // Ensure it's on top of the main webview
             call.resolve()
         }
     }
