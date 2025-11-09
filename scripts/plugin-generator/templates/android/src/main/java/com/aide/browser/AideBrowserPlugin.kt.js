@@ -29,9 +29,8 @@ class AideBrowserPlugin : Plugin() {
 
         bridge.activity.runOnUiThread {
             if (webView == null) {
-                // Use the bridge's container, which is a reliable FrameLayout parent.
-                // This is safer than using bridge.webView.parent.
-                val container = bridge.container
+                // Get the root content view of the activity, which is a safe ViewGroup.
+                val container = bridge.activity.findViewById<ViewGroup>(android.R.id.content)
 
                 webView = WebView(context)
                 webView?.settings?.javaScriptEnabled = true
