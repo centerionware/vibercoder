@@ -8,6 +8,7 @@ export const initiateSelfImprovementCycleFunction: FunctionDeclaration = {
   description: 'Initiates a recursive self-improvement cycle. The AI will analyze its own source code, identify an area for improvement, implement the change, and then finalize it. This is a high-level, autonomous task.',
   parameters: {
     type: Type.OBJECT,
+    properties: {},
   },
 };
 

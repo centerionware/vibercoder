@@ -9,6 +9,7 @@ export const viewShortTermMemoryFunction: FunctionDeclaration = {
   description: 'View the entire contents of your short-term memory. This is your working context for the current task.',
   parameters: {
     type: Type.OBJECT,
+    properties: {},
   },
 };
 
@@ -66,6 +67,7 @@ export const wipeAllWorkingMemoryFunction: FunctionDeclaration = {
     description: 'CRITICAL ACTION: Wipes all items from short-term memory. This is a destructive action that erases all working context. Only use this for a major context switch (e.g., starting a completely new, unrelated project), NOT for completing a standard task. For standard task completion, you MUST use the \'completeTask\' tool.',
     parameters: {
         type: Type.OBJECT,
+        properties: {},
     },
 };
 

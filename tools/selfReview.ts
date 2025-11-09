@@ -22,6 +22,7 @@ export const advanceSelfReviewFunction: FunctionDeclaration = {
   description: 'Advances the internal code review cycle to the next persona or concludes it if all personas have completed their review.',
   parameters: {
     type: Type.OBJECT,
+    properties: {},
   },
 };
 
