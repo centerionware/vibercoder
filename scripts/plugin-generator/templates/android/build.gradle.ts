@@ -1,22 +1,16 @@
 export const content = `
-ext {
-    junitVersion = project.hasProperty('junitVersion') ? project.property('junitVersion') : '4.13.2'
-    androidxAppCompatVersion = project.hasProperty('androidxAppCompatVersion') ? project.property('androidxAppCompatVersion') : '1.6.1'
-    androidxJunitVersion = project.hasProperty('androidxJunitVersion') ? project.property('androidxJunitVersion') : '1.1.5'
-    kotlin_version = project.hasProperty('kotlinVersion') ? project.property('kotlinVersion') : '1.9.22'
-}
-
+// Based on the last known working configuration provided by the user.
 buildscript {
     ext {
         kotlin_version = project.hasProperty('kotlinVersion') ? project.property('kotlinVersion') : '1.9.22'
     }
-
     repositories {
         google()
         mavenCentral()
     }
     dependencies {
-        // This version now matches the requirement from the main app's build environment.
+        // CRITICAL FIX: The AGP version is set to 8.7.2 to match the exact requirement
+        // from the CI build error log ('AgpVersionAttr' with value '8.7.2').
         classpath 'com.android.tools.build:gradle:8.7.2'
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
     }
@@ -24,6 +18,14 @@ buildscript {
 
 apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
+
+ext {
+    junitVersion = project.hasProperty('junitVersion') ? project.property('junitVersion') : '4.13.2'
+    androidxAppCompatVersion = project.hasProperty('androidxAppCompatVersion') ? project.property('androidxAppCompatVersion') : '1.6.1'
+    androidxJunitVersion = project.hasProperty('androidxJunitVersion') ? project.property('androidxJunitVersion') : '1.1.5'
+    // Re-declare for the dependencies block.
+    kotlin_version = project.hasProperty('kotlinVersion') ? project.property('kotlinVersion') : '1.9.22'
+}
 
 android {
     namespace "com.aide.browser"
@@ -56,7 +58,6 @@ repositories {
     google()
     mavenCentral()
 }
-
 
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])
