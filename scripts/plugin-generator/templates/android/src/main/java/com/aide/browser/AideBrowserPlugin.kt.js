@@ -29,8 +29,9 @@ class AideBrowserPlugin : Plugin() {
 
         bridge.activity.runOnUiThread {
             if (webView == null) {
-                val bridgeWebView = bridge.webView
-                val container = bridgeWebView.parent as ViewGroup
+                // Use the bridge's container, which is a reliable FrameLayout parent.
+                // This is safer than using bridge.webView.parent.
+                val container = bridge.container
 
                 webView = WebView(context)
                 webView?.settings?.javaScriptEnabled = true
