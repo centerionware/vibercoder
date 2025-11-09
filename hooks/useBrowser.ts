@@ -119,7 +119,7 @@ export const useBrowser = () => {
   }, [isPluginAvailable, state.isOpen]); // Re-observe if the container element itself changes via the ref
 
   const executeScript = useCallback(async <T extends any>(code: string): Promise<{ value: T } | null> => {
-    if (!isPluginAvailable() || !state.isOpen) {
+    if (!isPluginAvailable || !state.isOpen) {
         console.warn('Cannot execute script, browser not available or not open.');
         return null;
     }
@@ -136,7 +136,7 @@ export const useBrowser = () => {
 
 
   const getPageContent = useCallback(async () => {
-    const result = await executeScript<{ body: string }>(`document.body.innerHTML`);
+    const result = await executeScript<string>(`document.body.innerHTML`);
     // The native side now returns a JSON string, so we need to handle it properly
     if (typeof result?.value === 'string') {
         return result.value;
