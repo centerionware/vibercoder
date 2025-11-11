@@ -4,6 +4,7 @@ import { Prompt } from '../../types';
 import PlusIcon from '../icons/PlusIcon';
 import HistoryIcon from '../icons/HistoryIcon';
 import TrashIcon from '../icons/TrashIcon';
+import RotateCcwIcon from '../icons/RotateCcwIcon';
 
 interface PromptsViewProps {
   prompts: Prompt[];
@@ -11,10 +12,11 @@ interface PromptsViewProps {
   updatePrompt: (id: string, content: string, author: 'user' | 'ai') => Promise<void>;
   revertToVersion: (id: string, versionId: string) => Promise<void>;
   deletePrompt: (id: string) => Promise<void>;
+  resetAllPrompts: () => Promise<void>;
 }
 
 const PromptsView: React.FC<PromptsViewProps> = (props) => {
-  const { prompts, createPrompt, updatePrompt, revertToVersion, deletePrompt } = props;
+  const { prompts, createPrompt, updatePrompt, revertToVersion, deletePrompt, resetAllPrompts } = props;
   const [activePromptId, setActivePromptId] = useState<string | null>(null);
   const [editorContent, setEditorContent] = useState('');
   const [isDirty, setIsDirty] = useState(false);
@@ -81,6 +83,13 @@ const PromptsView: React.FC<PromptsViewProps> = (props) => {
           }
       }
   };
+  
+  const handleResetAll = async () => {
+      if (window.confirm("WARNING: Factory Reset Prompts?\n\nThis will DELETE ALL custom prompts and revert all standard prompts to their original, factory default state. This action CANNOT be undone.\n\nAre you absolutely sure you want to continue?")) {
+          await resetAllPrompts();
+          setActivePromptId(null); // Let the useEffect pick the new first one
+      }
+  };
 
   return (
     <div className="flex flex-1 h-full bg-vibe-bg-deep rounded-lg overflow-hidden p-4 gap-4">
@@ -88,7 +97,14 @@ const PromptsView: React.FC<PromptsViewProps> = (props) => {
       <div className="w-1/3 bg-vibe-panel rounded-lg p-2 flex flex-col">
         <header className="flex justify-between items-center mb-2 flex-shrink-0">
             <h3 className="text-sm font-semibold text-vibe-text-secondary uppercase tracking-wider">PROMPTS</h3>
-            <button onClick={handleNewPrompt} className="p-1 hover:bg-vibe-bg-deep rounded" title="New Prompt"><PlusIcon className="w-4 h-4"/></button>
+            <div className="flex gap-1">
+                <button onClick={handleResetAll} className="p-1 hover:bg-vibe-bg-deep rounded text-vibe-text-secondary hover:text-red-400 transition-colors" title="Factory Reset All Prompts">
+                    <RotateCcwIcon className="w-4 h-4"/>
+                </button>
+                <button onClick={handleNewPrompt} className="p-1 hover:bg-vibe-bg-deep rounded text-vibe-text-secondary hover:text-vibe-accent transition-colors" title="New Prompt">
+                    <PlusIcon className="w-4 h-4"/>
+                </button>
+            </div>
         </header>
         <ul className="overflow-y-auto space-y-1">
             {sortedPrompts.map(prompt => (
@@ -98,14 +114,14 @@ const PromptsView: React.FC<PromptsViewProps> = (props) => {
                     >
                         <button 
                             onClick={() => setActivePromptId(prompt.id)}
-                            className="flex-1 text-left"
+                            className="flex-1 text-left min-w-0"
                         >
                             <p className="font-semibold truncate">{prompt.id}</p>
                             <p className={`text-xs opacity-70 truncate ${activePromptId === prompt.id ? 'text-white/80' : 'text-vibe-comment'}`}>{prompt.description}</p>
                         </button>
                         <button 
                             onClick={() => handleDeletePrompt(prompt.id)}
-                            className="p-1.5 rounded-md opacity-0 group-hover:opacity-100 text-vibe-comment hover:bg-red-500/20 hover:text-red-400"
+                            className="p-1.5 rounded-md opacity-0 group-hover:opacity-100 text-vibe-comment hover:bg-red-500/20 hover:text-red-400 flex-shrink-0 ml-2"
                             title={`Delete prompt ${prompt.id}`}
                         >
                             <TrashIcon className="w-4 h-4"/>

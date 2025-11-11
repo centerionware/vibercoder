@@ -2,7 +2,7 @@
 // ARCHITECTURAL NOTE: This file is an ORCHESTRATOR.
 //
 // Its primary purpose is to compose smaller, feature-specific custom hooks together.
-// It should contain minimal to no actual feature logic itself.
+// It should not contain minimal to no actual feature logic itself.
 //
 // When adding a new feature, DO NOT add the logic directly to this file.
 // Instead, follow this pattern:
@@ -52,7 +52,7 @@ export const useAppLogic = () => {
     const { projects, activeProject, createNewProject, switchProject, deleteProject, updateProject } = useProjects();
     const { files, setFiles, activeFile, setActiveFile, onWriteFile, onRemoveFile } = useFiles(activeProject?.id || null);
     const { gitCredentials, createGitCredential, deleteGitCredential, setDefaultGitCredential } = useGitCredentials();
-    const { prompts, createPrompt, updatePrompt, revertToVersion, deletePrompt: deletePromptHook } = usePrompts();
+    const { prompts, createPrompt, updatePrompt, revertToVersion, deletePrompt: deletePromptHook, resetPromptsToDefaults } = usePrompts();
     const { threads, activeThread, activeThreadId, createNewThread, switchThread, deleteThread, addMessage, updateMessage, updateHistory, updateThread } = useThreads(activeProject?.id || null);
 
     // --- 2. Refactored Logic Hooks ---
@@ -541,7 +541,7 @@ export const useAppLogic = () => {
         onFileChange: onWriteFile, onFileSelect: setActiveFile, onFileAdd: onWriteFile, 
         onRemoveFile,
         // Prompt Management
-        createPrompt, updatePrompt, revertToVersion, deletePrompt: deletePromptHook,
+        createPrompt, updatePrompt, revertToVersion, deletePrompt: deletePromptHook, resetPromptsToDefaults,
         // Preview & Bundler State
         isBundling, bundleError, builtCode, buildId,
         bundleLogs, handleClearBundleLogs,

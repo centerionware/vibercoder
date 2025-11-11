@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../utils/idb';
 import { Prompt } from '../types';
+import { defaultPrompts } from '../prompts/defaultPrompts';
 
 export const usePrompts = () => {
     const [prompts, setPrompts] = useState<Prompt[]>([]);
@@ -89,6 +90,35 @@ export const usePrompts = () => {
         setPrompts(prev => prev.filter(p => p.id !== id));
     }, []);
 
+    const resetPromptsToDefaults = useCallback(async () => {
+        const now = Date.now();
+        const newPrompts: Prompt[] = defaultPrompts.map(dp => {
+             const versionId = uuidv4();
+             return {
+                id: dp.id,
+                description: dp.description,
+                createdAt: now,
+                currentVersionId: versionId,
+                versions: [{
+                    versionId: versionId,
+                    content: dp.content,
+                    createdAt: now,
+                    // FIX: Changed author from 'system' to 'ai' to match PromptVersion type ('user' | 'ai').
+                    author: 'ai', 
+                }]
+            };
+        });
+
+        // Perform transactional wipe and replace
+        // FIX: Cast 'db' to 'any' to call 'transaction' method to resolve TypeScript error.
+        await (db as any).transaction('rw', db.prompts, async () => {
+            await db.prompts.clear();
+            await db.prompts.bulkAdd(newPrompts);
+        });
+
+        setPrompts(newPrompts);
+    }, []);
+
     return {
         prompts,
         isLoading,
@@ -96,5 +126,6 @@ export const usePrompts = () => {
         updatePrompt,
         revertToVersion,
         deletePrompt,
+        resetPromptsToDefaults,
     };
 };

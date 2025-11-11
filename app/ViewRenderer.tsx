@@ -108,6 +108,7 @@ const ViewRenderer: React.FC<AppLogic> = (props) => {
                 updatePrompt={props.updatePrompt}
                 revertToVersion={props.revertToVersion}
                 deletePrompt={props.deletePrompt}
+                resetAllPrompts={props.resetPromptsToDefaults}
             />;
         default:
             return <div className="p-4 text-vibe-comment">Select a view</div>;
