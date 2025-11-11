@@ -64,7 +64,7 @@ export const updateTaskStatusFunction: FunctionDeclaration = {
 
 export const completeTaskFunction: FunctionDeclaration = {
   name: 'completeTask',
-  description: "The correct tool to call when a task is finished. It cleans up only the active task details ('active_task', 'active_protocols') from memory, preserving all other context for subsequent related tasks. This is the standard final step for MOST tasks.",
+  description: "The correct tool to call when a task is finished. It cleans up the active task plan from memory but PRESERVES other context (like 'relevant_files' or 'active_protocols') to assist with immediate follow-up requests. This is the standard final step for MOST tasks.",
   parameters: {
     type: Type.OBJECT,
     properties: {},
@@ -170,7 +170,9 @@ export const getImplementations = (deps: ToolImplementationsDependencies) => {
         completeTask: async () => {
             const thread = ensureThread();
             const memory = thread.shortTermMemory;
-            const keysToRemove = ['active_task', 'active_protocols'];
+            // We now ONLY remove the active task and review task.
+            // Protocols and other context (like 'relevant_files') are preserved for follow-up turns.
+            const keysToRemove = ['active_task', 'active_review_task'];
             const removedKeys: string[] = [];
 
             if (memory) {

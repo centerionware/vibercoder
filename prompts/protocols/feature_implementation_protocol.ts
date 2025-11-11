@@ -17,6 +17,10 @@ When a user asks for a new feature (e.g., "add a dark mode toggle"), you must br
     *   Write the functions that update the state and perform the feature's actions.
     *   This is where you implement the "how". Do not create placeholder functions.
 
+**Context Retention (CRITICAL):**
+As you identify the files you need to create or modify, you MUST store them in your short-term memory. This allows you to easily recall them if the user asks for follow-up changes, preventing you from getting "lost".
+*   **Action:** Call \`updateShortTermMemory('relevant_files', JSON.stringify(['src/components/MyNewFeature.tsx', 'src/App.tsx']))\`. Update this list as you touch more files.
+
 **Implementation Examples:**
 
 *   **If asked for a full-screen button:** You MUST implement the full logic, not just a button.

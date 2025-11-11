@@ -16,7 +16,7 @@ const content = `This protocol formalizes how you use your short-term memory to 
 
 3.  **Task Completion (at the end of the request):**
     a. After the final step of the plan is complete and you have committed your changes with \`commitToHead()\`, your final action MUST be to call \`completeTask()\`.
-    b. This tool marks the task as finished and clears it from your short-term memory, signaling that you are ready for a new, unrelated request.
+    b. This tool marks the *current* task plan as finished and removes it from memory. NOTE: Other context items, such as 'active_protocols' or 'relevant_files', are PRESERVED to help you with immediate follow-up requests from the user.
 `;
 
 export default content;

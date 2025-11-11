@@ -11,6 +11,7 @@ import * as aiVersioning from '../tools/aiVersioning';
 import * as contextEngine from '../tools/contextEngine';
 import * as browser from '../tools/browser';
 import * as selfImprovement from '../tools/selfImprovement';
+import * as chatManagement from '../tools/chatManagement';
 
 import { ToolImplementationsDependencies } from '../types';
 
@@ -29,6 +30,7 @@ export const allTools = [
   ...contextEngine.declarations,
   ...browser.declarations,
   ...selfImprovement.declarations,
+  ...chatManagement.declarations,
 ];
 
 // The main system instruction for the AI.
@@ -97,5 +99,6 @@ export const createToolImplementations = (deps: ToolImplementationsDependencies)
     ...contextEngine.getImplementations(deps),
     ...browser.getImplementations(deps),
     ...selfImprovement.getImplementations(deps),
+    ...chatManagement.getImplementations(deps),
   };
 };
