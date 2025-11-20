@@ -88,7 +88,7 @@ To analyze user-uploaded images:
 **6. Managing Context (Chat History)**
 For chat applications, you must manually maintain the history array.
 *   **Structure:** Array of \`{ role: 'user' | 'model', parts: [{ text: '...' }] }\`.
-*   **Sending:** Pass the *entire* history array to \`generateContent\` (or use `startChat` helper) on every turn to maintain context.
+*   **Sending:** Pass the *entire* history array to \`generateContent\` (or use \`startChat\` helper) on every turn to maintain context.
 `;
 
 export default content;
