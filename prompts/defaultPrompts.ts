@@ -39,6 +39,8 @@ import ASSET_MANAGEMENT_PROTOCOL from './protocols/asset_management_protocol';
 import CONTEXT_GATHERING_PROTOCOL from './protocols/context_gathering_protocol';
 import WEB_SEARCH_PROTOCOL from './protocols/web_search_protocol';
 import SELF_IMPROVEMENT_PROTOCOL from './protocols/self_improvement_protocol';
+import LIVE_API_IMPLEMENTATION_PROTOCOL from './protocols/live_api_implementation_protocol';
+import STANDARD_API_IMPLEMENTATION_PROTOCOL from './protocols/standard_api_implementation_protocol';
 
 
 interface DefaultPrompt {
@@ -223,5 +225,15 @@ export const defaultPrompts: DefaultPrompt[] = [
         id: 'self_improvement_protocol',
         description: 'A meta-protocol for analyzing and improving your own source code.',
         content: SELF_IMPROVEMENT_PROTOCOL,
+    },
+    {
+        id: 'live_api_implementation_protocol',
+        description: 'A technical guide for implementing real-time voice and audio features using the Gemini Live API, including audio processing and connection logic.',
+        content: LIVE_API_IMPLEMENTATION_PROTOCOL,
+    },
+    {
+        id: 'standard_api_implementation_protocol',
+        description: 'A technical guide for implementing the standard (non-live) Gemini API for text generation, JSON output, and image generation.',
+        content: STANDARD_API_IMPLEMENTATION_PROTOCOL,
     }
 ];
